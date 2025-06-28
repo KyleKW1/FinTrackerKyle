@@ -17,7 +17,7 @@ try:
 except ImportError:
     PDFKIT_INSTALLED = False
 
-from fpdf import FPDF
+#from fpdf import FPDF
 
 st.set_page_config(page_title="Finance Tracker", layout="wide")
 
