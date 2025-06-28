@@ -2,7 +2,7 @@
 import streamlit as st
 import pandas as pd
 #import pdfplumber
-import plotly.express as px
+#import plotly.express as px
 import calendar
 import smtplib
 from email.message import EmailMessage
