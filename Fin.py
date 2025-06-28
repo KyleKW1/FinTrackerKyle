@@ -1,7 +1,7 @@
 #import pdfplumber
 import streamlit as st
 import pandas as pd
-import pdfplumber
+#import pdfplumber
 import plotly.express as px
 import calendar
 import smtplib
