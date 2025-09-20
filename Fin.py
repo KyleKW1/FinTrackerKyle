@@ -15,7 +15,7 @@ option = st.radio(
 if option == "📊 Spending Analysis":
     st.markdown("You selected **Spending Analysis**.")
     import pandas as pd
-    import plotly.express as px
+    #import plotly.express as px
     import calendar
     import smtplib
     from email.message import EmailMessage
