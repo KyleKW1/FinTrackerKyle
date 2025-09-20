@@ -25,7 +25,7 @@ if option == "📊 Spending Analysis":
     import datetime
     import streamlit as st
     from PIL import Image
-    import pdfplumber
+    #import pdfplumber
 
     try:
         import pdfkit
