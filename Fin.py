@@ -15,7 +15,7 @@ option = st.radio(
 if option == "📊 Spending Analysis":
     st.markdown("You selected **Spending Analysis**.")
     import pandas as pd
-    #import plotly.express as px
+    import plotly.express as px
     import calendar
     import smtplib
     from email.message import EmailMessage
@@ -25,7 +25,7 @@ if option == "📊 Spending Analysis":
     import datetime
     import streamlit as st
     from PIL import Image
-    #import pdfplumber
+    import pdfplumber
 
     try:
         import pdfkit
@@ -34,7 +34,7 @@ if option == "📊 Spending Analysis":
     except ImportError:
         PDFKIT_INSTALLED = False
 
-    #from fpdf import FPDF
+    from fpdf import FPDF
 
     st.set_page_config(page_title="Finance Tracker", layout="wide")
 
