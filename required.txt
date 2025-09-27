@@ -1,8 +1,0 @@
-streamlit
-pandas
-plotly
-pdfplumber
-fpdf2
-Pillow
-XlsxWriter
-pdfkit
