@@ -90,46 +90,85 @@ if option == "📊 Spending Analysis":
 
     def send_email_alert(receiver_email, subject, body, sender_email, sender_password, smtp_server, smtp_port=587):
         """
-        Enhanced email function with better error handling and Gmail App Password support
+        Enhanced email function with comprehensive authentication troubleshooting
         """
         try:
+            # Create message
             msg = EmailMessage()
             msg.set_content(body)
             msg['Subject'] = subject
             msg['From'] = sender_email
             msg['To'] = receiver_email
 
-            # Use SSL for Gmail (more secure)
+            # Gmail specific handling
             if 'gmail' in smtp_server.lower():
+                st.info("🔐 Connecting to Gmail with SSL...")
                 with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+                    server.set_debuglevel(0)  # Set to 1 for debugging
+                    st.info("🔑 Attempting login...")
                     server.login(sender_email, sender_password)
+                    st.info("📤 Sending message...")
                     server.send_message(msg)
+                    st.success("✅ Email sent successfully via Gmail!")
             else:
-                # Use STARTTLS for other providers
+                # Other email providers
+                st.info(f"🔐 Connecting to {smtp_server}...")
                 with smtplib.SMTP(smtp_server, smtp_port) as server:
+                    server.set_debuglevel(0)
                     server.starttls()
                     server.login(sender_email, sender_password)
                     server.send_message(msg)
+                    st.success(f"✅ Email sent successfully via {smtp_server}!")
+            
             return True
+
         except smtplib.SMTPAuthenticationError as e:
-            st.error(f"❌ Authentication failed: {e}")
-            st.info("""
-            **Gmail Users:** You need an App Password, not your regular Gmail password!
+            error_code = str(e)
+            st.error(f"❌ **Authentication Failed**: {error_code}")
             
-            📋 **Steps to get Gmail App Password:**
-            1. Enable 2-Factor Authentication on your Google account
-            2. Go to Google Account settings → Security → App Passwords  
-            3. Generate an app password for "Mail"
-            4. Use this 16-character password (without spaces)
+            # Specific troubleshooting based on error
+            if "535" in error_code:
+                st.error("🚫 **Username/Password rejected**")
+                with st.expander("🔧 **Gmail Troubleshooting Guide**", expanded=True):
+                    st.markdown("""
+                    ### For Gmail Users - You MUST use an App Password:
+                    
+                    #### 🔐 **Step-by-Step Fix:**
+                    1. **Enable 2-Factor Authentication** on your Google account first
+                    2. Go to: [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+                    3. Select "Mail" as the app
+                    4. Copy the **16-character password** (no spaces)
+                    5. Use this App Password, NOT your regular Gmail password
+                    
+                    #### ✅ **Checklist:**
+                    - [ ] 2-Factor Authentication is ON
+                    - [ ] Using App Password (16 characters, no spaces)  
+                    - [ ] Email address is correct
+                    - [ ] "Less secure app access" is NOT needed (we use App Passwords)
+                    
+                    #### 🔄 **Alternative Solutions:**
+                    - Try generating a new App Password
+                    - Make sure you're using the full email address
+                    - Check if your account has any security restrictions
+                    """)
             
-            🔗 **Quick link:** https://myaccount.google.com/apppasswords
-            """)
+            elif "454" in error_code:
+                st.error("🚫 **Too many login attempts** - Wait a few minutes and try again")
+            
             return False
-        except smtplib.SMTPException as e:
-            st.error(f"❌ SMTP Error: {e}")
+            
+        except smtplib.SMTPConnectError as e:
+            st.error(f"❌ **Connection Failed**: Cannot connect to {smtp_server}:{smtp_port}")
+            st.info("🌐 Check your internet connection and SMTP server settings")
             return False
+            
+        except smtplib.SMTPRecipientsRefused as e:
+            st.error(f"❌ **Invalid Recipient**: {receiver_email} was rejected")
+            return False
+            
         except Exception as e:
-            st.error(f"❌ Email failed: {e}")
+            st.error(f"❌ **Unexpected Error**: {str(e)}")
+            st.info("🔧 Try using a different email provider or check your settings")
             return False
 
     def export_to_excel(df):
@@ -180,19 +219,83 @@ if option == "📊 Spending Analysis":
     st.title("💰 Personal Finance Tracker")
 
     # Email setup instructions
-    with st.expander("📧 Email Setup Instructions", expanded=False):
-        st.markdown("""
-        **For Gmail users:**
-        1. Enable 2-Factor Authentication on your Google account
-        2. Go to [App Passwords](https://myaccount.google.com/apppasswords)
-        3. Generate an app password for "Mail" 
-        4. Use the 16-character app password (not your regular Gmail password)
-        5. Use `smtp.gmail.com` as SMTP server
+    with st.expander("📧 **Complete Email Setup Guide**", expanded=False):
+        tab1, tab2, tab3 = st.tabs(["📧 Gmail Setup", "🔧 Other Providers", "❓ Troubleshooting"])
         
-        **For other email providers:**
-        - Outlook: `smtp-mail.outlook.com` (port 587)
-        - Yahoo: `smtp.mail.yahoo.com` (port 587)
-        """)
+        with tab1:
+            st.markdown("""
+            ## 📧 Gmail Setup (Most Common)
+            
+            ### ⚠️ **CRITICAL: You CANNOT use your regular Gmail password!**
+            
+            ### 🔐 **Steps to get Gmail App Password:**
+            1. **Enable 2-Factor Authentication** on your Google account:
+               - Go to [myaccount.google.com/security](https://myaccount.google.com/security)
+               - Turn on 2-Step Verification
+            
+            2. **Generate App Password**:
+               - Go to [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+               - Select "Mail" from dropdown
+               - Click "Generate"
+               - Copy the **16-character code** (looks like: `abcd efgh ijkl mnop`)
+            
+            3. **Use in Finance Tracker**:
+               - Email: `youremail@gmail.com`
+               - Password: `Your 16-character App Password` (not your regular password!)
+               - Provider: Gmail
+            
+            ### ✅ **Quick Check:**
+            - Is 2-Factor Authentication enabled? 
+            - Did you copy the 16-character App Password?
+            - Are you using the App Password (not your regular password)?
+            """)
+        
+        with tab2:
+            st.markdown("""
+            ## 🔧 Other Email Providers
+            
+            ### **Outlook/Hotmail:**
+            - SMTP: `smtp-mail.outlook.com`
+            - Port: `587`
+            - Use your regular Outlook password
+            
+            ### **Yahoo:**
+            - SMTP: `smtp.mail.yahoo.com` 
+            - Port: `587`
+            - You may need to generate an App Password for Yahoo too
+            
+            ### **Custom Provider:**
+            - Check with your email provider for SMTP settings
+            - Common ports: 587 (TLS) or 465 (SSL)
+            """)
+        
+        with tab3:
+            st.markdown("""
+            ## ❓ Common Issues & Solutions
+            
+            ### 🚫 **"Username and Password not accepted" (Error 535)**
+            - **Gmail**: You're using regular password instead of App Password
+            - **Solution**: Generate and use Gmail App Password
+            
+            ### 🔒 **"Authentication Required"**
+            - Enable 2-Factor Authentication first
+            - Then generate App Password
+            
+            ### 🌐 **Connection Timeout**
+            - Check internet connection
+            - Try different SMTP port (587 vs 465)
+            - Check if corporate firewall blocks email ports
+            
+            ### 📧 **"Invalid Recipient"**
+            - Double-check recipient email address
+            - Make sure recipient email exists
+            
+            ### 🔧 **Still Not Working?**
+            - Try the "Test Email Settings" button in sidebar
+            - Use a different email provider temporarily
+            - Contact your IT support if on corporate network
+            """)
+
 
     uploaded_files = st.file_uploader(
         "Upload CSV or PDF files",
@@ -274,33 +377,68 @@ if option == "📊 Spending Analysis":
     )
     SAVINGS_GOAL = savings_goal_input
 
-    # Enhanced Email notification settings
+    # Enhanced Email notification settings with validation
     st.sidebar.header("📧 Email Notification Settings")
     enable_email = st.sidebar.checkbox("Enable Email Alerts")
     
     if enable_email:
-        notify_email = st.sidebar.text_input("Send alerts to email:")
-        sender_email = st.sidebar.text_input("Your email address:")
-        sender_password = st.sidebar.text_input("Email password (use App Password for Gmail):", type="password")
+        st.sidebar.markdown("⚠️ **Important**: Gmail users MUST use App Passwords!")
         
-        # Predefined SMTP settings
+        # Email provider selection first
         email_provider = st.sidebar.selectbox(
             "Email Provider:",
             ["Gmail", "Outlook", "Yahoo", "Custom"]
         )
         
+        # Provider-specific instructions
         if email_provider == "Gmail":
+            st.sidebar.markdown("""
+            📋 **Gmail Setup Required:**
+            1. Enable 2-Factor Auth
+            2. Generate App Password
+            3. Use App Password below
+            """)
             smtp_server = "smtp.gmail.com"
             smtp_port = 465  # SSL port for Gmail
+            
         elif email_provider == "Outlook":
             smtp_server = "smtp-mail.outlook.com"
             smtp_port = 587
+            
         elif email_provider == "Yahoo":
             smtp_server = "smtp.mail.yahoo.com"
             smtp_port = 587
+            
         else:  # Custom
             smtp_server = st.sidebar.text_input("SMTP Server:")
             smtp_port = st.sidebar.number_input("SMTP Port:", min_value=1, max_value=65535, value=587)
+        
+        # Email inputs with validation
+        sender_email = st.sidebar.text_input("Your email address:", placeholder="example@gmail.com")
+        
+        if email_provider == "Gmail":
+            sender_password = st.sidebar.text_input("App Password (16 characters):", type="password", placeholder="abcd efgh ijkl mnop")
+            if sender_password and len(sender_password.replace(" ", "")) != 16:
+                st.sidebar.warning("⚠️ Gmail App Password should be 16 characters!")
+        else:
+            sender_password = st.sidebar.text_input("Email password:", type="password")
+            
+        notify_email = st.sidebar.text_input("Send alerts to email:", placeholder="recipient@email.com")
+        
+        # Test connection button
+        if st.sidebar.button("🧪 Test Email Settings"):
+            if sender_email and sender_password and notify_email:
+                test_sent = send_email_alert(
+                    receiver_email=notify_email,
+                    subject="Finance Tracker - Test Email",
+                    body="This is a test email from your Finance Tracker. If you received this, your email settings are working correctly!",
+                    sender_email=sender_email,
+                    sender_password=sender_password,
+                    smtp_server=smtp_server,
+                    smtp_port=smtp_port
+                )
+            else:
+                st.sidebar.error("Please fill in all email fields first!")
     else:
         notify_email = sender_email = sender_password = smtp_server = ""
         smtp_port = 587
@@ -334,31 +472,57 @@ if option == "📊 Spending Analysis":
         available_month_years = sorted(trend['Month-Year'].unique(),
                                        key=lambda x: datetime.datetime.strptime(x, '%B %Y'))
 
-        selected_months = st.multiselect(
-            "Select exactly 2 months to compare",
-            options=available_month_years,
-            default=available_month_years[-2:] if len(available_month_years) >= 2 else available_month_years
-        )
+        if len(available_month_years) == 0:
+            st.warning("No data available for monthly analysis.")
+        else:
+            selected_months = st.multiselect(
+                "Select exactly 2 months to compare",
+                options=available_month_years,
+                default=available_month_years[-2:] if len(available_month_years) >= 2 else available_month_years
+            )
 
-        if len(selected_months) != 2:
-            st.warning("Please select exactly 2 months.")
-            st.stop()
-
-        filtered_trend = trend[trend['Month-Year'].isin(selected_months)]
-        agg = filtered_trend.groupby(['Month-Year', 'Category'])['Amount'].sum().unstack(fill_value=0)
-        agg['Net Flow'] = agg.get('Credit', 0) - agg.get('Debit', 0)
-        agg = agg.reset_index()
-
-        fig = px.bar(
-            agg,
-            x='Month-Year',
-            y=['Credit', 'Debit', 'Net Flow'],
-            barmode='group',
-            title="Income, Spending, and Net Flow by Selected Months",
-            labels={'value': 'Amount (J$)', 'Month-Year': 'Month'}
-        )
-        fig.update_layout(yaxis_tickprefix="J$")
-        st.plotly_chart(fig, use_container_width=True)
+            if len(selected_months) != 2:
+                st.warning("Please select exactly 2 months.")
+            else:
+                filtered_trend = trend[trend['Month-Year'].isin(selected_months)]
+                
+                if filtered_trend.empty:
+                    st.warning("No data found for the selected months.")
+                else:
+                    # Create aggregation with proper handling
+                    agg = filtered_trend.groupby(['Month-Year', 'Category'])['Amount'].sum().unstack(fill_value=0)
+                    
+                    # Ensure required columns exist
+                    if 'Credit' not in agg.columns:
+                        agg['Credit'] = 0
+                    if 'Debit' not in agg.columns:
+                        agg['Debit'] = 0
+                    
+                    agg['Net Flow'] = agg['Credit'] - agg['Debit']
+                    agg = agg.reset_index()
+                    
+                    # Create chart data in long format
+                    chart_data = []
+                    for _, row in agg.iterrows():
+                        chart_data.extend([
+                            {'Month-Year': row['Month-Year'], 'Type': 'Credit', 'Amount': row['Credit']},
+                            {'Month-Year': row['Month-Year'], 'Type': 'Debit', 'Amount': row['Debit']},
+                            {'Month-Year': row['Month-Year'], 'Type': 'Net Flow', 'Amount': row['Net Flow']}
+                        ])
+                    
+                    chart_df = pd.DataFrame(chart_data)
+                    
+                    fig = px.bar(
+                        chart_df,
+                        x='Month-Year',
+                        y='Amount',
+                        color='Type',
+                        barmode='group',
+                        title="Income, Spending, and Net Flow by Selected Months",
+                        labels={'Amount': 'Amount (J$)', 'Month-Year': 'Month'}
+                    )
+                    fig.update_layout(yaxis_tickprefix="J$")
+                    st.plotly_chart(fig, use_container_width=True)
 
     elif period_type == "Quarterly (Current Quarter)":
         current_year = datetime.datetime.now().year
@@ -399,21 +563,43 @@ if option == "📊 Spending Analysis":
         else:
             filtered_trend = trend[(trend['Year'] == current_year) & (trend['Month'].between(7, 12))]
 
-        agg = filtered_trend.groupby(['Month', 'Category'])['Amount'].sum().unstack(fill_value=0)
-        agg['Net Flow'] = agg.get('Credit', 0) - agg.get('Debit', 0)
-        agg = agg.reset_index()
-        agg['Month Name'] = agg['Month'].apply(lambda m: calendar.month_name[m])
+        if filtered_trend.empty:
+            st.warning(f"No data found for {half_label} {current_year}")
+        else:
+            agg = filtered_trend.groupby(['Month', 'Category'])['Amount'].sum().unstack(fill_value=0)
+            
+            # Ensure required columns exist
+            if 'Credit' not in agg.columns:
+                agg['Credit'] = 0
+            if 'Debit' not in agg.columns:
+                agg['Debit'] = 0
+                
+            agg['Net Flow'] = agg['Credit'] - agg['Debit']
+            agg = agg.reset_index()
+            agg['Month Name'] = agg['Month'].apply(lambda m: calendar.month_name[m])
 
-        fig = px.bar(
-            agg,
-            x='Month Name',
-            y=['Credit', 'Debit', 'Net Flow'],
-            barmode='group',
-            title=f"Income, Spending, and Net Flow for {half_label} {current_year}",
-            labels={'value': 'Amount (J$)', 'Month Name': 'Month'}
-        )
-        fig.update_layout(yaxis_tickprefix="J$")
-        st.plotly_chart(fig, use_container_width=True)
+            # Create chart data in long format
+            chart_data = []
+            for _, row in agg.iterrows():
+                chart_data.extend([
+                    {'Month Name': row['Month Name'], 'Type': 'Credit', 'Amount': row['Credit']},
+                    {'Month Name': row['Month Name'], 'Type': 'Debit', 'Amount': row['Debit']},
+                    {'Month Name': row['Month Name'], 'Type': 'Net Flow', 'Amount': row['Net Flow']}
+                ])
+            
+            chart_df = pd.DataFrame(chart_data)
+
+            fig = px.bar(
+                chart_df,
+                x='Month Name',
+                y='Amount',
+                color='Type',
+                barmode='group',
+                title=f"Income, Spending, and Net Flow for {half_label} {current_year}",
+                labels={'Amount': 'Amount (J$)', 'Month Name': 'Month'}
+            )
+            fig.update_layout(yaxis_tickprefix="J$")
+            st.plotly_chart(fig, use_container_width=True)
 
     # -------------- Month Selection & Detailed Monthly Analysis --------------
 
@@ -467,7 +653,7 @@ if option == "📊 Spending Analysis":
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # Budget vs Actual
+        # Budget vs Actual with improved data handling
         st.subheader(f"📏 Budget vs. Actual - {month}")
         budget_df = pd.DataFrame.from_dict(MONTHLY_BUDGETS, orient='index', columns=['Budget']).reset_index()
         budget_df.rename(columns={'index': 'Spending Category'}, inplace=True)
@@ -483,15 +669,28 @@ if option == "📊 Spending Analysis":
             .apply(lambda s: ['color: red;' if '⚠️' in str(v) else 'color: green;' for v in s], subset=['Status'])
         )
 
+        # Create chart data in long format to avoid shape errors
+        budget_chart_data = []
+        for _, row in comparison.iterrows():
+            budget_chart_data.extend([
+                {'Spending Category': row['Spending Category'], 'Type': 'Budget', 'Amount': row['Budget']},
+                {'Spending Category': row['Spending Category'], 'Type': 'Actual', 'Amount': row['Amount']}
+            ])
+        
+        budget_chart_df = pd.DataFrame(budget_chart_data)
+
         fig = px.bar(
-            comparison,
+            budget_chart_df,
             x='Spending Category',
-            y=['Budget', 'Amount'],
+            y='Amount',
+            color='Type',
             barmode='group',
             title="Budget vs. Actual Spending by Category",
-            labels={"value": "J$", "variable": "Type"},
-            text_auto=True
+            labels={"Amount": "J$", "Type": "Type"},
+            text='Amount'
         )
+        fig.update_traces(texttemplate='%{text:,.0f}', textposition='outside')
+        fig.update_layout(yaxis_tickprefix="J$")
         st.plotly_chart(fig, use_container_width=True)
 
         # Savings Goal Check
