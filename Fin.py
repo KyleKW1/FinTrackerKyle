@@ -139,10 +139,16 @@ if option == "📊 Spending Analysis":
             # Fallback with fpdf
             pdf = FPDF()
             pdf.add_page()
+            pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True) 
             pdf.set_font("Arial", size=12)
+            pdf.set_font('DejaVu', '', 12) 
+            
             for line in text_report.split('\n'):
                 pdf.cell(0, 10, line, ln=True)
+                pdf.multi_cell(0, 10, report_text)
+                
             return pdf.output(dest='S').encode('latin1')
+
 
 
     # ---------- App Start ----------
