@@ -1,7 +1,8 @@
 streamlit
 pandas
 plotly
+pdfplumber
+fpdf2
 Pillow
-requests
-openpyxl
-matplotlib
+XlsxWriter
+pdfkit
