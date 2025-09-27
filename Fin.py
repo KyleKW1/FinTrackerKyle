@@ -27,6 +27,13 @@ if option == "📊 Spending Analysis":
     from PIL import Image
     import pdfplumber
 
+    try:
+        import pdfkit
+
+        PDFKIT_INSTALLED = True
+    except ImportError:
+        PDFKIT_INSTALLED = False
+
     from fpdf import FPDF
 
     st.set_page_config(page_title="Finance Tracker", layout="wide")
@@ -115,24 +122,27 @@ if option == "📊 Spending Analysis":
         return processed_data
 
 
-
-    from fpdf import FPDF
-    
-    def export_to_pdf(report_text: str) -> bytes:
-        """
-        Export a plain text report to PDF and return the PDF as bytes.
-        Works fully in Streamlit Cloud (no wkhtmltopdf required).
-        """
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=12)
-    
-        effective_page_width = pdf.w - 2 * pdf.l_margin
-    
-        for line in report_text.splitlines():
-            pdf.multi_cell(effective_page_width, 10, line)
-    
-        return pdf.output(dest="S").encode("latin-1")
+    def export_to_pdf(text_report):
+        # Try pdfkit first
+        if PDFKIT_INSTALLED:
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.html') as f:
+                f.write(text_report.encode('utf-8'))
+                f.flush()
+                pdf_file = f.name.replace('.html', '.pdf')
+                pdfkit.from_file(f.name, pdf_file)
+                with open(pdf_file, 'rb') as pdf_f:
+                    pdf_bytes = pdf_f.read()
+                os.unlink(f.name)
+                os.unlink(pdf_file)
+                return pdf_bytes
+        else:
+            # Fallback with fpdf
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size=12)
+            for line in text_report.split('\n'):
+                pdf.cell(0, 10, line, ln=True)
+            return pdf.output(dest='S').encode('latin1')
 
 
     # ---------- App Start ----------
@@ -140,10 +150,10 @@ if option == "📊 Spending Analysis":
     st.title("Personal Finance Tracker")
 
     # Load the image from the file path
-    # image = Image.open("/Users/kyle/Documents/New Life/40450-1067x800.jpg")
+    image = Image.open("/Users/kyle/Documents/New Life/40450-1067x800.jpg")
 
     # Display the image in Streamlit
-    # st.image(image, use_container_width=True)
+    st.image(image, use_container_width=True)
 
     uploaded_files = st.file_uploader(
         "Upload CSV or PDF files",
@@ -585,3 +595,4 @@ elif option == "📅 Budget Planner":
 elif option == "🌐 Network Analysis":
     st.markdown("You selected **Network Analysis**.")
     # Insert your network analysis visualizations or placeholder text here.
+
