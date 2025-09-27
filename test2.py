@@ -252,149 +252,108 @@ if option == "📊 Spending Analysis":
 
     # -------------- Income & Spending Trends for ALL DATA (User Friendly) --------------
 
-    st.subheader("📉 Income and Spending Trends (All Data)")
-
-
-    def get_current_quarter(dt=None):
-        if dt is None:
-            dt = datetime.datetime.now()
-        return (dt.month - 1) // 3 + 1
-
-
-    def get_current_half_year(dt=None):
-        if dt is None:
-            dt = datetime.datetime.now()
-        return 1 if dt.month <= 6 else 2
-
-
-    period_type = st.radio(
-        "Select Period Type",
-        options=["Monthly (Select 2 months)", "Quarterly (Current Quarter)", "Semi-Annually (Current Half-Year)"]
-    )
-
-    trend = data.copy()
-    trend['Year'] = trend['Date'].dt.year
-    trend['Month'] = trend['Date'].dt.month
-    trend.set_index('Date', inplace=True)
-
-    if period_type == "Monthly (Select 2 months)":
-        trend['Month-Year'] = trend.index.strftime('%B %Y')
-        available_month_years = sorted(trend['Month-Year'].unique(),
-                                       key=lambda x: datetime.datetime.strptime(x, '%B %Y'))
-
-        selected_months = st.multiselect(
-            "Select exactly 2 months to compare",
-            options=available_month_years,
-            default=available_month_years[-2:] if len(available_month_years) >= 2 else available_month_years
+         # ---------- Trend Analysis ----------
+    
+    st.header("📈 Spending Trends")
+    
+    # Get available months
+    available_months = sorted(data['Month-Year'].unique(), 
+                            key=lambda x: pd.to_datetime(x, format='%B %Y'))
+    
+    if len(available_months) > 0:
+        # Period selection
+        period_type = st.radio(
+            "Select Analysis Period",
+            ["All Time", "Specific Months", "Last 3 Months", "Last 6 Months"]
         )
-
-        if len(selected_months) != 2:
-            st.warning("Please select exactly 2 months.")
-            st.stop()
-
-        filtered_trend = trend[trend['Month-Year'].isin(selected_months)]
-        agg = filtered_trend.groupby(['Month-Year', 'Category'])['Amount'].sum().unstack(fill_value=0)
-        agg['Net Flow'] = agg.get('Credit', 0) - agg.get('Debit', 0)
-        agg = agg.reset_index()
-
-        fig = px.bar(
-            agg,
-            x='Month-Year',
-            y=['Credit', 'Debit', 'Net Flow'],
-            barmode='group',
-            title="Income, Spending, and Net Flow by Selected Months",
-            labels={'value': 'Amount (J$)', 'Month-Year': 'Month'}
-        )
-        fig.update_layout(yaxis_tickprefix="J$")
-        st.plotly_chart(fig, use_container_width=True)
-
-    elif period_type == "Quarterly (Current Quarter)":
-        current_year = datetime.datetime.now().year
-        current_quarter = get_current_quarter()
-
-        st.markdown(f"**Showing data for Q{current_quarter} of {current_year}**")
-
-
-        def quarter(month):
-            return (month - 1) // 3 + 1
-
-
-        filtered_trend = trend[(trend['Year'] == current_year) & (trend['Month'].apply(quarter) == current_quarter)]
-
-        agg = filtered_trend.groupby(['Month', 'Category'])['Amount'].sum().unstack(fill_value=0)
-        agg['Net Flow'] = agg.get('Credit', 0) - agg.get('Debit', 0)
-        agg = agg.reset_index()
-        agg['Month Name'] = agg['Month'].apply(lambda m: calendar.month_name[m])
-
-        fig = px.bar(
-            agg,
-            x='Month Name',
-            y=['Credit', 'Debit', 'Net Flow'],
-            barmode='group',
-            title=f"Income, Spending, and Net Flow for Q{current_quarter} {current_year}",
-            labels={'value': 'Amount (J$)', 'Month Name': 'Month'}
-        )
-        fig.update_layout(yaxis_tickprefix="J$")
-        st.plotly_chart(fig, use_container_width=True)
-
-    elif period_type == "Semi-Annually (Current Half-Year)":
-        current_year = datetime.datetime.now().year
-        current_half = get_current_half_year()
-
-        half_label = "Jan - Jun" if current_half == 1 else "Jul - Dec"
-        st.markdown(f"**Showing data for {half_label} {current_year}**")
-
-        if current_half == 1:
-            filtered_trend = trend[(trend['Year'] == current_year) & (trend['Month'].between(1, 6))]
-        else:
-            filtered_trend = trend[(trend['Year'] == current_year) & (trend['Month'].between(7, 12))]
-
-        agg = filtered_trend.groupby(['Month', 'Category'])['Amount'].sum().unstack(fill_value=0)
-        agg['Net Flow'] = agg.get('Credit', 0) - agg.get('Debit', 0)
-        agg = agg.reset_index()
-        agg['Month Name'] = agg['Month'].apply(lambda m: calendar.month_name[m])
-
-        fig = px.bar(
-            agg,
-            x='Month Name',
-            y=['Credit', 'Debit', 'Net Flow'],
-            barmode='group',
-            title=f"Income, Spending, and Net Flow for {half_label} {current_year}",
-            labels={'value': 'Amount (J$)', 'Month Name': 'Month'}
-        )
-        fig.update_layout(yaxis_tickprefix="J$")
-        st.plotly_chart(fig, use_container_width=True)
-
-    # -------------- Month Selection & Detailed Monthly Analysis --------------
-
-    data['Month'] = data['Date'].dt.strftime('%B')
-    available_months = sorted(data['Month'].unique(), key=lambda x: list(calendar.month_name).index(x))
-
-    month = st.selectbox("📅 Select Month to Explore", available_months, key="month_select")
-    filtered = data[data['Month'] == month].copy()
-
-    # Optional keyword search
-    search_keyword = st.text_input("Search in Descriptions (optional)")
-    if search_keyword:
-        filtered = filtered[filtered['Description'].str.lower().str.contains(search_keyword.lower())]
-
-    # Classification
-    filtered['Spending Category'] = filtered['Description'].apply(
-        lambda d: classify_expense(d, CATEGORY_KEYWORDS)
-    )
-
-    # Manual Tagging of Uncategorized
-    uncat = filtered[filtered['Spending Category'] == 'Uncategorized']
-    if not uncat.empty:
-        st.subheader("🧩 Manually Tag Uncategorized Transactions")
-        for i, row in uncat.iterrows():
-            new_cat = st.selectbox(
-                f"{row['Date'].date()} - {row['Description'][:40]}...",
-                options=list(CATEGORY_KEYWORDS.keys()) + ["Other"],
-                key=f"tag_{i}"
+        
+        if period_type == "All Time":
+            trend_data = data.copy()
+        elif period_type == "Specific Months":
+            selected_months = st.multiselect(
+                "Select months to analyze",
+                options=available_months,
+                default=available_months[-2:] if len(available_months) >= 2 else available_months
             )
-            filtered.at[i, 'Spending Category'] = new_cat
+            trend_data = data[data['Month-Year'].isin(selected_months)]
+        elif period_type == "Last 3 Months":
+            last_3_months = available_months[-3:] if len(available_months) >= 3 else available_months
+            trend_data = data[data['Month-Year'].isin(last_3_months)]
+        else:  # Last 6 Months
+            last_6_months = available_months[-6:] if len(available_months) >= 6 else available_months
+            trend_data = data[data['Month-Year'].isin(last_6_months)]
+        
+        if not trend_data.empty:
+            # Create monthly summary
+            monthly_summary = trend_data.groupby(['Month-Year', 'Category'])['Amount'].sum().unstack(fill_value=0)
+            
+            # Ensure columns exist
+            if 'Credit' not in monthly_summary.columns:
+                monthly_summary['Credit'] = 0
+            if 'Debit' not in monthly_summary.columns:
+                monthly_summary['Debit'] = 0
+            
+            monthly_summary['Net Flow'] = monthly_summary['Credit'] - monthly_summary['Debit']
+            monthly_summary = monthly_summary.reset_index()
+            
+            # Sort by date
+            monthly_summary['Date_Sort'] = pd.to_datetime(monthly_summary['Month-Year'], format='%B %Y')
+            monthly_summary = monthly_summary.sort_values('Date_Sort')
+            
+            # Create the chart
+            fig = px.bar(
+                monthly_summary,
+                x='Month-Year',
+                y=['Credit', 'Debit'],
+                barmode='group',
+                title="Income vs Spending by Month",
+                labels={'value': 'Amount (J$)', 'variable': 'Type'},
+                color_discrete_map={'Credit': 'green', 'Debit': 'red'}
+            )
+            fig.update_layout(yaxis_tickprefix="J$", height=400)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Net flow line chart
+            fig_net = px.line(
+                monthly_summary,
+                x='Month-Year',
+                y='Net Flow',
+                title="Monthly Net Cash Flow",
+                markers=True
+            )
+            fig_net.update_layout(yaxis_tickprefix="J$", height=350)
+            fig_net.add_hline(y=0, line_dash="dash", line_color="gray")
+            st.plotly_chart(fig_net, use_container_width=True)
 
+    # ---------- Detailed Monthly Analysis ----------
+    
+    st.header("📅 Monthly Analysis")
+    
+    available_months_list = sorted(data['Month-Name'].unique(), 
+                                  key=lambda x: list(calendar.month_name).index(x))
+    
+    selected_month = st.selectbox("Select Month", available_months_list)
+    
+    # Filter for selected month
+    month_data = data[data['Month-Name'] == selected_month].copy()
+    
+    if not month_data.empty:
+        # Month metrics
+        col1, col2, col3 = st.columns(3)
+        
+        month_income = month_data[month_data['Category'] == 'Credit']['Amount'].sum()
+        month_spending = month_data[month_data['Category'] == 'Debit']['Amount'].sum()
+        month_savings = month_income - month_spending
+        
+        with col1:
+            st.metric(f"Income - {selected_month}", f"J${month_income:,.0f}")
+        with col2:
+            st.metric(f"Spending - {selected_month}", f"J${month_spending:,.0f}")
+        with col3:
+            delta_color = "normal" if month_savings >= 0 else "inverse"
+            st.metric(f"Savings - {selected_month}", f"J${month_savings:,.0f}",
+                     delta=f"Goal: J${SAVINGS_GOAL:,.0f}", delta_color=delta_color)
+        
     # Show Transactions
     st.subheader(f"📄 Transactions in {month}")
     st.dataframe(filtered[['Date', 'Description', 'Amount', 'Category', 'Spending Category']])
