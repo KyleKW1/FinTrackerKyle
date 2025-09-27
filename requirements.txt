@@ -6,4 +6,4 @@ fpdf2
 Pillow
 XlsxWriter
 pdfkit
-wkhtmltopdf
+packages.txt
