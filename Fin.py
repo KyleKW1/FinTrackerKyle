@@ -116,6 +116,8 @@ if option == "📊 Spending Analysis":
 
 
 
+    from fpdf import FPDF
+    
     def export_to_pdf(report_text: str) -> bytes:
         """
         Export a plain text report to PDF and return the PDF as bytes.
@@ -125,8 +127,10 @@ if option == "📊 Spending Analysis":
         pdf.add_page()
         pdf.set_font("Arial", size=12)
     
+        effective_page_width = pdf.w - 2 * pdf.l_margin
+    
         for line in report_text.splitlines():
-            pdf.multi_cell(0, 10, line)
+            pdf.multi_cell(effective_page_width, 10, line)
     
         return pdf.output(dest="S").encode("latin-1")
 
