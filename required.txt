@@ -1,6 +1,6 @@
 streamlit
 pandas
-plotly==5.24.1
+plotly
 pdfplumber
 fpdf2
 Pillow
