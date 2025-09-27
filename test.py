@@ -464,7 +464,13 @@ if option == "📊 Spending Analysis":
             
             budget_comparison = []
             for category in MONTHLY_BUDGETS.keys():
-                actual = category_summary[category_summary['Spending Category'] == category]['Amount'].sum()
+                # Get actual spending for this category
+                category_spending = category_summary[category_summary['Spending Category'] == category]
+                if not category_spending.empty:
+                    actual = category_spending['Amount'].iloc[0]
+                else:
+                    actual = 0  # No spending in this category
+                
                 budget = MONTHLY_BUDGETS[category]
                 budget_comparison.append({
                     'Category': category,
@@ -486,11 +492,27 @@ if option == "📊 Spending Analysis":
                         subset=['Status'])
             )
             
-            # Budget chart
+            # Budget chart - reshape data for proper display
+            budget_chart_data = []
+            for _, row in budget_df.iterrows():
+                budget_chart_data.append({
+                    'Category': row['Category'],
+                    'Type': 'Budget',
+                    'Amount': row['Budget']
+                })
+                budget_chart_data.append({
+                    'Category': row['Category'],
+                    'Type': 'Actual',
+                    'Amount': row['Actual']
+                })
+            
+            budget_chart_df = pd.DataFrame(budget_chart_data)
+            
             fig_budget = px.bar(
-                budget_df,
+                budget_chart_df,
                 x='Category',
-                y=['Budget', 'Actual'],
+                y='Amount',
+                color='Type',
                 barmode='group',
                 title="Budget vs Actual Spending",
                 color_discrete_map={'Budget': 'lightblue', 'Actual': 'orange'}
