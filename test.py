@@ -1,1154 +1,715 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import calendar
-import datetime
+import smtplib
+from email.message import EmailMessage
 from io import BytesIO
-import warnings
-warnings.filterwarnings('ignore')
-
-# Optional imports with fallback
-try:
-    import pdfplumber
-    PDF_SUPPORT = True
-except ImportError:
-    PDF_SUPPORT = False
-    
-try:
-    from fpdf import FPDF
-    FPDF_SUPPORT = True
-except ImportError:
-    FPDF_SUPPORT = False
-
-try:
-    import openpyxl
-    EXCEL_SUPPORT = True
-except ImportError:
-    EXCEL_SUPPORT = False
+import tempfile
+import os
+import datetime
+from PIL import Image
+import pdfplumber
+from fpdf import FPDF
 
 # Page configuration
-st.set_page_config(
-    page_title="Finance Hub Pro",
-    page_icon="💼",
-    layout="wide",
-    initial_sidebar_state="expanded"
+st.set_page_config(page_title="Finance Hub", layout="wide")
+
+st.title("💼 Welcome to Finance Hub")
+st.markdown("Choose a feature below to get started:")
+
+option = st.radio(
+    "What would you like to do?",
+    ["📊 Spending Analysis", "📅 Budget Planner", "🌐 Network Analysis"],
+    index=0
 )
 
-# Custom CSS for better styling
-st.markdown("""
-    <style>
-    .main-header {
-        font-size: 3rem;
-        font-weight: bold;
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        text-align: center;
-        padding: 1rem;
-    }
-    .stMetric {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# ===================== UTILITY FUNCTIONS =====================
-
-@st.cache_data
-def process_csv(file):
-    """Process CSV file with multiple format support"""
-    try:
-        # Try different encodings
-        encodings = ['utf-8', 'latin-1', 'iso-8859-1']
-        df = None
-        
-        for encoding in encodings:
-            try:
-                file.seek(0)
-                df = pd.read_csv(file, encoding=encoding)
-                break
-            except:
-                continue
-                
-        if df is None:
-            raise ValueError("Could not read CSV file with any encoding")
-        
-        # Standardize column names (handle various bank formats)
-        column_mappings = {
-            'TRANS DATE': 'Date',
-            'Transaction Date': 'Date',
-            'DATE': 'Date',
-            'DETAILS': 'Description',
-            'Description': 'Description',
-            'DESCRIPTION': 'Description',
-            'TOTAL AMOUNT': 'Amount',
-            'Amount': 'Amount',
-            'AMOUNT': 'Amount',
-            'TRANS TYPE': 'Type',
-            'Transaction Type': 'Type',
-            'TYPE': 'Type'
-        }
-        
-        df.rename(columns=column_mappings, inplace=True)
-        
-        # Ensure required columns exist
-        required_cols = ['Date', 'Description', 'Amount']
-        missing_cols = [col for col in required_cols if col not in df.columns]
-        if missing_cols:
-            st.warning(f"Missing columns: {missing_cols}. Using default values.")
-            for col in missing_cols:
-                if col == 'Date':
-                    df[col] = pd.Timestamp.now()
-                else:
-                    df[col] = 'Unknown'
-        
-        # Process data
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-        df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce')
-        df = df.dropna(subset=['Date', 'Amount'])
-        
-        # Determine transaction type if not present
-        if 'Type' not in df.columns or df['Type'].isna().all():
-            df['Type'] = df['Amount'].apply(lambda x: 'Debit' if x < 0 else 'Credit')
-        
-        df['Amount'] = df['Amount'].abs()
-        
-        return df
-        
-    except Exception as e:
-        st.error(f"Error processing CSV: {str(e)}")
-        return pd.DataFrame()
-
-@st.cache_data
-def process_pdf(file):
-    """Process PDF bank statements"""
-    if not PDF_SUPPORT:
-        st.error("PDF support not available. Please install pdfplumber.")
-        return pd.DataFrame()
+if option == "📊 Spending Analysis":
+    st.markdown("You selected **Spending Analysis**.")
     
-    try:
-        data = []
-        with pdfplumber.open(file) as pdf:
-            for page in pdf.pages:
-                text = page.extract_text()
-                if not text:
-                    continue
-                    
-                # Parse transaction patterns (customizable for different banks)
-                lines = text.split('\n')
-                for line in lines:
-                    # Common transaction indicators
-                    if any(indicator in line.upper() for indicator in ['POS', 'TRF', 'PURCHASE', 'WITHDRAWAL', 'DEPOSIT']):
-                        parts = line.split()
-                        if len(parts) >= 3:
-                            # Try to extract date, description, and amount
-                            try:
-                                date_str = parts[0]
-                                amount_str = ''.join(filter(lambda x: x.isdigit() or x in '.-,', parts[-1]))
-                                amount_str = amount_str.replace(',', '')
-                                amount = float(amount_str)
-                                desc = ' '.join(parts[1:-1])
-                                
-                                # Determine type
-                                trans_type = 'Debit' if amount < 0 else 'Credit'
-                                
-                                data.append({
-                                    'Date': date_str,
-                                    'Description': desc,
-                                    'Amount': abs(amount),
-                                    'Type': trans_type
-                                })
-                            except:
-                                continue
-        
-        df = pd.DataFrame(data)
-        if not df.empty:
+    # ---------- Functions ----------
+    
+    @st.cache_data
+    def process_csv(file):
+        try:
+            df = pd.read_csv(file)
+            # Handle different possible column names
+            column_mapping = {
+                'TRANS DATE': 'Date',
+                'Transaction Date': 'Date',
+                'Date': 'Date',
+                'DETAILS': 'Description',
+                'Details': 'Description',
+                'Description': 'Description',
+                'TOTAL AMOUNT': 'Amount',
+                'Total Amount': 'Amount',
+                'Amount': 'Amount',
+                'TRANS TYPE': 'Type',
+                'Transaction Type': 'Type',
+                'Type': 'Type'
+            }
+            
+            # Rename columns based on mapping
+            for old_name, new_name in column_mapping.items():
+                if old_name in df.columns:
+                    df.rename(columns={old_name: new_name}, inplace=True)
+            
+            # Ensure we have the required columns
+            required_cols = ['Date', 'Description', 'Amount']
+            missing_cols = [col for col in required_cols if col not in df.columns]
+            if missing_cols:
+                st.error(f"Missing required columns: {missing_cols}")
+                return pd.DataFrame()
+            
+            # Process the data
+            df = df[['Date', 'Description', 'Amount']]
             df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-            df = df.dropna(subset=['Date'])
-        
-        return df
-        
-    except Exception as e:
-        st.error(f"Error processing PDF: {str(e)}")
-        return pd.DataFrame()
+            df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce')
+            df['Category'] = df['Amount'].apply(lambda x: 'Debit' if x < 0 else 'Credit')
+            df['Amount'] = df['Amount'].abs()
+            
+            return df.dropna()
+        except Exception as e:
+            st.error(f"CSV Error: {e}")
+            return pd.DataFrame()
 
-def classify_expense(description, mapping):
-    """Classify expenses based on keywords"""
-    desc_lower = description.lower() if isinstance(description, str) else ''
-    
-    for category, keywords in mapping.items():
-        for keyword in keywords:
-            if keyword.lower() in desc_lower:
-                return category
-    
-    return 'Other'
+    @st.cache_data
+    def process_pdf(file):
+        try:
+            data = []
+            with pdfplumber.open(file) as pdf:
+                for page in pdf.pages:
+                    text = page.extract_text()
+                    if not text:
+                        continue
+                    lines = text.split('\n')
+                    for line in lines:
+                        # Look for transaction patterns
+                        if any(keyword in line.upper() for keyword in ['POS', 'TRF', 'PURCHASE', 'PAYMENT', 'DEPOSIT']):
+                            parts = line.split()
+                            if len(parts) >= 3:
+                                # Try to extract date, description, and amount
+                                try:
+                                    # Assume first part is date
+                                    date_str = parts[0]
+                                    # Last part or second to last might be amount
+                                    amount_str = parts[-1] if parts[-1].replace(',', '').replace('.', '').replace('-', '').isdigit() else parts[-2]
+                                    # Everything in between is description
+                                    desc = " ".join(parts[1:-1])
+                                    
+                                    # Clean amount
+                                    amount_str = amount_str.replace('J$', '').replace('$', '').replace(',', '')
+                                    amount = abs(float(amount_str))
+                                    
+                                    # Determine if it's debit or credit
+                                    category = 'Debit' if '-' in amount_str or 'PURCHASE' in line.upper() else 'Credit'
+                                    
+                                    data.append([date_str, desc, amount, category])
+                                except:
+                                    continue
+            
+            if data:
+                df = pd.DataFrame(data, columns=['Date', 'Description', 'Amount', 'Category'])
+                df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+                return df.dropna()
+            return pd.DataFrame()
+        except Exception as e:
+            st.error(f"PDF Error: {e}")
+            return pd.DataFrame()
 
-def export_to_excel(dataframes_dict):
-    """Export multiple dataframes to Excel"""
-    if not EXCEL_SUPPORT:
-        st.error("Excel export not available. Please install openpyxl.")
-        return None
-        
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        for sheet_name, df in dataframes_dict.items():
-            df.to_excel(writer, sheet_name=sheet_name[:31], index=False)  # Excel sheet name limit
-    
-    return output.getvalue()
+    def classify_expense(description, mapping):
+        desc = description.lower()
+        for category, keywords in mapping.items():
+            for kw in keywords:
+                if kw.lower() in desc:
+                    return category
+        return 'Uncategorized'
 
-def create_pdf_report(report_content):
-    """Create PDF report"""
-    if not FPDF_SUPPORT:
-        st.error("PDF export not available. Please install fpdf.")
-        return None
-        
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    
-    for line in report_content.split('\n'):
-        if len(line) > 80:
-            # Handle long lines
-            words = line.split(' ')
-            current_line = ''
-            for word in words:
-                if len(current_line + word) < 80:
-                    current_line += word + ' '
-                else:
-                    pdf.cell(0, 10, current_line.strip(), ln=True)
-                    current_line = word + ' '
-            if current_line:
-                pdf.cell(0, 10, current_line.strip(), ln=True)
-        else:
-            pdf.cell(0, 10, line, ln=True)
-    
-    return pdf.output(dest='S').encode('latin-1')
+    def send_email_alert(receiver_email, subject, body, sender_email, sender_password, smtp_server, smtp_port=587):
+        """Send email alerts with proper error handling"""
+        try:
+            msg = EmailMessage()
+            msg.set_content(body)
+            msg['Subject'] = subject
+            msg['From'] = sender_email
+            msg['To'] = receiver_email
 
-# ===================== MAIN APPLICATION =====================
+            if 'gmail' in smtp_server.lower():
+                with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+                    server.login(sender_email, sender_password)
+                    server.send_message(msg)
+                    st.success("✅ Email sent successfully!")
+            else:
+                with smtplib.SMTP(smtp_server, smtp_port) as server:
+                    server.starttls()
+                    server.login(sender_email, sender_password)
+                    server.send_message(msg)
+                    st.success("✅ Email sent successfully!")
+            
+            return True
 
-def main():
-    # Header
-    st.markdown('<h1 class="main-header">Finance Hub Pro</h1>', unsafe_allow_html=True)
+        except smtplib.SMTPAuthenticationError:
+            st.error("❌ Authentication Failed - Check your email credentials")
+            if 'gmail' in smtp_server.lower():
+                st.info("📌 Gmail users must use App Passwords, not regular passwords")
+            return False
+        except Exception as e:
+            st.error(f"❌ Email Error: {str(e)}")
+            return False
+
+    def export_to_excel(df):
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Transactions')
+        return output.getvalue()
+
+    def export_to_pdf(text_report):
+        try:
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size=12)
+            
+            lines = text_report.split('\n')
+            for line in lines:
+                if len(line) > 80:
+                    line = line[:77] + "..."
+                pdf.cell(0, 10, line.encode('latin-1', 'replace').decode('latin-1'), ln=True)
+            
+            return bytes(pdf.output(dest='S'), 'latin-1')
+        except Exception as e:
+            st.error(f"PDF generation error: {e}")
+            return b"PDF generation failed"
+
+    # ---------- Main App ----------
     
-    # Sidebar configuration
-    with st.sidebar:
-        st.markdown("### 🎯 Navigation")
-        feature = st.radio(
-            "Select Feature",
-            ["📊 Spending Analysis", "📅 Budget Planner", "📈 Financial Insights", "⚙️ Settings"],
-            index=0
-        )
-        
-        st.markdown("---")
-        st.markdown("### 📁 Data Upload")
-        uploaded_files = st.file_uploader(
-            "Upload bank statements",
-            type=["csv", "pdf", "xlsx"],
-            accept_multiple_files=True,
-            help="Support for CSV, PDF, and Excel files"
-        )
+    st.title("💰 Personal Finance Tracker")
     
-    # Process uploaded files
-    all_data = pd.DataFrame()
+    # File Upload
+    uploaded_files = st.file_uploader(
+        "Upload CSV or PDF bank statements",
+        type=["csv", "pdf"],
+        accept_multiple_files=True
+    )
+
+    data = pd.DataFrame()
     if uploaded_files:
-        progress_bar = st.progress(0)
-        for idx, file in enumerate(uploaded_files):
-            progress = (idx + 1) / len(uploaded_files)
-            progress_bar.progress(progress)
-            
-            file_ext = file.name.split('.')[-1].lower()
-            
-            if file_ext == 'csv':
+        for file in uploaded_files:
+            if file.name.lower().endswith(".csv"):
                 df = process_csv(file)
-            elif file_ext == 'pdf':
+            elif file.name.lower().endswith(".pdf"):
                 df = process_pdf(file)
-            elif file_ext in ['xlsx', 'xls']:
-                try:
-                    df = pd.read_excel(file)
-                    df = process_csv(BytesIO(df.to_csv(index=False).encode()))
-                except:
-                    st.error(f"Could not process {file.name}")
-                    continue
             else:
                 continue
-                
+            
             if not df.empty:
-                df['Source_File'] = file.name
-                all_data = pd.concat([all_data, df], ignore_index=True)
-        
-        progress_bar.empty()
-    
-    # Feature pages
-    if feature == "📊 Spending Analysis":
-        spending_analysis_page(all_data)
-    elif feature == "📅 Budget Planner":
-        budget_planner_page(all_data)
-    elif feature == "📈 Financial Insights":
-        financial_insights_page(all_data)
-    elif feature == "⚙️ Settings":
-        settings_page()
+                data = pd.concat([data, df], ignore_index=True)
 
-def spending_analysis_page(data):
-    """Spending Analysis Feature"""
-    st.header("📊 Spending Analysis")
-    
     if data.empty:
-        st.info("📁 Please upload your bank statements to begin analysis")
+        st.info("📄 Upload your bank CSV or PDF statements to get started.")
         
-        # Demo data option
-        if st.button("Load Demo Data"):
-            data = generate_demo_data()
-            st.session_state['demo_data'] = data
+        # Show sample data format
+        with st.expander("📋 Expected Data Format"):
+            st.markdown("""
+            Your CSV should contain these columns:
+            - **Date** or **TRANS DATE**: Transaction date
+            - **Description** or **DETAILS**: Transaction description
+            - **Amount** or **TOTAL AMOUNT**: Transaction amount
+            
+            The system will automatically detect debits (negative) and credits (positive).
+            """)
+        st.stop()
+
+    # Clean and prepare data
+    data['Date'] = pd.to_datetime(data['Date'], errors='coerce')
+    data = data.dropna(subset=['Date', 'Amount'])
+    data = data.sort_values('Date')
+
+    # ---------- Sidebar Configuration ----------
     
-    if 'demo_data' in st.session_state and data.empty:
-        data = st.session_state['demo_data']
+    st.sidebar.header("⚙️ Settings")
     
-    if not data.empty:
-        # Date range filter
-        col1, col2 = st.columns(2)
-        with col1:
-            start_date = st.date_input(
-                "Start Date",
-                value=data['Date'].min(),
-                min_value=data['Date'].min(),
-                max_value=data['Date'].max()
+    # Categories and Keywords
+    st.sidebar.subheader("🗂 Expense Categories")
+    
+    default_categories = {
+        "Food": ["restaurant", "food", "eat", "cafe", "pizza", "burger", "kfc", "juici"],
+        "Grocery": ["supermarket", "grocery", "hi-lo", "wholesale", "market"],
+        "Utilities": ["jps", "nwc", "flow", "internet", "electricity", "water", "phone"],
+        "Transport": ["gas", "fuel", "uber", "taxi", "bus", "transport"],
+        "Entertainment": ["cinema", "movie", "game", "entertainment", "netflix"],
+        "Shopping": ["store", "shop", "mall", "amazon", "online"],
+        "Healthcare": ["pharmacy", "doctor", "hospital", "medical", "health"],
+        "Income": ["salary", "payment", "deposit", "transfer", "remitly"],
+        "Other": []
+    }
+    
+    CATEGORY_KEYWORDS = {}
+    for category, keywords in default_categories.items():
+        CATEGORY_KEYWORDS[category] = keywords
+
+    # Monthly Budgets
+    st.sidebar.subheader("💸 Monthly Budgets (J$)")
+    MONTHLY_BUDGETS = {}
+    
+    budget_defaults = {
+        "Food": 15000, "Grocery": 10000, "Utilities": 8000,
+        "Transport": 6000, "Entertainment": 3000, "Shopping": 5000,
+        "Healthcare": 2000, "Other": 5000
+    }
+    
+    for category in CATEGORY_KEYWORDS.keys():
+        if category != "Income":
+            MONTHLY_BUDGETS[category] = st.sidebar.number_input(
+                f"{category}",
+                min_value=0,
+                value=budget_defaults.get(category, 5000),
+                step=500,
+                key=f"budget_{category}"
             )
-        with col2:
-            end_date = st.date_input(
-                "End Date",
-                value=data['Date'].max(),
-                min_value=data['Date'].min(),
-                max_value=data['Date'].max()
-            )
-        
-        # Filter data by date range
-        mask = (data['Date'].dt.date >= start_date) & (data['Date'].dt.date <= end_date)
-        filtered_data = data[mask].copy()
-        
-        if filtered_data.empty:
-            st.warning("No data in selected date range")
-            return
-        
-        # Key metrics
-        st.markdown("### 📊 Key Metrics")
-        col1, col2, col3, col4 = st.columns(4)
-        
-        total_income = filtered_data[filtered_data['Type'] == 'Credit']['Amount'].sum()
-        total_expense = filtered_data[filtered_data['Type'] == 'Debit']['Amount'].sum()
-        net_flow = total_income - total_expense
-        num_transactions = len(filtered_data)
-        
-        with col1:
-            st.metric("Total Income", f"${total_income:,.2f}", delta=None)
-        with col2:
-            st.metric("Total Expenses", f"${total_expense:,.2f}", delta=None)
-        with col3:
-            delta_color = "normal" if net_flow >= 0 else "inverse"
-            st.metric("Net Flow", f"${net_flow:,.2f}", delta=f"${net_flow:,.2f}", delta_color=delta_color)
-        with col4:
-            st.metric("Transactions", f"{num_transactions:,}", delta=None)
-        
-        # Categorize expenses
-        st.markdown("### 🏷️ Expense Categories")
-        
-        # Default categories
-        if 'categories' not in st.session_state:
-            st.session_state['categories'] = {
-                "Food & Dining": ["restaurant", "cafe", "food", "dining", "lunch", "dinner", "breakfast"],
-                "Groceries": ["grocery", "supermarket", "market", "walmart", "target"],
-                "Transport": ["uber", "lyft", "gas", "fuel", "parking", "transit"],
-                "Utilities": ["electric", "water", "internet", "phone", "utility"],
-                "Entertainment": ["movie", "netflix", "spotify", "game", "entertainment"],
-                "Shopping": ["amazon", "shop", "store", "mall"],
-                "Healthcare": ["pharmacy", "doctor", "hospital", "medical"],
-                "Other": []
-            }
-        
-        # Categorize transactions
-        filtered_data['Category'] = filtered_data['Description'].apply(
-            lambda x: classify_expense(x, st.session_state['categories'])
+
+    # Savings Goal
+    st.sidebar.subheader("🎯 Monthly Savings Goal")
+    SAVINGS_GOAL = st.sidebar.number_input(
+        "Target Amount (J$)",
+        min_value=0,
+        value=10000,
+        step=500
+    )
+
+    # Email Settings
+    st.sidebar.subheader("📧 Email Alerts")
+    enable_email = st.sidebar.checkbox("Enable Email Notifications")
+    
+    if enable_email:
+        email_provider = st.sidebar.selectbox(
+            "Provider",
+            ["Gmail", "Outlook", "Yahoo", "Custom"]
         )
         
-        # Spending by category
-        expense_data = filtered_data[filtered_data['Type'] == 'Debit']
-        if not expense_data.empty:
-            category_summary = expense_data.groupby('Category')['Amount'].agg(['sum', 'count', 'mean']).reset_index()
-            category_summary.columns = ['Category', 'Total', 'Count', 'Average']
-            category_summary = category_summary.sort_values('Total', ascending=False)
-            
-            # Visualizations
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                fig = px.pie(
-                    category_summary,
-                    values='Total',
-                    names='Category',
-                    title='Spending Distribution',
-                    hole=0.4
-                )
-                fig.update_traces(textposition='inside', textinfo='percent+label')
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with col2:
-                fig = px.bar(
-                    category_summary.head(10),
-                    x='Total',
-                    y='Category',
-                    orientation='h',
-                    title='Top 10 Spending Categories',
-                    text='Total'
-                )
-                fig.update_traces(texttemplate='$%{text:,.0f}', textposition='outside')
-                st.plotly_chart(fig, use_container_width=True)
-            
-            # Monthly trend
-            st.markdown("### 📅 Monthly Trends")
-            
-            monthly_data = filtered_data.copy()
-            monthly_data['Month'] = monthly_data['Date'].dt.to_period('M')
-            monthly_summary = monthly_data.groupby(['Month', 'Type'])['Amount'].sum().reset_index()
-            monthly_summary['Month'] = monthly_data['Month'].astype(str)
-            
-            fig = px.line(
-                monthly_summary,
-                x='Month',
-                y='Amount',
-                color='Type',
-                title='Income vs Expenses Over Time',
-                markers=True
-            )
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Transaction details
-            st.markdown("### 📋 Transaction Details")
-            
-            # Search and filter
-            search_term = st.text_input("Search transactions", placeholder="Enter keywords...")
-            
-            display_data = filtered_data.copy()
-            if search_term:
-                mask = display_data['Description'].str.contains(search_term, case=False, na=False)
-                display_data = display_data[mask]
-            
-            # Sort options
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                sort_by = st.selectbox("Sort by", ['Date', 'Amount', 'Description', 'Category'])
-            with col2:
-                sort_order = st.radio("Order", ['Descending', 'Ascending'])
-            
-            ascending = sort_order == 'Ascending'
-            display_data = display_data.sort_values(sort_by, ascending=ascending)
-            
-            # Display transactions
-            st.dataframe(
-                display_data[['Date', 'Description', 'Amount', 'Type', 'Category']].style.format({
-                    'Date': lambda x: x.strftime('%Y-%m-%d'),
-                    'Amount': '${:,.2f}'
-                }),
-                use_container_width=True
-            )
-            
-            # Export options
-            st.markdown("### 💾 Export Data")
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                if st.button("📊 Export to Excel"):
-                    excel_data = export_to_excel({
-                        'Transactions': display_data,
-                        'Category_Summary': category_summary,
-                        'Monthly_Summary': monthly_summary
-                    })
-                    if excel_data:
-                        st.download_button(
-                            label="Download Excel File",
-                            data=excel_data,
-                            file_name=f"financial_report_{datetime.datetime.now().strftime('%Y%m%d')}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
-            
-            with col2:
-                if st.button("📄 Export to CSV"):
-                    csv = display_data.to_csv(index=False)
-                    st.download_button(
-                        label="Download CSV File",
-                        data=csv,
-                        file_name=f"transactions_{datetime.datetime.now().strftime('%Y%m%d')}.csv",
-                        mime="text/csv"
-                    )
-            
-            with col3:
-                if st.button("📑 Generate PDF Report"):
-                    report = generate_text_report(display_data, category_summary)
-                    pdf_data = create_pdf_report(report)
-                    if pdf_data:
-                        st.download_button(
-                            label="Download PDF Report",
-                            data=pdf_data,
-                            file_name=f"report_{datetime.datetime.now().strftime('%Y%m%d')}.pdf",
-                            mime="application/pdf"
-                        )
+        if email_provider == "Gmail":
+            smtp_server = "smtp.gmail.com"
+            smtp_port = 465
+            st.sidebar.info("⚠️ Use App Password, not regular password")
+        elif email_provider == "Outlook":
+            smtp_server = "smtp-mail.outlook.com"
+            smtp_port = 587
+        elif email_provider == "Yahoo":
+            smtp_server = "smtp.mail.yahoo.com"
+            smtp_port = 587
+        else:
+            smtp_server = st.sidebar.text_input("SMTP Server")
+            smtp_port = st.sidebar.number_input("Port", value=587)
+        
+        sender_email = st.sidebar.text_input("Your Email")
+        sender_password = st.sidebar.text_input("Password", type="password")
+        notify_email = st.sidebar.text_input("Send Alerts To")
 
-def budget_planner_page(data):
-    """Budget Planning Feature"""
-    st.header("📅 Budget Planner")
+    # ---------- Data Analysis ----------
     
-    # Budget setup
-    st.markdown("### 💰 Set Your Budget")
+    # Add month and year columns
+    data['Year'] = data['Date'].dt.year
+    data['Month'] = data['Date'].dt.month
+    data['Month-Year'] = data['Date'].dt.strftime('%B %Y')
+    data['Month-Name'] = data['Date'].dt.strftime('%B')
     
-    if 'budgets' not in st.session_state:
-        st.session_state['budgets'] = {}
+    # Classify expenses
+    data['Spending Category'] = data['Description'].apply(
+        lambda d: classify_expense(d, CATEGORY_KEYWORDS)
+    )
+
+    # ---------- Overview Section ----------
     
-    # Get categories from session state or use defaults
-    categories = st.session_state.get('categories', {
-        "Food & Dining": [],
-        "Groceries": [],
-        "Transport": [],
-        "Utilities": [],
-        "Entertainment": [],
-        "Shopping": [],
-        "Healthcare": [],
-        "Other": []
-    })
+    st.header("📊 Financial Overview")
     
-    # Budget input form
-    col1, col2 = st.columns(2)
+    col1, col2, col3, col4 = st.columns(4)
+    
+    total_income = data[data['Category'] == 'Credit']['Amount'].sum()
+    total_spending = data[data['Category'] == 'Debit']['Amount'].sum()
+    net_flow = total_income - total_spending
+    num_transactions = len(data)
     
     with col1:
-        st.markdown("#### Monthly Budgets")
-        for category in categories.keys():
-            budget_key = f"budget_{category}"
-            default_value = st.session_state['budgets'].get(category, 0)
-            st.session_state['budgets'][category] = st.number_input(
-                f"{category}",
-                min_value=0.0,
-                value=float(default_value),
-                step=50.0,
-                key=budget_key
-            )
-    
+        st.metric("💰 Total Income", f"J${total_income:,.0f}")
     with col2:
-        st.markdown("#### Budget vs Actual")
-        if not data.empty:
-            # Calculate actual spending for current month
-            current_month = datetime.datetime.now().month
-            current_year = datetime.datetime.now().year
-            
-            month_data = data[
-                (data['Date'].dt.month == current_month) &
-                (data['Date'].dt.year == current_year) &
-                (data['Type'] == 'Debit')
-            ].copy()
-            
-            if not month_data.empty:
-                month_data['Category'] = month_data['Description'].apply(
-                    lambda x: classify_expense(x, categories)
-                )
-                
-                actual_spending = month_data.groupby('Category')['Amount'].sum().to_dict()
-                
-                # Create comparison dataframe
-                comparison_data = []
-                for category, budget in st.session_state['budgets'].items():
-                    actual = actual_spending.get(category, 0)
-                    remaining = budget - actual
-                    percentage = (actual / budget * 100) if budget > 0 else 0
-                    
-                    comparison_data.append({
-                        'Category': category,
-                        'Budget': budget,
-                        'Actual': actual,
-                        'Remaining': remaining,
-                        'Usage %': percentage
-                    })
-                
-                comparison_df = pd.DataFrame(comparison_data)
-                
-                # Display metrics
-                for _, row in comparison_df.iterrows():
-                    color = "🟢" if row['Remaining'] >= 0 else "🔴"
-                    st.write(f"{color} **{row['Category']}**: ${row['Actual']:.2f} / ${row['Budget']:.2f} ({row['Usage %']:.1f}%)")
-            else:
-                st.info("No spending data for current month")
-        else:
-            st.info("Upload data to see budget vs actual comparison")
+        st.metric("💸 Total Spending", f"J${total_spending:,.0f}")
+    with col3:
+        st.metric("📈 Net Flow", f"J${net_flow:,.0f}")
+    with col4:
+        st.metric("📝 Transactions", f"{num_transactions:,}")
+
+    # ---------- Trend Analysis ----------
     
-    # Budget visualization
-    if st.session_state['budgets'] and any(v > 0 for v in st.session_state['budgets'].values()):
-        st.markdown("### 📊 Budget Overview")
-        
-        budget_df = pd.DataFrame([
-            {'Category': k, 'Budget': v}
-            for k, v in st.session_state['budgets'].items()
-            if v > 0
-        ])
-        
-        fig = px.bar(
-            budget_df,
-            x='Category',
-            y='Budget',
-            title='Monthly Budget Allocation',
-            text='Budget'
+    st.header("📈 Spending Trends")
+    
+    # Get available months
+    available_months = sorted(data['Month-Year'].unique(), 
+                            key=lambda x: pd.to_datetime(x, format='%B %Y'))
+    
+    if len(available_months) > 0:
+        # Period selection
+        period_type = st.radio(
+            "Select Analysis Period",
+            ["All Time", "Specific Months", "Last 3 Months", "Last 6 Months"]
         )
-        fig.update_traces(texttemplate='$%{text:,.0f}', textposition='outside')
-        st.plotly_chart(fig, use_container_width=True)
         
-        # Savings goal
-        st.markdown("### 🎯 Savings Goal")
+        if period_type == "All Time":
+            trend_data = data.copy()
+        elif period_type == "Specific Months":
+            selected_months = st.multiselect(
+                "Select months to analyze",
+                options=available_months,
+                default=available_months[-2:] if len(available_months) >= 2 else available_months
+            )
+            trend_data = data[data['Month-Year'].isin(selected_months)]
+        elif period_type == "Last 3 Months":
+            last_3_months = available_months[-3:] if len(available_months) >= 3 else available_months
+            trend_data = data[data['Month-Year'].isin(last_3_months)]
+        else:  # Last 6 Months
+            last_6_months = available_months[-6:] if len(available_months) >= 6 else available_months
+            trend_data = data[data['Month-Year'].isin(last_6_months)]
+        
+        if not trend_data.empty:
+            # Create monthly summary
+            monthly_summary = trend_data.groupby(['Month-Year', 'Category'])['Amount'].sum().unstack(fill_value=0)
+            
+            # Ensure columns exist
+            if 'Credit' not in monthly_summary.columns:
+                monthly_summary['Credit'] = 0
+            if 'Debit' not in monthly_summary.columns:
+                monthly_summary['Debit'] = 0
+            
+            monthly_summary['Net Flow'] = monthly_summary['Credit'] - monthly_summary['Debit']
+            monthly_summary = monthly_summary.reset_index()
+            
+            # Sort by date
+            monthly_summary['Date_Sort'] = pd.to_datetime(monthly_summary['Month-Year'], format='%B %Y')
+            monthly_summary = monthly_summary.sort_values('Date_Sort')
+            
+            # Create the chart
+            fig = px.bar(
+                monthly_summary,
+                x='Month-Year',
+                y=['Credit', 'Debit'],
+                barmode='group',
+                title="Income vs Spending by Month",
+                labels={'value': 'Amount (J$)', 'variable': 'Type'},
+                color_discrete_map={'Credit': 'green', 'Debit': 'red'}
+            )
+            fig.update_layout(yaxis_tickprefix="J$", height=400)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Net flow line chart
+            fig_net = px.line(
+                monthly_summary,
+                x='Month-Year',
+                y='Net Flow',
+                title="Monthly Net Cash Flow",
+                markers=True
+            )
+            fig_net.update_layout(yaxis_tickprefix="J$", height=350)
+            fig_net.add_hline(y=0, line_dash="dash", line_color="gray")
+            st.plotly_chart(fig_net, use_container_width=True)
+
+    # ---------- Detailed Monthly Analysis ----------
+    
+    st.header("📅 Monthly Analysis")
+    
+    available_months_list = sorted(data['Month-Name'].unique(), 
+                                  key=lambda x: list(calendar.month_name).index(x))
+    
+    selected_month = st.selectbox("Select Month", available_months_list)
+    
+    # Filter for selected month
+    month_data = data[data['Month-Name'] == selected_month].copy()
+    
+    if not month_data.empty:
+        # Month metrics
         col1, col2, col3 = st.columns(3)
         
+        month_income = month_data[month_data['Category'] == 'Credit']['Amount'].sum()
+        month_spending = month_data[month_data['Category'] == 'Debit']['Amount'].sum()
+        month_savings = month_income - month_spending
+        
         with col1:
-            monthly_income = st.number_input(
-                "Expected Monthly Income",
-                min_value=0.0,
-                value=0.0,
-                step=100.0
-            )
-        
+            st.metric(f"Income - {selected_month}", f"J${month_income:,.0f}")
         with col2:
-            total_budget = sum(st.session_state['budgets'].values())
-            expected_savings = monthly_income - total_budget
-            st.metric(
-                "Expected Savings",
-                f"${expected_savings:,.2f}",
-                delta=f"{(expected_savings/monthly_income*100) if monthly_income > 0 else 0:.1f}% of income"
-            )
-        
+            st.metric(f"Spending - {selected_month}", f"J${month_spending:,.0f}")
         with col3:
-            savings_goal = st.number_input(
-                "Savings Goal",
-                min_value=0.0,
-                value=max(0.0, expected_savings),
-                step=50.0
+            delta_color = "normal" if month_savings >= 0 else "inverse"
+            st.metric(f"Savings - {selected_month}", f"J${month_savings:,.0f}",
+                     delta=f"Goal: J${SAVINGS_GOAL:,.0f}", delta_color=delta_color)
+        
+        # Spending breakdown
+        st.subheader(f"💸 Spending Breakdown - {selected_month}")
+        
+        spending_data = month_data[month_data['Category'] == 'Debit']
+        
+        if not spending_data.empty:
+            category_summary = spending_data.groupby('Spending Category')['Amount'].sum().reset_index()
+            category_summary = category_summary.sort_values('Amount', ascending=False)
+            category_summary['Percentage'] = 100 * category_summary['Amount'] / category_summary['Amount'].sum()
+            
+            # Pie chart
+            fig_pie = px.pie(
+                category_summary,
+                values='Amount',
+                names='Spending Category',
+                title=f"Spending Distribution - {selected_month}",
+                hole=0.4
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
+            
+            # Budget comparison
+            st.subheader("📊 Budget vs Actual")
+            
+            budget_comparison = []
+            for category in MONTHLY_BUDGETS.keys():
+                # Get actual spending for this category
+                category_spending = category_summary[category_summary['Spending Category'] == category]
+                if not category_spending.empty:
+                    actual = category_spending['Amount'].iloc[0]
+                else:
+                    actual = 0  # No spending in this category
+                
+                budget = MONTHLY_BUDGETS[category]
+                budget_comparison.append({
+                    'Category': category,
+                    'Budget': budget,
+                    'Actual': actual,
+                    'Difference': budget - actual,
+                    'Status': '✅' if actual <= budget else '⚠️'
+                })
+            
+            budget_df = pd.DataFrame(budget_comparison)
+            
+            # Display budget table
+            st.dataframe(
+                budget_df.style.format({
+                    'Budget': 'J${:,.0f}',
+                    'Actual': 'J${:,.0f}',
+                    'Difference': 'J${:,.0f}'
+                }).apply(lambda x: ['background-color: #ffcccc' if '⚠️' in str(v) else '' for v in x], 
+                        subset=['Status'])
             )
             
-            if savings_goal > expected_savings:
-                st.warning(f"⚠️ Need to reduce spending by ${savings_goal - expected_savings:,.2f} to meet goal")
-
-def financial_insights_page(data):
-    """Financial Insights and Analytics"""
-    st.header("📈 Financial Insights")
-    
-    if data.empty:
-        st.info("📁 Upload data to see financial insights")
-        return
-    
-    # Prepare data
-    data['Month'] = data['Date'].dt.to_period('M')
-    data['DayOfWeek'] = data['Date'].dt.day_name()
-    data['Hour'] = data['Date'].dt.hour if 'Time' in data.columns else 12  # Default to noon if no time
-    
-    # Insights tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["🔍 Spending Patterns", "📊 Trends", "🎯 Anomalies", "💡 Recommendations"])
-    
-    with tab1:
-        st.markdown("### Spending Patterns Analysis")
-        
-        # Day of week analysis
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            dow_spending = data[data['Type'] == 'Debit'].groupby('DayOfWeek')['Amount'].agg(['sum', 'mean', 'count']).reset_index()
+            # Budget chart - reshape data for proper display
+            budget_chart_data = []
+            for _, row in budget_df.iterrows():
+                budget_chart_data.append({
+                    'Category': row['Category'],
+                    'Type': 'Budget',
+                    'Amount': row['Budget']
+                })
+                budget_chart_data.append({
+                    'Category': row['Category'],
+                    'Type': 'Actual',
+                    'Amount': row['Actual']
+                })
             
-            # Order days properly
-            day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-            dow_spending['DayOfWeek'] = pd.Categorical(dow_spending['DayOfWeek'], categories=day_order, ordered=True)
-            dow_spending = dow_spending.sort_values('DayOfWeek')
+            budget_chart_df = pd.DataFrame(budget_chart_data)
             
-            fig = px.bar(
-                dow_spending,
-                x='DayOfWeek',
-                y='sum',
-                title='Spending by Day of Week',
-                labels={'sum': 'Total Spending ($)', 'DayOfWeek': 'Day'}
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            # Top merchants/descriptions
-            top_merchants = data[data['Type'] == 'Debit'].groupby('Description')['Amount'].sum().nlargest(10).reset_index()
-            
-            fig = px.bar(
-                top_merchants,
-                y='Description',
-                x='Amount',
-                orientation='h',
-                title='Top 10 Merchants/Vendors',
-                labels={'Amount': 'Total Spent ($)'}
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        
-        # Spending velocity
-        st.markdown("### 💨 Spending Velocity")
-        
-        daily_spending = data[data['Type'] == 'Debit'].groupby(data['Date'].dt.date)['Amount'].sum().reset_index()
-        daily_spending.columns = ['Date', 'Amount']
-        
-        # Calculate moving average
-        daily_spending['MA7'] = daily_spending['Amount'].rolling(window=7, min_periods=1).mean()
-        daily_spending['MA30'] = daily_spending['Amount'].rolling(window=30, min_periods=1).mean()
-        
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=daily_spending['Date'],
-            y=daily_spending['Amount'],
-            mode='lines',
-            name='Daily Spending',
-            line=dict(color='lightgray', width=1)
-        ))
-        fig.add_trace(go.Scatter(
-            x=daily_spending['Date'],
-            y=daily_spending['MA7'],
-            mode='lines',
-            name='7-Day Average',
-            line=dict(color='blue', width=2)
-        ))
-        fig.add_trace(go.Scatter(
-            x=daily_spending['Date'],
-            y=daily_spending['MA30'],
-            mode='lines',
-            name='30-Day Average',
-            line=dict(color='red', width=2)
-        ))
-        
-        fig.update_layout(title='Spending Velocity Over Time', xaxis_title='Date', yaxis_title='Amount ($)')
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with tab2:
-        st.markdown("### 📈 Financial Trends")
-        
-        # Monthly comparison
-        monthly_summary = data.groupby(['Month', 'Type'])['Amount'].sum().reset_index()
-        monthly_summary['Month'] = monthly_summary['Month'].astype(str)
-        
-        # Pivot for better visualization
-        monthly_pivot = monthly_summary.pivot(index='Month', columns='Type', values='Amount').fillna(0)
-        monthly_pivot['Net'] = monthly_pivot.get('Credit', 0) - monthly_pivot.get('Debit', 0)
-        monthly_pivot = monthly_pivot.reset_index()
-        
-        fig = go.Figure()
-        
-        if 'Credit' in monthly_pivot.columns:
-            fig.add_trace(go.Bar(name='Income', x=monthly_pivot['Month'], y=monthly_pivot['Credit'], marker_color='green'))
-        if 'Debit' in monthly_pivot.columns:
-            fig.add_trace(go.Bar(name='Expenses', x=monthly_pivot['Month'], y=monthly_pivot['Debit'], marker_color='red'))
-        
-        fig.add_trace(go.Scatter(
-            name='Net Flow',
-            x=monthly_pivot['Month'],
-            y=monthly_pivot['Net'],
-            mode='lines+markers',
-            marker_color='blue',
-            yaxis='y2'
-        ))
-        
-        fig.update_layout(
-            title='Monthly Financial Flow',
-            xaxis_title='Month',
-            yaxis_title='Amount ($)',
-            yaxis2=dict(title='Net Flow ($)', overlaying='y', side='right'),
-            barmode='group'
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Year-over-year comparison if multiple years
-        if data['Date'].dt.year.nunique() > 1:
-            st.markdown("### 📅 Year-over-Year Comparison")
-            
-            yearly_data = data.groupby([data['Date'].dt.year, 'Type'])['Amount'].sum().reset_index()
-            yearly_data.columns = ['Year', 'Type', 'Amount']
-            
-            fig = px.bar(
-                yearly_data,
-                x='Year',
+            fig_budget = px.bar(
+                budget_chart_df,
+                x='Category',
                 y='Amount',
                 color='Type',
                 barmode='group',
-                title='Yearly Income vs Expenses'
+                title="Budget vs Actual Spending",
+                color_discrete_map={'Budget': 'lightblue', 'Actual': 'orange'}
             )
-            st.plotly_chart(fig, use_container_width=True)
-    
-    with tab3:
-        st.markdown("### 🎯 Anomaly Detection")
-        
-        # Detect unusual transactions
-        expense_data = data[data['Type'] == 'Debit']['Amount']
-        
-        if not expense_data.empty:
-            mean_expense = expense_data.mean()
-            std_expense = expense_data.std()
+            fig_budget.update_layout(yaxis_tickprefix="J$")
+            st.plotly_chart(fig_budget, use_container_width=True)
             
-            # Define anomalies as transactions > 2 standard deviations from mean
-            threshold = mean_expense + (2 * std_expense)
-            
-            anomalies = data[(data['Type'] == 'Debit') & (data['Amount'] > threshold)].copy()
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Average Transaction", f"${mean_expense:.2f}")
-            with col2:
-                st.metric("Anomaly Threshold", f"${threshold:.2f}")
-            with col3:
-                st.metric("Anomalies Found", len(anomalies))
-            
-            if not anomalies.empty:
-                st.markdown("#### 🚨 Unusual Transactions")
-                st.dataframe(
-                    anomalies[['Date', 'Description', 'Amount']].style.format({
-                        'Date': lambda x: x.strftime('%Y-%m-%d'),
-                        'Amount': '${:,.2f}'
-                    }),
-                    use_container_width=True
-                )
+            # Alerts
+            over_budget = budget_df[budget_df['Difference'] < 0]
+            if not over_budget.empty or month_savings < SAVINGS_GOAL:
+                st.warning("⚠️ Financial Alerts Detected!")
                 
-                # Anomaly timeline
-                fig = px.scatter(
-                    data[data['Type'] == 'Debit'],
-                    x='Date',
-                    y='Amount',
-                    color=data[data['Type'] == 'Debit']['Amount'].apply(
-                        lambda x: 'Anomaly' if x > threshold else 'Normal'
-                    ),
-                    title='Transaction Anomalies Over Time',
-                    color_discrete_map={'Anomaly': 'red', 'Normal': 'blue'}
-                )
-                fig.add_hline(y=threshold, line_dash="dash", line_color="orange", annotation_text="Anomaly Threshold")
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.success("✅ No unusual transactions detected")
-    
-    with tab4:
-        st.markdown("### 💡 Smart Recommendations")
+                if not over_budget.empty:
+                    st.write("**Over Budget Categories:**")
+                    for _, row in over_budget.iterrows():
+                        st.write(f"- {row['Category']}: Over by J${-row['Difference']:,.0f}")
+                
+                if month_savings < SAVINGS_GOAL:
+                    st.write(f"**Savings Alert:** Short of goal by J${SAVINGS_GOAL - month_savings:,.0f}")
+                
+                # Email alert option
+                if enable_email and notify_email and sender_email and sender_password:
+                    if st.button("📧 Send Alert Email"):
+                        alert_body = f"Finance Alert for {selected_month}\n\n"
+                        
+                        if not over_budget.empty:
+                            alert_body += "OVER BUDGET:\n"
+                            for _, row in over_budget.iterrows():
+                                alert_body += f"- {row['Category']}: Over by J${-row['Difference']:,.0f}\n"
+                        
+                        if month_savings < SAVINGS_GOAL:
+                            alert_body += f"\nSAVINGS: Short of goal by J${SAVINGS_GOAL - month_savings:,.0f}"
+                        
+                        send_email_alert(
+                            notify_email,
+                            f"Finance Alert - {selected_month}",
+                            alert_body,
+                            sender_email,
+                            sender_password,
+                            smtp_server,
+                            smtp_port
+                        )
         
-        # Calculate insights
-        total_income = data[data['Type'] == 'Credit']['Amount'].sum()
-        total_expenses = data[data['Type'] == 'Debit']['Amount'].sum()
-        savings_rate = ((total_income - total_expenses) / total_income * 100) if total_income > 0 else 0
-        
-        # Categorize expenses for recommendations
-        if 'categories' in st.session_state:
-            expense_data = data[data['Type'] == 'Debit'].copy()
-            expense_data['Category'] = expense_data['Description'].apply(
-                lambda x: classify_expense(x, st.session_state['categories'])
+        # Transaction details
+        with st.expander(f"📝 View All Transactions - {selected_month}"):
+            st.dataframe(
+                month_data[['Date', 'Description', 'Amount', 'Category', 'Spending Category']]
+                .sort_values('Date', ascending=False)
+                .style.format({'Amount': 'J${:,.2f}'})
             )
-            category_spending = expense_data.groupby('Category')['Amount'].sum().sort_values(ascending=False)
-            
-            # Generate recommendations
-            recommendations = []
-            
-            # Savings rate recommendation
-            if savings_rate < 10:
-                recommendations.append({
-                    'Priority': 'High',
-                    'Area': 'Savings',
-                    'Recommendation': f'Your savings rate is {savings_rate:.1f}%. Aim for at least 20% by reducing discretionary spending.'
-                })
-            elif savings_rate < 20:
-                recommendations.append({
-                    'Priority': 'Medium',
-                    'Area': 'Savings',
-                    'Recommendation': f'Good job! Your savings rate is {savings_rate:.1f}%. Try to reach 20% for better financial security.'
-                })
-            else:
-                recommendations.append({
-                    'Priority': 'Low',
-                    'Area': 'Savings',
-                    'Recommendation': f'Excellent! Your savings rate is {savings_rate:.1f}%. Consider investing surplus funds.'
-                })
-            
-            # Category-specific recommendations
-            if not category_spending.empty:
-                top_category = category_spending.index[0]
-                top_amount = category_spending.iloc[0]
-                percentage = (top_amount / total_expenses * 100) if total_expenses > 0 else 0
-                
-                if percentage > 30:
-                    recommendations.append({
-                        'Priority': 'High',
-                        'Area': top_category,
-                        'Recommendation': f'{top_category} accounts for {percentage:.1f}% of spending. Consider setting a stricter budget.'
-                    })
-                
-                # Check for subscription-like patterns
-                recurring = detect_recurring_transactions(data)
-                if recurring:
-                    total_recurring = sum(t['amount'] for t in recurring)
-                    recommendations.append({
-                        'Priority': 'Medium',
-                        'Area': 'Subscriptions',
-                        'Recommendation': f'Found {len(recurring)} recurring charges totaling ${total_recurring:.2f}/month. Review and cancel unused services.'
-                    })
-            
-            # Display recommendations
-            for rec in recommendations:
-                priority_color = {'High': '🔴', 'Medium': '🟡', 'Low': '🟢'}
-                st.markdown(f"{priority_color[rec['Priority']]} **{rec['Area']}**: {rec['Recommendation']}")
-            
-            # Opportunity analysis
-            st.markdown("### 💰 Savings Opportunities")
-            
-            if not category_spending.empty:
-                # Calculate potential savings (10% reduction in top 3 categories)
-                top_3_categories = category_spending.head(3)
-                potential_savings = top_3_categories.sum() * 0.1
-                
-                st.info(f"💡 Reducing spending in your top 3 categories by 10% could save you **${potential_savings:.2f}** per month")
-                
-                # Show breakdown
-                savings_breakdown = pd.DataFrame({
-                    'Category': top_3_categories.index,
-                    'Current Spending': top_3_categories.values,
-                    'Potential Savings (10%)': top_3_categories.values * 0.1
-                })
-                
-                st.dataframe(
-                    savings_breakdown.style.format({
-                        'Current Spending': '${:,.2f}',
-                        'Potential Savings (10%)': '${:,.2f}'
-                    }),
-                    use_container_width=True
-                )
-
-def settings_page():
-    """Settings and Configuration Page"""
-    st.header("⚙️ Settings")
-    
-    # Category Management
-    st.markdown("### 🏷️ Category Management")
-    
-    if 'categories' not in st.session_state:
-        st.session_state['categories'] = {
-            "Food & Dining": ["restaurant", "cafe", "food", "dining"],
-            "Groceries": ["grocery", "supermarket", "market"],
-            "Transport": ["uber", "lyft", "gas", "fuel"],
-            "Utilities": ["electric", "water", "internet", "phone"],
-            "Entertainment": ["movie", "netflix", "spotify", "game"],
-            "Shopping": ["amazon", "shop", "store", "mall"],
-            "Healthcare": ["pharmacy", "doctor", "hospital"],
-            "Other": []
-        }
-    
-    # Add new category
-    with st.expander("➕ Add New Category"):
-        new_category = st.text_input("Category Name")
-        new_keywords = st.text_area("Keywords (comma-separated)")
         
-        if st.button("Add Category"):
-            if new_category and new_category not in st.session_state['categories']:
-                keywords = [k.strip().lower() for k in new_keywords.split(',') if k.strip()]
-                st.session_state['categories'][new_category] = keywords
-                st.success(f"✅ Added category: {new_category}")
-                st.rerun()
-    
-    # Edit existing categories
-    st.markdown("#### Edit Categories")
-    
-    for category, keywords in st.session_state['categories'].items():
-        with st.expander(f"📝 {category}"):
-            # Edit keywords
-            updated_keywords = st.text_area(
-                "Keywords",
-                value=', '.join(keywords),
-                key=f"edit_{category}"
-            )
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button(f"Update", key=f"update_{category}"):
-                    st.session_state['categories'][category] = [
-                        k.strip().lower() for k in updated_keywords.split(',') if k.strip()
-                    ]
-                    st.success(f"✅ Updated {category}")
-                    st.rerun()
-            
-            with col2:
-                if category != "Other":  # Don't allow deleting "Other" category
-                    if st.button(f"Delete", key=f"delete_{category}"):
-                        del st.session_state['categories'][category]
-                        st.success(f"✅ Deleted {category}")
-                        st.rerun()
-    
-    # Data Management
-    st.markdown("### 📊 Data Management")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("🗑️ Clear All Data"):
-            if 'data' in st.session_state:
-                del st.session_state['data']
-            if 'demo_data' in st.session_state:
-                del st.session_state['demo_data']
-            st.success("✅ All data cleared")
-    
-    with col2:
-        if st.button("🔄 Reset Categories to Default"):
-            st.session_state['categories'] = {
-                "Food & Dining": ["restaurant", "cafe", "food", "dining"],
-                "Groceries": ["grocery", "supermarket", "market"],
-                "Transport": ["uber", "lyft", "gas", "fuel"],
-                "Utilities": ["electric", "water", "internet", "phone"],
-                "Entertainment": ["movie", "netflix", "spotify", "game"],
-                "Shopping": ["amazon", "shop", "store", "mall"],
-                "Healthcare": ["pharmacy", "doctor", "hospital"],
-                "Other": []
-            }
-            st.success("✅ Categories reset to default")
-            st.rerun()
-    
-    # Export/Import Settings
-    st.markdown("### 💾 Export/Import Settings")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("📥 Export Settings"):
-            settings = {
-                'categories': st.session_state.get('categories', {}),
-                'budgets': st.session_state.get('budgets', {})
-            }
-            settings_json = pd.Series(settings).to_json()
+        # Export options
+        st.subheader("📤 Export Data")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            excel_data = export_to_excel(month_data)
             st.download_button(
-                label="Download Settings",
-                data=settings_json,
-                file_name="finance_hub_settings.json",
-                mime="application/json"
+                "📊 Download Excel",
+                data=excel_data,
+                file_name=f"Finance_{selected_month}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
+        
+        with col2:
+            # Create text report
+            report = f"Finance Report - {selected_month}\n"
+            report += "=" * 50 + "\n\n"
+            report += f"Total Income: J${month_income:,.2f}\n"
+            report += f"Total Spending: J${month_spending:,.2f}\n"
+            report += f"Net Savings: J${month_savings:,.2f}\n"
+            report += f"Savings Goal: J${SAVINGS_GOAL:,.2f}\n\n"
+            
+            if not spending_data.empty:
+                report += "SPENDING BY CATEGORY:\n"
+                for _, row in category_summary.iterrows():
+                    report += f"- {row['Spending Category']}: J${row['Amount']:,.2f} ({row['Percentage']:.1f}%)\n"
+            
+            pdf_data = export_to_pdf(report)
+            st.download_button(
+                "📄 Download PDF",
+                data=pdf_data,
+                file_name=f"Finance_{selected_month}.pdf",
+                mime="application/pdf"
+            )
+
+elif option == "📅 Budget Planner":
+    st.markdown("## 📅 Budget Planner")
+    
+    st.info("💡 Create and manage your monthly budget plan")
+    
+    # Budget creation form
+    st.subheader("Create Monthly Budget")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 💰 Income")
+        salary = st.number_input("Monthly Salary", min_value=0, value=50000, step=1000)
+        other_income = st.number_input("Other Income", min_value=0, value=0, step=500)
+        total_income = salary + other_income
+        st.metric("Total Income", f"J${total_income:,.0f}")
     
     with col2:
-        uploaded_settings = st.file_uploader("Upload Settings", type=['json'])
-        if uploaded_settings:
-            try:
-                settings = pd.read_json(uploaded_settings, typ='series').to_dict()
-                st.session_state['categories'] = settings.get('categories', {})
-                st.session_state['budgets'] = settings.get('budgets', {})
-                st.success("✅ Settings imported successfully")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Error importing settings: {str(e)}")
-
-def generate_demo_data():
-    """Generate demo transaction data for testing"""
-    import random
-    from datetime import timedelta
-    
-    # Demo merchants and categories
-    merchants = {
-        'Food & Dining': ['Starbucks', 'McDonalds', 'Pizza Hut', 'Subway', 'Chipotle'],
-        'Groceries': ['Walmart', 'Target', 'Whole Foods', 'Kroger'],
-        'Transport': ['Uber', 'Lyft', 'Shell Gas', 'BP Gas'],
-        'Utilities': ['Electric Company', 'Water Utility', 'Internet Provider'],
-        'Entertainment': ['Netflix', 'Spotify', 'AMC Theaters', 'Steam Games'],
-        'Shopping': ['Amazon', 'Best Buy', 'Nike Store', 'Apple Store']
-    }
-    
-    # Generate transactions
-    transactions = []
-    start_date = datetime.datetime.now() - timedelta(days=180)
-    
-    for i in range(500):
-        date = start_date + timedelta(days=random.randint(0, 180))
+        st.markdown("### 💸 Expenses")
+        rent = st.number_input("Rent/Mortgage", min_value=0, value=15000, step=1000)
+        utilities = st.number_input("Utilities", min_value=0, value=8000, step=500)
+        food = st.number_input("Food & Groceries", min_value=0, value=12000, step=500)
+        transport = st.number_input("Transportation", min_value=0, value=6000, step=500)
+        other = st.number_input("Other Expenses", min_value=0, value=5000, step=500)
         
-        # Mix of income and expenses
-        if random.random() < 0.1:  # 10% income transactions
-            transactions.append({
-                'Date': date,
-                'Description': random.choice(['Salary', 'Freelance Payment', 'Refund', 'Cashback']),
-                'Amount': random.uniform(1000, 5000),
-                'Type': 'Credit'
-            })
-        else:  # 90% expense transactions
-            category = random.choice(list(merchants.keys()))
-            merchant = random.choice(merchants[category])
-            
-            # Variable amounts based on category
-            amount_ranges = {
-                'Food & Dining': (10, 50),
-                'Groceries': (50, 200),
-                'Transport': (10, 60),
-                'Utilities': (50, 150),
-                'Entertainment': (10, 100),
-                'Shopping': (20, 500)
-            }
-            
-            min_amt, max_amt = amount_ranges[category]
-            
-            transactions.append({
-                'Date': date,
-                'Description': merchant,
-                'Amount': random.uniform(min_amt, max_amt),
-                'Type': 'Debit'
-            })
+        total_expenses = rent + utilities + food + transport + other
+        st.metric("Total Expenses", f"J${total_expenses:,.0f}")
     
-    return pd.DataFrame(transactions)
+    # Summary
+    st.subheader("📊 Budget Summary")
+    
+    remaining = total_income - total_expenses
+    savings_rate = (remaining / total_income * 100) if total_income > 0 else 0
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Monthly Surplus/Deficit", f"J${remaining:,.0f}")
+    with col2:
+        st.metric("Savings Rate", f"{savings_rate:.1f}%")
+    with col3:
+        st.metric("Annual Savings", f"J${remaining * 12:,.0f}")
+    
+    # Visualization
+    budget_data = pd.DataFrame({
+        'Category': ['Rent', 'Utilities', 'Food', 'Transport', 'Other', 'Savings'],
+        'Amount': [rent, utilities, food, transport, other, max(0, remaining)]
+    })
+    
+    fig = px.pie(
+        budget_data,
+        values='Amount',
+        names='Category',
+        title="Budget Allocation",
+        hole=0.4
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Recommendations
+    if remaining < 0:
+        st.error("⚠️ Your expenses exceed your income! Consider reducing expenses or increasing income.")
+    elif savings_rate < 10:
+        st.warning("📉 Your savings rate is below 10%. Try to save at least 10-20% of your income.")
+    else:
+        st.success(f"✅ Great job! You're saving {savings_rate:.1f}% of your income.")
 
-def detect_recurring_transactions(data):
-    """Detect recurring/subscription transactions"""
-    recurring = []
+elif option == "🌐 Network Analysis":
+    st.markdown("## 🌐 Network Analysis")
     
-    # Group by description and look for regular patterns
-    for desc, group in data.groupby('Description'):
-        if len(group) >= 3:  # At least 3 occurrences
-            # Check if transactions occur roughly monthly
-            dates = group['Date'].sort_values()
-            intervals = [(dates.iloc[i+1] - dates.iloc[i]).days for i in range(len(dates)-1)]
-            
-            # If most intervals are between 25-35 days, likely monthly
-            monthly_intervals = [i for i in intervals if 25 <= i <= 35]
-            if len(monthly_intervals) >= len(intervals) * 0.7:  # 70% are monthly
-                avg_amount = group['Amount'].mean()
-                recurring.append({
-                    'description': desc,
-                    'frequency': 'Monthly',
-                    'amount': avg_amount,
-                    'occurrences': len(group)
-                })
+    st.info("🚧 This feature is coming soon!")
     
-    return recurring
-
-def generate_text_report(data, category_summary):
-    """Generate text report for PDF export"""
-    report = []
-    report.append("FINANCIAL REPORT")
-    report.append("=" * 50)
-    report.append(f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    report.append("")
+    st.markdown("""
+    ### Planned Features:
     
-    # Summary statistics
-    total_income = data[data['Type'] == 'Credit']['Amount'].sum()
-    total_expenses = data[data['Type'] == 'Debit']['Amount'].sum()
-    net_flow = total_income - total_expenses
+    **🔗 Transaction Network**
+    - Visualize money flow between accounts and categories
+    - Identify spending patterns and cycles
     
-    report.append("SUMMARY")
-    report.append("-" * 30)
-    report.append(f"Total Income: ${total_income:,.2f}")
-    report.append(f"Total Expenses: ${total_expenses:,.2f}")
-    report.append(f"Net Flow: ${net_flow:,.2f}")
-    report.append(f"Number of Transactions: {len(data)}")
-    report.append("")
+    **📊 Pattern Recognition**
+    - Detect unusual spending behaviors
+    - Find recurring transactions
+    - Identify seasonal trends
     
-    # Category breakdown
-    if not category_summary.empty:
-        report.append("SPENDING BY CATEGORY")
-        report.append("-" * 30)
-        for _, row in category_summary.iterrows():
-            report.append(f"{row['Category']}: ${row['Total']:,.2f}")
-    report.append("")
+    **🏪 Merchant Analysis**
+    - Track your most frequent merchants
+    - Analyze spending by vendor
+    - Get insights on shopping habits
     
-    # Recent transactions
-    report.append("RECENT TRANSACTIONS (Last 10)")
-    report.append("-" * 30)
-    recent = data.nlargest(10, 'Date')
-    for _, row in recent.iterrows():
-        report.append(f"{row['Date'].strftime('%Y-%m-%d')} | {row['Description'][:30]} | ${row['Amount']:,.2f}")
+    **📈 Predictive Analytics**
+    - Forecast future spending
+    - Budget recommendations based on patterns
+    - Early warning for potential overspending
+    """)
     
-    return "\n".join(report)
-
+    # Sample visualization placeholder
+    st.subheader("Sample Visualization (Coming Soon)")
+    
+    sample_data = pd.DataFrame({
+        'Source': ['Income'] * 5,
+        'Target': ['Food', 'Rent', 'Transport', 'Utilities', 'Savings'],
+        'Amount': [5000, 15000, 3000, 4000, 8000]
+    })
+    
+    fig = px.bar(
+        sample_data,
+        x='Target',
+        y='Amount',
+        title="Sample Money Flow",
+        color='Amount',
+        color_continuous_scale='Viridis'
+    )
+    fig.update_layout(yaxis_tickprefix="J$")
+    st.plotly_chart(fig, use_container_width=True)
