@@ -150,10 +150,10 @@ if option == "📊 Spending Analysis":
     st.title("Personal Finance Tracker")
 
     # Load the image from the file path
-    image = Image.open("/Users/kyle/Documents/New Life/40450-1067x800.jpg")
+    # image = Image.open("/Users/kyle/Documents/New Life/40450-1067x800.jpg")
 
     # Display the image in Streamlit
-    st.image(image, use_container_width=True)
+    # st.image(image, use_container_width=True)
 
     uploaded_files = st.file_uploader(
         "Upload CSV or PDF files",
@@ -595,4 +595,3 @@ elif option == "📅 Budget Planner":
 elif option == "🌐 Network Analysis":
     st.markdown("You selected **Network Analysis**.")
     # Insert your network analysis visualizations or placeholder text here.
-
