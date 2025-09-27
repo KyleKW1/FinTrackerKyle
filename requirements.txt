@@ -6,4 +6,3 @@ fpdf2
 Pillow
 XlsxWriter
 pdfkit
-packages.txt
