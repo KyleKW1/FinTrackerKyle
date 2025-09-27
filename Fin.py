@@ -516,7 +516,7 @@ if option == "📊 Spending Analysis":
 
 
 
-#elif option == "📅 Budget Planner":
+elif option == "📅 Budget Planner":
     st.markdown("You selected **Budget Planner**.")
     import streamlit as st
     import pandas as pd
@@ -595,4 +595,3 @@ if option == "📊 Spending Analysis":
 elif option == "🌐 Network Analysis":
     st.markdown("You selected **Network Analysis**.")
     # Insert your network analysis visualizations or placeholder text here.
-
