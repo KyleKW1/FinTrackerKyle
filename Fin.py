@@ -417,7 +417,7 @@ if option == "📊 Spending Analysis":
     comparison['Amount'] = comparison['Amount'].fillna(0)
     comparison['Difference'] = comparison['Budget'] - comparison['Amount']
     comparison['Status'] = comparison.apply(
-        lambda row: "⚠️ Over Budget" if row['Amount'] > row['Budget'] else "Within Budget", axis=1
+        lambda row: " Over Budget" if row['Amount'] > row['Budget'] else "Within Budget", axis=1
     )
 
     st.dataframe(
@@ -450,13 +450,13 @@ if option == "📊 Spending Analysis":
         st.success(f"🎉 Congrats! You've met your savings goal by J${actual_savings - SAVINGS_GOAL:,.2f}!")
     else:
         st.warning(
-            f"⚠️ You are J${SAVINGS_GOAL - actual_savings:,.2f} below your savings goal. Consider reviewing your budget.")
+            f" You are J${SAVINGS_GOAL - actual_savings:,.2f} below your savings goal. Consider reviewing your budget.")
 
     # Email alert trigger
     if notify_email and sender_email and sender_password:
         overspent = comparison[comparison['Amount'] > comparison['Budget']]
         if not overspent.empty:
-            subject = f"⚠️ Finance Tracker Alert: Overspending in {month}"
+            subject = f" Finance Tracker Alert: Overspending in {month}"
             body_lines = [f"Dear user,\n\nYou have overspent in the following categories for {month}:\n"]
             for _, row in overspent.iterrows():
                 body_lines.append(
