@@ -89,6 +89,7 @@ if option == "📊 Spending Analysis":
         return 'Uncategorized'
 
     def send_email_alert(receiver_email, subject, body, sender_email, sender_password, smtp_server, smtp_port=587):
+        """Send email alerts with proper error handling"""
         try:
             msg = EmailMessage()
             msg.set_content(body)
@@ -96,13 +97,27 @@ if option == "📊 Spending Analysis":
             msg['From'] = sender_email
             msg['To'] = receiver_email
 
-            with smtplib.SMTP(smtp_server, smtp_port) as server:
-                server.starttls()
-                server.login(sender_email, sender_password)
-                server.send_message(msg)
+            if 'gmail' in smtp_server.lower():
+                with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+                    server.login(sender_email, sender_password)
+                    server.send_message(msg)
+                    st.success("✅ Email sent successfully!")
+            else:
+                with smtplib.SMTP(smtp_server, smtp_port) as server:
+                    server.starttls()
+                    server.login(sender_email, sender_password)
+                    server.send_message(msg)
+                    st.success("✅ Email sent successfully!")
+            
             return True
+
+        except smtplib.SMTPAuthenticationError:
+            st.error("❌ Authentication Failed - Check your email credentials")
+            if 'gmail' in smtp_server.lower():
+                st.info("📌 Gmail users must use App Passwords, not regular passwords")
+            return False
         except Exception as e:
-            st.error(f"Failed to send email: {e}")
+            st.error(f"❌ Email Error: {str(e)}")
             return False
 
     def export_to_excel(df):
@@ -418,21 +433,28 @@ if option == "📊 Spending Analysis":
                     body_lines.append("\nPlease review your budget.")
                     body = "\n".join(body_lines)
 
-                    if st.button("Send Overspending Alert Email"):
-                        sent = send_email_alert(
-                            receiver_email=notify_email,
-                            subject=subject,
-                            body=body,
-                            sender_email=sender_email,
-                            sender_password=sender_password,
-                            smtp_server=smtp_server,
-                            smtp_port=smtp_port
+                # Email alert option
+                if enable_email and notify_email and sender_email and sender_password:
+                    if st.button("📧 Send Alert Email"):
+                        alert_body = f"Finance Alert for {selected_month}\n\n"
+                        
+                        if not over_budget.empty:
+                            alert_body += "OVER BUDGET:\n"
+                            for _, row in over_budget.iterrows():
+                                alert_body += f"- {row['Category']}: Over by J${-row['Difference']:,.0f}\n"
+                        
+                        if month_savings < SAVINGS_GOAL:
+                            alert_body += f"\nSAVINGS: Short of goal by J${SAVINGS_GOAL - month_savings:,.0f}"
+                        
+                        send_email_alert(
+                            notify_email,
+                            f"Finance Alert - {selected_month}",
+                            alert_body,
+                            sender_email,
+                            sender_password,
+                            smtp_server,
+                            smtp_port
                         )
-                        if sent:
-                            st.success("Email sent successfully!")
-                        else:
-                            st.error("Failed to send email. Check your credentials and internet connection.")
-
             # Export Reports
             st.subheader("📤 Export Reports")
 
