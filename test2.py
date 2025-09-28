@@ -241,13 +241,33 @@ if option == "📊 Spending Analysis":
     SAVINGS_GOAL = savings_goal_input
 
     # Email notification settings
-    st.sidebar.header("📧 Email Notification Settings (Optional)")
-    notify_email = st.sidebar.text_input("Send alerts to email (leave blank to disable):")
-    if notify_email:
-        sender_email = st.sidebar.text_input("Sender Email (SMTP):")
-        sender_password = st.sidebar.text_input("Sender Email Password:", type="password")
-        smtp_server = st.sidebar.text_input("SMTP Server (e.g. smtp.gmail.com):", value="smtp.gmail.com")
-        smtp_port = st.sidebar.number_input("SMTP Port:", min_value=1, max_value=65535, value=587)
+    st.sidebar.subheader("📧 Email Alerts")
+    enable_email = st.sidebar.checkbox("Enable Email Notifications")
+    
+    if enable_email:
+        email_provider = st.sidebar.selectbox(
+            "Provider",
+            ["Gmail", "Outlook", "Yahoo", "Custom"]
+        )
+        
+        if email_provider == "Gmail":
+            smtp_server = "smtp.gmail.com"
+            smtp_port = 465
+            st.sidebar.info("⚠️ Use App Password, not regular password")
+        elif email_provider == "Outlook":
+            smtp_server = "smtp-mail.outlook.com"
+            smtp_port = 587
+        elif email_provider == "Yahoo":
+            smtp_server = "smtp.mail.yahoo.com"
+            smtp_port = 587
+        else:
+            smtp_server = st.sidebar.text_input("SMTP Server")
+            smtp_port = st.sidebar.number_input("Port", value=587)
+        
+        sender_email = st.sidebar.text_input("Your Email")
+        sender_password = st.sidebar.text_input("Password", type="password")
+        notify_email = st.sidebar.text_input("Send Alerts To")
+
 
     # Apply spending categories to data
     data['Spending Category'] = data['Description'].apply(
