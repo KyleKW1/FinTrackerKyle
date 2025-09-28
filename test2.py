@@ -442,7 +442,8 @@ if option == "📊 Spending Analysis":
                     f"You are J${SAVINGS_GOAL - actual_savings:,.2f} below your savings goal. Consider reviewing your budget.")
 
             # Email alert trigger
-            if notify_email and sender_email and sender_password:
+            # Email alert trigger
+            if enable_email and notify_email and sender_email and sender_password:
                 overspent = comparison[comparison['Amount'] > comparison['Budget']]
                 if not overspent.empty:
                     subject = f"Finance Tracker Alert: Overspending in {selected_month}"
@@ -452,24 +453,13 @@ if option == "📊 Spending Analysis":
                             f"- {row['Spending Category']}: Spent J${row['Amount']:.2f} (Budget: J${row['Budget']:.2f})")
                     body_lines.append("\nPlease review your budget.")
                     body = "\n".join(body_lines)
-
-                # Email alert option
-                if enable_email and notify_email and sender_email and sender_password:
+                    
+                    # Add the send email button
                     if st.button("📧 Send Alert Email"):
-                        alert_body = f"Finance Alert for {selected_month}\n\n"
-                        
-                        if not over_budget.empty:
-                            alert_body += "OVER BUDGET:\n"
-                            for _, row in over_budget.iterrows():
-                                alert_body += f"- {row['Category']}: Over by J${-row['Difference']:,.0f}\n"
-                        
-                        if month_savings < SAVINGS_GOAL:
-                            alert_body += f"\nSAVINGS: Short of goal by J${SAVINGS_GOAL - month_savings:,.0f}"
-                        
                         send_email_alert(
                             notify_email,
-                            f"Finance Alert - {selected_month}",
-                            alert_body,
+                            subject,
+                            body,
                             sender_email,
                             sender_password,
                             smtp_server,
