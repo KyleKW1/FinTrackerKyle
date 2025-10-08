@@ -414,7 +414,7 @@ def main_app():
 
     # ---------- Helper Functions ----------
 
-def process_csv(file):
+    def process_csv(file):
         try:
             df = pd.read_csv(file)
             df.rename(columns={
@@ -451,9 +451,6 @@ def process_csv(file):
                                 data.append([date, desc, abs(float(amt)), cat])
             df = pd.DataFrame(data, columns=['Date', 'Description', 'Amount', 'Category'])
             return df
-        except Exception as e:
-            st.error(f"PDF Error: {e}")
-            return pd.DataFrame()
         except Exception as e:
             st.error(f"PDF Error: {e}")
             return pd.DataFrame()
@@ -612,9 +609,7 @@ def process_csv(file):
             for file_info in user_files:
                 file_data = get_file_data(file_info['id'], st.session_state.user['id'])
                 if file_data:
-                    from io import BytesIO
                     file_bytes = BytesIO(file_data['file_data'])
-                    file_bytes.name = file_data['filename']
                     
                     if file_data['file_type'] == 'csv':
                         df = process_csv(file_bytes)
