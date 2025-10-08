@@ -1,54 +1,65 @@
 import streamlit as st
-import sqlite3
+import mysql.connector
+from mysql.connector import Error
 import hashlib
 import re
-from datetime import datetime
 
 # ============================================
 # DATABASE CONFIGURATION
 # ============================================
 
-DB_FILE = 'finance_hub.db'
+DB_CONFIG = {
+    'host': 'localhost',
+    'user': 'root',  # Change to your MySQL username
+    'password': 'your_password',  # Change to your MySQL password
+    'database': 'finance_hub'
+}
 
 # ============================================
 # DATABASE FUNCTIONS
 # ============================================
 
 def create_connection():
-    """Create a database connection to SQLite database"""
+    """Create a database connection"""
     try:
-        connection = sqlite3.connect(DB_FILE, check_same_thread=False)
-        connection.row_factory = sqlite3.Row
+        connection = mysql.connector.connect(**DB_CONFIG)
         return connection
-    except sqlite3.Error as e:
+    except Error as e:
         st.error(f"Database connection error: {e}")
         return None
 
 def init_database():
     """Initialize database and create users table if it doesn't exist"""
     try:
-        conn = create_connection()
-        if not conn:
-            return False
-        
+        # Connect without database to create it if needed
+        conn = mysql.connector.connect(
+            host=DB_CONFIG['host'],
+            user=DB_CONFIG['user'],
+            password=DB_CONFIG['password']
+        )
         cursor = conn.cursor()
+        
+        # Create database if it doesn't exist
+        cursor.execute(f"CREATE DATABASE IF NOT EXISTS {DB_CONFIG['database']}")
+        cursor.execute(f"USE {DB_CONFIG['database']}")
         
         # Create users table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                email TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(50) UNIQUE NOT NULL,
+                email VARCHAR(100) UNIQUE NOT NULL,
+                password_hash VARCHAR(64) NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_login TIMESTAMP
+                last_login TIMESTAMP NULL
             )
         """)
         
         conn.commit()
+        cursor.close()
         conn.close()
         return True
-    except sqlite3.Error as e:
+    except Error as e:
         st.error(f"Database initialization error: {e}")
         return False
 
@@ -72,18 +83,19 @@ def register_user(username, email, password):
         password_hash = hash_password(password)
         
         cursor.execute(
-            "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)",
+            "INSERT INTO users (username, email, password_hash) VALUES (%s, %s, %s)",
             (username, email, password_hash)
         )
         
         connection.commit()
+        cursor.close()
         connection.close()
         return True, "Registration successful!"
     
-    except sqlite3.IntegrityError:
+    except mysql.connector.IntegrityError:
         connection.close()
         return False, "Username or email already exists"
-    except sqlite3.Error as e:
+    except Error as e:
         connection.close()
         return False, f"Registration error: {e}"
 
@@ -94,11 +106,11 @@ def authenticate_user(username, password):
         return False, None
     
     try:
-        cursor = connection.cursor()
+        cursor = connection.cursor(dictionary=True)
         password_hash = hash_password(password)
         
         cursor.execute(
-            "SELECT * FROM users WHERE username = ? AND password_hash = ?",
+            "SELECT * FROM users WHERE username = %s AND password_hash = %s",
             (username, password_hash)
         )
         
@@ -107,20 +119,17 @@ def authenticate_user(username, password):
         if user:
             # Update last login
             cursor.execute(
-                "UPDATE users SET last_login = ? WHERE id = ?",
-                (datetime.now(), user['id'])
+                "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = %s",
+                (user['id'],)
             )
             connection.commit()
-            # Convert Row to dict
-            user_dict = dict(user)
-        else:
-            user_dict = None
         
+        cursor.close()
         connection.close()
         
-        return user is not None, user_dict
+        return user is not None, user
     
-    except sqlite3.Error as e:
+    except Error as e:
         st.error(f"Authentication error: {e}")
         connection.close()
         return False, None
@@ -256,7 +265,8 @@ def main_app():
         st.markdown(f"### 👤 {st.session_state.user['username']}")
         st.markdown(f"📧 {st.session_state.user['email']}")
         if st.session_state.user.get('last_login'):
-            st.caption(f"Last login: {st.session_state.user['last_login'][:19]}")
+            last_login = str(st.session_state.user['last_login'])
+            st.caption(f"Last login: {last_login[:19]}")
         st.markdown("---")
         if st.button("🚪 Logout", use_container_width=True):
             logout()
@@ -808,7 +818,7 @@ def main():
         if init_database():
             st.session_state.db_initialized = True
         else:
-            st.error("Failed to initialize database.")
+            st.error("Failed to initialize database. Please check your MySQL configuration.")
             st.stop()
     
     # Initialize session state
