@@ -8,11 +8,16 @@ import re
 # DATABASE CONFIGURATION
 # ============================================
 
+# Aiven Cloud MySQL Configuration
 DB_CONFIG = {
     'host': 'mysql-11beff9b-kamarwatson36-874b.g.aivencloud.com',
-    'user': 'avnadmin',  # Change to your MySQL username
-    'password': 'AVNS_Dxyg2mu3MEiRoVyasff',  # Change to your MySQL password
-    'database': 'defaultdb'
+    'port': 11510,
+    'user': 'avnadmin',
+    'password': 'AVNS_Dxyg2mu3MEiRoVyasff',
+    'database': 'defaultdb',
+    'ssl_disabled': False,
+    'ssl_verify_cert': False,
+    'ssl_verify_identity': False
 }
 
 # ============================================
