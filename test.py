@@ -196,7 +196,7 @@ def logout():
 
 def login_page():
     """Display login page"""
-    st.markdown("<h1 style='text-align: center; color: #4CAF50;'>🔐 Finance Hub Login</h1>", unsafe_allow_html=True)    
+    st.markdown("<h1 style='text-align: center; color: #4CAF50;'>Finance Hub Login</h1>", unsafe_allow_html=True)    
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
@@ -230,7 +230,7 @@ def login_page():
 
 def register_page():
     """Display registration page"""
-    st.markdown("<h1 style='text-align: center;'>📝 Register New Account</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; color: #4CAF50;'>Register New Account</h1>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 2, 1])
     
