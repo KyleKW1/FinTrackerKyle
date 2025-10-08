@@ -9,10 +9,10 @@ import re
 # ============================================
 
 DB_CONFIG = {
-    'host': 'localhost',
-    'user': 'root',  # Change to your MySQL username
-    'password': 'your_password',  # Change to your MySQL password
-    'database': 'finance_hub'
+    'host': 'mysql-11beff9b-kamarwatson36-874b.g.aivencloud.com',
+    'user': 'avnadmin',  # Change to your MySQL username
+    'password': 'AVNS_Dxyg2mu3MEiRoVyasff',  # Change to your MySQL password
+    'database': 'defaultdb'
 }
 
 # ============================================
