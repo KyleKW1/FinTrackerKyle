@@ -8,3 +8,4 @@ XlsxWriter
 pdfkit
 mysql-connector-python
 openpyxl
+python-dotenv
