@@ -414,8 +414,7 @@ def main_app():
 
     # ---------- Helper Functions ----------
 
-    @st.cache_data
-    def process_csv(file):
+def process_csv(file):
         try:
             df = pd.read_csv(file)
             df.rename(columns={
@@ -433,7 +432,6 @@ def main_app():
             st.error(f"CSV Error: {e}")
             return pd.DataFrame()
 
-    @st.cache_data
     def process_pdf(file):
         try:
             data = []
@@ -453,6 +451,9 @@ def main_app():
                                 data.append([date, desc, abs(float(amt)), cat])
             df = pd.DataFrame(data, columns=['Date', 'Description', 'Amount', 'Category'])
             return df
+        except Exception as e:
+            st.error(f"PDF Error: {e}")
+            return pd.DataFrame()
         except Exception as e:
             st.error(f"PDF Error: {e}")
             return pd.DataFrame()
