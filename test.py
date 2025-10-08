@@ -104,6 +104,19 @@ def init_database():
             )
         """)
         
+        # Create user_preferences table for storing budget and category settings
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_preferences (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL UNIQUE,
+                category_keywords JSON,
+                monthly_budgets JSON,
+                savings_goal DECIMAL(10,2) DEFAULT 5000,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        
         conn.commit()
         cursor.close()
         conn.close()
@@ -269,6 +282,64 @@ def delete_user_file(file_id, user_id):
         return deleted
     except Error as e:
         st.error(f"Error deleting file: {e}")
+        connection.close()
+        return False
+
+# ============================================
+# USER PREFERENCES FUNCTIONS
+# ============================================
+
+def get_user_preferences(user_id):
+    """Get user's saved preferences"""
+    connection = create_connection()
+    if not connection:
+        return None
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT category_keywords, monthly_budgets, savings_goal FROM user_preferences WHERE user_id = %s",
+            (user_id,)
+        )
+        prefs = cursor.fetchone()
+        cursor.close()
+        connection.close()
+        return prefs
+    except Error as e:
+        st.error(f"Error retrieving preferences: {e}")
+        connection.close()
+        return None
+
+def save_user_preferences(user_id, category_keywords, monthly_budgets, savings_goal):
+    """Save user's preferences"""
+    import json
+    connection = create_connection()
+    if not connection:
+        return False
+    
+    try:
+        cursor = connection.cursor()
+        
+        # Convert dictionaries to JSON strings
+        category_json = json.dumps(category_keywords)
+        budgets_json = json.dumps(monthly_budgets)
+        
+        # Use INSERT ... ON DUPLICATE KEY UPDATE for upsert behavior
+        cursor.execute("""
+            INSERT INTO user_preferences (user_id, category_keywords, monthly_budgets, savings_goal)
+            VALUES (%s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                category_keywords = VALUES(category_keywords),
+                monthly_budgets = VALUES(monthly_budgets),
+                savings_goal = VALUES(savings_goal)
+        """, (user_id, category_json, budgets_json, savings_goal))
+        
+        connection.commit()
+        cursor.close()
+        connection.close()
+        return True
+    except Error as e:
+        st.error(f"Error saving preferences: {e}")
         connection.close()
         return False
 
@@ -642,11 +713,38 @@ def main_app():
             "Miscellaneous": ["atm"],
             "Other": []
         }
+        
+        default_budgets = {
+            "Food": 15000,
+            "Grocery": 10000,
+            "Utilities": 8000,
+            "Transport": 6000,
+            "Miscellaneous": 5000,
+            "Income": 0,
+            "Other": 0
+        }
+        
+        default_savings_goal = 5000
+
+        # Load user's saved preferences
+        import json
+        user_prefs = get_user_preferences(st.session_state.user['id'])
+        
+        if user_prefs:
+            # Load saved preferences
+            saved_categories = json.loads(user_prefs['category_keywords']) if user_prefs['category_keywords'] else default_mapping
+            saved_budgets = json.loads(user_prefs['monthly_budgets']) if user_prefs['monthly_budgets'] else default_budgets
+            saved_goal = float(user_prefs['savings_goal']) if user_prefs['savings_goal'] else default_savings_goal
+        else:
+            # Use defaults for new users
+            saved_categories = default_mapping
+            saved_budgets = default_budgets
+            saved_goal = default_savings_goal
 
         CATEGORY_KEYWORDS = {}
 
         st.sidebar.markdown("### Edit Categories and Keywords")
-        for category, keywords in default_mapping.items():
+        for category, keywords in saved_categories.items():
             with st.sidebar.expander(f"{category} Keywords", expanded=False):
                 kw_text = st.text_area(
                     label=f"Keywords for {category} (comma separated)",
@@ -660,31 +758,33 @@ def main_app():
         MONTHLY_BUDGETS = {}
 
         for category in CATEGORY_KEYWORDS.keys():
-            default_val = 0
-            if category == "Food":
-                default_val = 15000
-            elif category == "Grocery":
-                default_val = 10000
-            elif category == "Utilities":
-                default_val = 8000
-            elif category == "Transport":
-                default_val = 6000
-            elif category == "Miscellaneous":
-                default_val = 5000
+            budget_value = saved_budgets.get(category, 0)
             MONTHLY_BUDGETS[category] = st.sidebar.number_input(
                 label=f"Budget for {category}",
                 min_value=0,
-                value=default_val,
+                value=int(budget_value),
                 step=500,
                 key=f"budget_{category}"
             )
 
         st.sidebar.markdown("### 🎯 Set Monthly Savings Goal (J$)")
-        default_savings_goal = 5000
         savings_goal_input = st.sidebar.number_input(
-            "Savings Goal Amount (J$)", min_value=0, value=default_savings_goal, step=500
+            "Savings Goal Amount (J$)", min_value=0, value=int(saved_goal), step=500
         )
         SAVINGS_GOAL = savings_goal_input
+        
+        # Save button for preferences
+        st.sidebar.markdown("---")
+        if st.sidebar.button("💾 Save Preferences", use_container_width=True):
+            if save_user_preferences(
+                st.session_state.user['id'],
+                CATEGORY_KEYWORDS,
+                MONTHLY_BUDGETS,
+                SAVINGS_GOAL
+            ):
+                st.sidebar.success("✅ Preferences saved!")
+            else:
+                st.sidebar.error("❌ Failed to save preferences")
 
         # Email notification settings
         st.sidebar.subheader("📧 Email Alerts")
