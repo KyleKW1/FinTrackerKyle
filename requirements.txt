@@ -6,3 +6,5 @@ fpdf2
 Pillow
 XlsxWriter
 pdfkit
+mysql-connector-python
+openpyxl
