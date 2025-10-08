@@ -196,7 +196,7 @@ def logout():
 
 def login_page():
     """Display login page"""
-    st.title("🔐 Finance Hub Login")
+    st.markdown("<h1 style='text-align: center;'>🔐 Finance Hub Login</h1>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 2, 1])
     
