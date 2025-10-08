@@ -8,13 +8,17 @@ import re
 # DATABASE CONFIGURATION
 # ============================================
 
-# Aiven Cloud MySQL Configuration
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 DB_CONFIG = {
-    'host': 'mysql-11beff9b-kamarwatson36-874b.g.aivencloud.com',
-    'port': 11510,
-    'user': 'avnadmin',
-    'password': 'AVNS_Dxyg2mu3MEiRoVyasff',
-    'database': 'defaultdb',
+    'host': os.getenv('MYSQL_HOST'),
+    'port': int(os.getenv('MYSQL_PORT')),
+    'user': os.getenv('MYSQL_USER'),
+    'password': os.getenv('MYSQL_PASSWORD'),
+    'database': os.getenv('MYSQL_DATABASE'),
     'ssl_disabled': False,
     'ssl_verify_cert': False,
     'ssl_verify_identity': False
