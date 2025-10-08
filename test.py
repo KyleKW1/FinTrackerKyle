@@ -231,7 +231,7 @@ def login_page():
 
 def register_page():
     """Display registration page"""
-    st.title("📝 Register New Account")
+    st.markdown("<h1 style='text-align: center;'>📝 Register New Account</h1>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 2, 1])
     
