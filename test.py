@@ -3,26 +3,43 @@ import mysql.connector
 from mysql.connector import Error
 import hashlib
 import re
+import os
 
 # ============================================
 # DATABASE CONFIGURATION
 # ============================================
 
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-DB_CONFIG = {
-    'host': os.getenv('MYSQL_HOST'),
-    'port': int(os.getenv('MYSQL_PORT')),
-    'user': os.getenv('MYSQL_USER'),
-    'password': os.getenv('MYSQL_PASSWORD'),
-    'database': os.getenv('MYSQL_DATABASE'),
-    'ssl_disabled': False,
-    'ssl_verify_cert': False,
-    'ssl_verify_identity': False
-}
+# Try Streamlit secrets first (for Streamlit Cloud), then fall back to environment variables
+try:
+    DB_CONFIG = {
+        'host': st.secrets["mysql"]["host"],
+        'port': int(st.secrets["mysql"]["port"]),
+        'user': st.secrets["mysql"]["user"],
+        'password': st.secrets["mysql"]["password"],
+        'database': st.secrets["mysql"]["database"],
+        'ssl_disabled': False,
+        'ssl_verify_cert': False,
+        'ssl_verify_identity': False
+    }
+except (KeyError, FileNotFoundError):
+    # Fall back to environment variables or direct config
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass  # dotenv not installed, will use os.getenv with defaults
+    
+    # Use environment variables with fallback to Aiven credentials
+    DB_CONFIG = {
+        'host': os.getenv('MYSQL_HOST') or 'mysql-11beff9b-kamarwatson36-874b.g.aivencloud.com',
+        'port': int(os.getenv('MYSQL_PORT') or '11510'),
+        'user': os.getenv('MYSQL_USER') or 'avnadmin',
+        'password': os.getenv('MYSQL_PASSWORD') or 'AVNS_Dxyg2mu3MEiRoVyasff',
+        'database': os.getenv('MYSQL_DATABASE') or 'defaultdb',
+        'ssl_disabled': False,
+        'ssl_verify_cert': False,
+        'ssl_verify_identity': False
+    }
 
 # ============================================
 # DATABASE FUNCTIONS
@@ -31,7 +48,16 @@ DB_CONFIG = {
 def create_connection():
     """Create a database connection"""
     try:
-        connection = mysql.connector.connect(**DB_CONFIG)
+        connection = mysql.connector.connect(
+            host=DB_CONFIG['host'],
+            port=DB_CONFIG['port'],
+            user=DB_CONFIG['user'],
+            password=DB_CONFIG['password'],
+            database=DB_CONFIG['database'],
+            ssl_disabled=DB_CONFIG.get('ssl_disabled', False),
+            ssl_verify_cert=DB_CONFIG.get('ssl_verify_cert', False),
+            ssl_verify_identity=DB_CONFIG.get('ssl_verify_identity', False)
+        )
         return connection
     except Error as e:
         st.error(f"Database connection error: {e}")
@@ -40,19 +66,20 @@ def create_connection():
 def init_database():
     """Initialize database and create users table if it doesn't exist"""
     try:
-        # Connect without database to create it if needed
+        # Connect to Aiven MySQL
         conn = mysql.connector.connect(
             host=DB_CONFIG['host'],
+            port=DB_CONFIG['port'],
             user=DB_CONFIG['user'],
-            password=DB_CONFIG['password']
+            password=DB_CONFIG['password'],
+            database=DB_CONFIG['database'],
+            ssl_disabled=DB_CONFIG.get('ssl_disabled', False),
+            ssl_verify_cert=DB_CONFIG.get('ssl_verify_cert', False),
+            ssl_verify_identity=DB_CONFIG.get('ssl_verify_identity', False)
         )
         cursor = conn.cursor()
         
-        # Create database if it doesn't exist
-        cursor.execute(f"CREATE DATABASE IF NOT EXISTS {DB_CONFIG['database']}")
-        cursor.execute(f"USE {DB_CONFIG['database']}")
-        
-        # Create users table
+        # Create users table (database already exists in Aiven)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INT AUTO_INCREMENT PRIMARY KEY,
