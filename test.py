@@ -91,6 +91,19 @@ def init_database():
             )
         """)
         
+        # Create user_files table for storing uploaded files
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_files (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                filename VARCHAR(255) NOT NULL,
+                file_data LONGBLOB NOT NULL,
+                file_type VARCHAR(10) NOT NULL,
+                upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        
         conn.commit()
         cursor.close()
         conn.close()
@@ -171,6 +184,95 @@ def authenticate_user(username, password):
         return False, None
 
 # ============================================
+# FILE STORAGE FUNCTIONS
+# ============================================
+
+def save_user_file(user_id, filename, file_data, file_type):
+    """Save uploaded file to database"""
+    connection = create_connection()
+    if not connection:
+        return False
+    
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            "INSERT INTO user_files (user_id, filename, file_data, file_type) VALUES (%s, %s, %s, %s)",
+            (user_id, filename, file_data, file_type)
+        )
+        connection.commit()
+        cursor.close()
+        connection.close()
+        return True
+    except Error as e:
+        st.error(f"Error saving file: {e}")
+        connection.close()
+        return False
+
+def get_user_files(user_id):
+    """Get all files for a user"""
+    connection = create_connection()
+    if not connection:
+        return []
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT id, filename, file_type, upload_date FROM user_files WHERE user_id = %s ORDER BY upload_date DESC",
+            (user_id,)
+        )
+        files = cursor.fetchall()
+        cursor.close()
+        connection.close()
+        return files
+    except Error as e:
+        st.error(f"Error retrieving files: {e}")
+        connection.close()
+        return []
+
+def get_file_data(file_id, user_id):
+    """Get file data from database"""
+    connection = create_connection()
+    if not connection:
+        return None
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT file_data, filename, file_type FROM user_files WHERE id = %s AND user_id = %s",
+            (file_id, user_id)
+        )
+        file_data = cursor.fetchone()
+        cursor.close()
+        connection.close()
+        return file_data
+    except Error as e:
+        st.error(f"Error retrieving file: {e}")
+        connection.close()
+        return None
+
+def delete_user_file(file_id, user_id):
+    """Delete a user's file"""
+    connection = create_connection()
+    if not connection:
+        return False
+    
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            "DELETE FROM user_files WHERE id = %s AND user_id = %s",
+            (file_id, user_id)
+        )
+        connection.commit()
+        deleted = cursor.rowcount > 0
+        cursor.close()
+        connection.close()
+        return deleted
+    except Error as e:
+        st.error(f"Error deleting file: {e}")
+        connection.close()
+        return False
+
+# ============================================
 # SESSION STATE MANAGEMENT
 # ============================================
 
@@ -196,7 +298,9 @@ def logout():
 
 def login_page():
     """Display login page"""
-    st.markdown("<h1 style='text-align: center; color: #4CAF50;'>Finance Hub Login</h1>", unsafe_allow_html=True)    
+    # Center the title
+    st.markdown("<h1 style='text-align: center;'>🔐 Finance Hub Login</h1>", unsafe_allow_html=True)
+    
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
@@ -230,7 +334,8 @@ def login_page():
 
 def register_page():
     """Display registration page"""
-    st.markdown("<h1 style='text-align: center; color: #4CAF50;'>Register New Account</h1>", unsafe_allow_html=True)
+    # Center the title
+    st.markdown("<h1 style='text-align: center;'>📝 Register New Account</h1>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 2, 1])
     
@@ -437,20 +542,85 @@ def main_app():
         
         st.title("Personal Finance Tracker")
 
-        uploaded_files = st.file_uploader(
-            "Upload CSV or PDF files",
-            type=["csv", "pdf"],
-            accept_multiple_files=True
-        )
+        # File Management Section
+        st.subheader("📁 Your Files")
+        
+        # Get user's stored files
+        user_files = get_user_files(st.session_state.user['id'])
+        
+        if user_files:
+            st.markdown(f"**You have {len(user_files)} stored file(s)**")
+            
+            # Display files in a grid
+            for i in range(0, len(user_files), 3):
+                cols = st.columns(3)
+                for j, col in enumerate(cols):
+                    if i + j < len(user_files):
+                        file = user_files[i + j]
+                        with col:
+                            st.markdown(f"**{file['filename']}**")
+                            st.caption(f"Uploaded: {str(file['upload_date'])[:19]}")
+                            st.caption(f"Type: {file['file_type'].upper()}")
+                            if st.button(f"🗑️ Delete", key=f"del_{file['id']}"):
+                                if delete_user_file(file['id'], st.session_state.user['id']):
+                                    st.success(f"Deleted {file['filename']}")
+                                    st.rerun()
+                                else:
+                                    st.error("Failed to delete file")
+            st.markdown("---")
+        else:
+            st.info("No files uploaded yet. Upload your first file below!")
 
+        # File Upload Section
+        with st.expander("📤 Upload New Files", expanded=not user_files):
+            uploaded_files = st.file_uploader(
+                "Upload CSV or PDF files",
+                type=["csv", "pdf"],
+                accept_multiple_files=True,
+                key="file_uploader"
+            )
+
+            if uploaded_files:
+                if st.button("💾 Save Files to Account"):
+                    success_count = 0
+                    for file in uploaded_files:
+                        file_data = file.read()
+                        file_type = file.name.split('.')[-1].lower()
+                        
+                        # Check if file already exists
+                        existing_files = [f['filename'] for f in user_files]
+                        if file.name in existing_files:
+                            st.warning(f"⚠️ {file.name} already exists. Skipping...")
+                            continue
+                        
+                        if save_user_file(st.session_state.user['id'], file.name, file_data, file_type):
+                            success_count += 1
+                        file.seek(0)  # Reset file pointer
+                    
+                    if success_count > 0:
+                        st.success(f"✅ Saved {success_count} file(s) to your account!")
+                        st.rerun()
+
+        st.markdown("---")
+
+        # Load all user's files for analysis
         data = pd.DataFrame()
-        if uploaded_files:
-            for file in uploaded_files:
-                fname = file.name.lower()
-                if fname.endswith(".csv"):
-                    data = pd.concat([data, process_csv(file)], ignore_index=True)
-                elif fname.endswith(".pdf"):
-                    data = pd.concat([data, process_pdf(file)], ignore_index=True)
+        user_files = get_user_files(st.session_state.user['id'])
+        
+        if user_files:
+            for file_info in user_files:
+                file_data = get_file_data(file_info['id'], st.session_state.user['id'])
+                if file_data:
+                    from io import BytesIO
+                    file_bytes = BytesIO(file_data['file_data'])
+                    file_bytes.name = file_data['filename']
+                    
+                    if file_data['file_type'] == 'csv':
+                        df = process_csv(file_bytes)
+                        data = pd.concat([data, df], ignore_index=True)
+                    elif file_data['file_type'] == 'pdf':
+                        df = process_pdf(file_bytes)
+                        data = pd.concat([data, df], ignore_index=True)
 
         if data.empty:
             st.info("Upload your bank CSV or PDF statements to get started.")
