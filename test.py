@@ -109,8 +109,8 @@ def init_database():
             CREATE TABLE IF NOT EXISTS user_preferences (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 user_id INT NOT NULL UNIQUE,
-                category_keywords JSON,
-                monthly_budgets JSON,
+                category_keywords TEXT,
+                monthly_budgets TEXT,
                 savings_goal DECIMAL(10,2) DEFAULT 5000,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -324,15 +324,23 @@ def save_user_preferences(user_id, category_keywords, monthly_budgets, savings_g
         category_json = json.dumps(category_keywords)
         budgets_json = json.dumps(monthly_budgets)
         
-        # Use INSERT ... ON DUPLICATE KEY UPDATE for upsert behavior
-        cursor.execute("""
-            INSERT INTO user_preferences (user_id, category_keywords, monthly_budgets, savings_goal)
-            VALUES (%s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-                category_keywords = VALUES(category_keywords),
-                monthly_budgets = VALUES(monthly_budgets),
-                savings_goal = VALUES(savings_goal)
-        """, (user_id, category_json, budgets_json, savings_goal))
+        # Check if preferences exist
+        cursor.execute("SELECT id FROM user_preferences WHERE user_id = %s", (user_id,))
+        existing = cursor.fetchone()
+        
+        if existing:
+            # Update existing preferences
+            cursor.execute("""
+                UPDATE user_preferences 
+                SET category_keywords = %s, monthly_budgets = %s, savings_goal = %s
+                WHERE user_id = %s
+            """, (category_json, budgets_json, float(savings_goal), user_id))
+        else:
+            # Insert new preferences
+            cursor.execute("""
+                INSERT INTO user_preferences (user_id, category_keywords, monthly_budgets, savings_goal)
+                VALUES (%s, %s, %s, %s)
+            """, (user_id, category_json, budgets_json, float(savings_goal)))
         
         connection.commit()
         cursor.close()
@@ -340,7 +348,8 @@ def save_user_preferences(user_id, category_keywords, monthly_budgets, savings_g
         return True
     except Error as e:
         st.error(f"Error saving preferences: {e}")
-        connection.close()
+        if connection:
+            connection.close()
         return False
 
 # ============================================
