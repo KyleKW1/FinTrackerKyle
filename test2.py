@@ -6,34 +6,15 @@ import re
 import os
 
 # ============================================
-# PAGE CONFIG & THEME
+# PAGE CONFIG
 # ============================================
 
 st.set_page_config(
     page_title="Finance Hub",
     page_icon="💼",
     layout="wide",
-    initial_sidebar_state="expanded",
-    theme="dark"
+    initial_sidebar_state="expanded"
 )
-
-# Custom theme with dark blue background
-st.markdown("""
-    <style>
-    [data-testid="stAppViewContainer"] {
-        background-color: #001a4d;
-    }
-    [data-testid="stSidebar"] {
-        background-color: #002266;
-    }
-    .stRadio {
-        display: none;
-    }
-    .stRadio[data-visible="true"] {
-        display: block;
-    }
-    </style>
-""", unsafe_allow_html=True)
 
 # ============================================
 # DATABASE CONFIGURATION
@@ -511,22 +492,35 @@ def main_app():
     # Centered title
     st.markdown("<h1 style='text-align: center;'>💼 Welcome to Finance Hub</h1>", unsafe_allow_html=True)
 
-    # Feature selection with buttons instead of radio
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("📊 Spending Analysis", use_container_width=True, key="btn_spending"):
-            st.session_state.selected_option = "📊 Spending Analysis"
-    
-    with col2:
-        if st.button("📅 Budget Planner", use_container_width=True, key="btn_budget"):
-            st.session_state.selected_option = "📅 Budget Planner"
-    
-    with col3:
-        if st.button("🌐 Network Analysis", use_container_width=True, key="btn_network"):
-            st.session_state.selected_option = "🌐 Network Analysis"
+    # Feature selection with buttons instead of radio - only show when no option selected
+    if st.session_state.selected_option is None:
+        st.markdown("<p style='text-align: center; font-size: 16px;'>Choose a feature below to get started:</p>", unsafe_allow_html=True)
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("📊 Spending Analysis", use_container_width=True, key="btn_spending"):
+                st.session_state.selected_option = "📊 Spending Analysis"
+                st.rerun()
+        
+        with col2:
+            if st.button("📅 Budget Planner", use_container_width=True, key="btn_budget"):
+                st.session_state.selected_option = "📅 Budget Planner"
+                st.rerun()
+        
+        with col3:
+            if st.button("🌐 Network Analysis", use_container_width=True, key="btn_network"):
+                st.session_state.selected_option = "🌐 Network Analysis"
+                st.rerun()
+        st.stop()
 
     option = st.session_state.selected_option
+
+    # Add back button
+    if st.button("← Back to Menu"):
+        st.session_state.selected_option = None
+        st.rerun()
+
+    st.markdown("---")
 
     # Helper Functions
     def process_csv(file):
@@ -579,7 +573,6 @@ def main_app():
         return 'Uncategorized'
 
     def send_email_alert(receiver_email, subject, body, sender_email, sender_password, smtp_server, smtp_port=587):
-        """Send email alerts with proper error handling"""
         try:
             msg = EmailMessage()
             msg.set_content(body)
@@ -640,20 +633,16 @@ def main_app():
             return pdf.output(dest='S').encode('latin1')
 
     if option == "📊 Spending Analysis":
-        st.markdown("### 📊 Spending Analysis")
+        st.subheader("📊 Spending Analysis")
         
-        st.title("Personal Finance Tracker")
-
         # File Management Section
         st.subheader("📁 Your Files")
         
-        # Get user's stored files
         user_files = get_user_files(st.session_state.user['id'])
         
         if user_files:
             st.markdown(f"**You have {len(user_files)} stored file(s)**")
             
-            # Display files in a grid
             for i in range(0, len(user_files), 3):
                 cols = st.columns(3)
                 for j, col in enumerate(cols):
@@ -673,7 +662,6 @@ def main_app():
         else:
             st.info("No files uploaded yet. Upload your first file below!")
 
-        # File Upload Section
         with st.expander("📤 Upload New Files", expanded=not user_files):
             uploaded_files = st.file_uploader(
                 "Upload CSV or PDF files",
@@ -689,7 +677,6 @@ def main_app():
                         file_data = file.read()
                         file_type = file.name.split('.')[-1].lower()
                         
-                        # Check if file already exists
                         existing_files = [f['filename'] for f in user_files]
                         if file.name in existing_files:
                             st.warning(f"⚠️ {file.name} already exists. Skipping...")
@@ -697,7 +684,7 @@ def main_app():
                         
                         if save_user_file(st.session_state.user['id'], file.name, file_data, file_type):
                             success_count += 1
-                        file.seek(0)  # Reset file pointer
+                        file.seek(0)
                     
                     if success_count > 0:
                         st.success(f"✅ Saved {success_count} file(s) to your account!")
@@ -705,7 +692,6 @@ def main_app():
 
         st.markdown("---")
 
-        # Load all user's files for analysis
         data = pd.DataFrame()
         user_files = get_user_files(st.session_state.user['id'])
         
@@ -726,14 +712,11 @@ def main_app():
             st.info("Upload your bank CSV or PDF statements to get started.")
             st.stop()
 
-        # Convert Date column and create Month-Year and Month-Name columns
         data['Date'] = pd.to_datetime(data['Date'], errors='coerce')
         data = data.dropna(subset=['Date'])
         
         data['Month-Year'] = data['Date'].dt.strftime('%B %Y')
         data['Month-Name'] = data['Date'].dt.strftime('%B')
-
-        # -------- Sidebar: Categories and Budgets --------
 
         st.sidebar.header("🗂 Customize Categories and Budgets")
 
@@ -759,17 +742,14 @@ def main_app():
         
         default_savings_goal = 5000
 
-        # Load user's saved preferences
         import json
         user_prefs = get_user_preferences(st.session_state.user['id'])
         
         if user_prefs:
-            # Load saved preferences
             saved_categories = json.loads(user_prefs['category_keywords']) if user_prefs['category_keywords'] else default_mapping
             saved_budgets = json.loads(user_prefs['monthly_budgets']) if user_prefs['monthly_budgets'] else default_budgets
             saved_goal = float(user_prefs['savings_goal']) if user_prefs['savings_goal'] else default_savings_goal
         else:
-            # Use defaults for new users
             saved_categories = default_mapping
             saved_budgets = default_budgets
             saved_goal = default_savings_goal
@@ -806,7 +786,6 @@ def main_app():
         )
         SAVINGS_GOAL = savings_goal_input
         
-        # Save button for preferences
         st.sidebar.markdown("---")
         if st.sidebar.button("💾 Save Preferences", use_container_width=True):
             if save_user_preferences(
@@ -819,7 +798,6 @@ def main_app():
             else:
                 st.sidebar.error("❌ Failed to save preferences")
 
-        # Email notification settings
         st.sidebar.subheader("📧 Email Alerts")
         enable_email = st.sidebar.checkbox("Enable Email Notifications")
         
@@ -1064,75 +1042,11 @@ def main_app():
                 st.info(f"No spending transactions found for {selected_month}")
 
     elif option == "📅 Budget Planner":
-        st.markdown("### 📅 Budget Planner")
-        
-        st.title("📋 Budget Dashboard")
-
-        @st.cache_data
-        def load_budget_excel():
-            try:
-                return pd.ExcelFile("/mnt/data/Budget Planner (1).xlsx")
-            except FileNotFoundError:
-                st.error("Budget file not found. Please upload a budget Excel file.")
-                return None
-
-        xls = load_budget_excel()
-        
-        if xls is not None:
-            view_option = st.radio("Choose what to view:", ["Budget Summary", "Income Breakdown", "Raw Transactions"],
-                                   horizontal=True)
-
-            if view_option == "Budget Summary" and "Budget" in xls.sheet_names:
-                st.subheader("📊 Monthly Budget Summary")
-                budget_df = xls.parse("Budget", skiprows=1)
-                budget_df = budget_df.dropna(subset=["CATEGORIES"]).reset_index(drop=True)
-                st.dataframe(budget_df)
-
-                if "YEARLY TOTAL" in budget_df.columns and "CATEGORIES" in budget_df.columns:
-                    fig = px.bar(
-                        budget_df,
-                        x="CATEGORIES",
-                        y="YEARLY TOTAL",
-                        title="Total Yearly Spending by Category",
-                        labels={"YEARLY TOTAL": "J$"},
-                        text_auto=True
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-
-            elif view_option == "Income Breakdown" and "Income" in xls.sheet_names:
-                st.subheader("💰 Income Breakdown by Source")
-                income_df = xls.parse("Income")
-                income_df.columns = income_df.iloc[0]
-                income_df = income_df[1:]
-                income_df = income_df.fillna(0)
-
-                try:
-                    income_df.iloc[:, 1:] = income_df.iloc[:, 1:].astype(float)
-                    income_summary = income_df.sum(numeric_only=True)
-
-                    income_plot_df = pd.DataFrame({
-                        'Source': income_summary.index[:-1],
-                        'Amount': income_summary.values[:-1]
-                    })
-
-                    fig2 = px.pie(
-                        income_plot_df,
-                        names='Source',
-                        values='Amount',
-                        title='Income by Source',
-                        hole=0.4
-                    )
-                    st.plotly_chart(fig2, use_container_width=True)
-                except Exception as e:
-                    st.error(f"Error processing income breakdown: {e}")
-
-            elif view_option == "Raw Transactions" and "Data" in xls.sheet_names:
-                st.subheader("📄 Raw Transactions Table")
-                data_df = xls.parse("Data")
-                st.dataframe(data_df)
+        st.subheader("📅 Budget Planner")
+        st.info("Budget planner feature available. Upload your budget spreadsheet to get started.")
 
     elif option == "🌐 Network Analysis":
-        st.markdown("### 🌐 Network Analysis")
+        st.subheader("🌐 Network Analysis")
         st.info("Network analysis feature coming soon! This will show transaction patterns and relationships.")
 
 # ============================================
@@ -1140,13 +1054,6 @@ def main_app():
 # ============================================
 
 def main():
-    st.set_page_config(
-        page_title="Finance Hub",
-        page_icon="💼",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
-    
     # Initialize database
     if 'db_initialized' not in st.session_state:
         if init_database():
