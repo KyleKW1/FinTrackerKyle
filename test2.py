@@ -16,20 +16,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Dark blue theme with CSS
-st.markdown("""
-    <style>
-        [data-testid="stAppViewContainer"] {
-            background-color: #050f40 !important;
-        }
-        [data-testid="stSidebar"] {
-            background-color: #2a3c91 !important;
-        }
-        body {
-            color: ##51ff00 !important;
-        }
-    </style>
-""", unsafe_allow_html=True)
+
 
 # ============================================
 # DATABASE CONFIGURATION
