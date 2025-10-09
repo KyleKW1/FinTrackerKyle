@@ -13,8 +13,106 @@ st.set_page_config(
     page_title="Finance Hub",
     page_icon="💼",
     layout="wide",
+    initial_sidebar_state="expanded",
     initial_sidebar_state="expanded"
 )
+
+# Dark blue theme with CSS
+st.markdown("""
+    <style>
+        :root {
+            --primary-color: #001a4d;
+            --secondary-color: #002266;
+            --text-color: #ffffff;
+        }
+        
+        html, body, [data-testid="stAppViewContainer"] {
+            background-color: #001a4d !important;
+            color: #ffffff !important;
+        }
+        
+        [data-testid="stSidebar"], [data-testid="stSidebarContent"] {
+            background-color: #002266 !important;
+        }
+        
+        [data-testid="stHeader"] {
+            background-color: #001a4d !important;
+        }
+        
+        .stButton > button {
+            background-color: #1f77b4 !important;
+            color: white !important;
+            border: none !important;
+        }
+        
+        .stButton > button:hover {
+            background-color: #3a95d5 !important;
+        }
+        
+        /* Text inputs */
+        .stTextInput input {
+            background-color: #1a1a2e !important;
+            color: #ffffff !important;
+            border: 1px solid #444 !important;
+        }
+        
+        /* Number inputs */
+        .stNumberInput input {
+            background-color: #1a1a2e !important;
+            color: #ffffff !important;
+            border: 1px solid #444 !important;
+        }
+        
+        /* Selectbox */
+        [data-testid="stSelectbox"] > div > div {
+            background-color: #1a1a2e !important;
+            color: #ffffff !important;
+        }
+        
+        /* Multiselect */
+        [data-testid="stMultiSelect"] {
+            background-color: #1a1a2e !important;
+        }
+        
+        /* Dataframe */
+        [data-testid="stDataFrame"] {
+            background-color: #1a1a2e !important;
+        }
+        
+        /* Expander */
+        .streamlit-expanderHeader {
+            background-color: #002266 !important;
+            color: #ffffff !important;
+        }
+        
+        /* Radio buttons */
+        [data-testid="stRadio"] {
+            color: #ffffff !important;
+        }
+        
+        /* Checkbox */
+        [data-testid="stCheckbox"] {
+            color: #ffffff !important;
+        }
+        
+        /* Metrics */
+        [data-testid="stMetricContainer"] {
+            background-color: #002266 !important;
+            border-radius: 8px;
+            padding: 1rem;
+        }
+        
+        /* Divider */
+        hr {
+            border-color: #444 !important;
+        }
+        
+        /* Info/Warning/Error boxes */
+        .stAlert {
+            background-color: #1a1a2e !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
 # ============================================
 # DATABASE CONFIGURATION
@@ -39,11 +137,11 @@ except (KeyError, FileNotFoundError):
         pass
     
     DB_CONFIG = {
-        'host': os.getenv('MYSQL_HOST') or 'mysql-11beff9b-kamarwatson36-874b.g.aivencloud.com',
-        'port': int(os.getenv('MYSQL_PORT') or '11510'),
-        'user': os.getenv('MYSQL_USER') or 'avnadmin',
-        'password': os.getenv('MYSQL_PASSWORD') or 'AVNS_Dxyg2mu3MEiRoVyasff',
-        'database': os.getenv('MYSQL_DATABASE') or 'defaultdb',
+        'host': os.getenv('MYSQL_HOST') ,
+        'port': int(os.getenv('MYSQL_PORT'),
+        'user': os.getenv('MYSQL_USER'),
+        'password': os.getenv('MYSQL_PASSWORD'),
+        'database': os.getenv('MYSQL_DATABASE'),
         'ssl_disabled': False,
         'ssl_verify_cert': False,
         'ssl_verify_identity': False
