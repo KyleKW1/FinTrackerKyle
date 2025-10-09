@@ -6,10 +6,39 @@ import re
 import os
 
 # ============================================
+# PAGE CONFIG & THEME
+# ============================================
+
+st.set_page_config(
+    page_title="Finance Hub",
+    page_icon="💼",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    theme="dark"
+)
+
+# Custom theme with dark blue background
+st.markdown("""
+    <style>
+    [data-testid="stAppViewContainer"] {
+        background-color: #001a4d;
+    }
+    [data-testid="stSidebar"] {
+        background-color: #002266;
+    }
+    .stRadio {
+        display: none;
+    }
+    .stRadio[data-visible="true"] {
+        display: block;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# ============================================
 # DATABASE CONFIGURATION
 # ============================================
 
-# Try Streamlit secrets first (for Streamlit Cloud), then fall back to environment variables
 try:
     DB_CONFIG = {
         'host': st.secrets["mysql"]["host"],
@@ -22,14 +51,12 @@ try:
         'ssl_verify_identity': False
     }
 except (KeyError, FileNotFoundError):
-    # Fall back to environment variables or direct config
     try:
         from dotenv import load_dotenv
         load_dotenv()
     except ImportError:
-        pass  # dotenv not installed, will use os.getenv with defaults
+        pass
     
-    # Use environment variables with fallback to Aiven credentials
     DB_CONFIG = {
         'host': os.getenv('MYSQL_HOST') or 'mysql-11beff9b-kamarwatson36-874b.g.aivencloud.com',
         'port': int(os.getenv('MYSQL_PORT') or '11510'),
@@ -66,7 +93,6 @@ def create_connection():
 def init_database():
     """Initialize database and create users table if it doesn't exist"""
     try:
-        # Connect to Aiven MySQL
         conn = mysql.connector.connect(
             host=DB_CONFIG['host'],
             port=DB_CONFIG['port'],
@@ -79,7 +105,6 @@ def init_database():
         )
         cursor = conn.cursor()
         
-        # Create users table (database already exists in Aiven)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -91,7 +116,6 @@ def init_database():
             )
         """)
         
-        # Create user_files table for storing uploaded files
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS user_files (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -104,7 +128,6 @@ def init_database():
             )
         """)
         
-        # Create user_preferences table for storing budget and category settings
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS user_preferences (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -179,7 +202,6 @@ def authenticate_user(username, password):
         user = cursor.fetchone()
         
         if user:
-            # Update last login
             cursor.execute(
                 "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = %s",
                 (user['id'],)
@@ -320,23 +342,19 @@ def save_user_preferences(user_id, category_keywords, monthly_budgets, savings_g
     try:
         cursor = connection.cursor()
         
-        # Convert dictionaries to JSON strings
         category_json = json.dumps(category_keywords)
         budgets_json = json.dumps(monthly_budgets)
         
-        # Check if preferences exist
         cursor.execute("SELECT id FROM user_preferences WHERE user_id = %s", (user_id,))
         existing = cursor.fetchone()
         
         if existing:
-            # Update existing preferences
             cursor.execute("""
                 UPDATE user_preferences 
                 SET category_keywords = %s, monthly_budgets = %s, savings_goal = %s
                 WHERE user_id = %s
             """, (category_json, budgets_json, float(savings_goal), user_id))
         else:
-            # Insert new preferences
             cursor.execute("""
                 INSERT INTO user_preferences (user_id, category_keywords, monthly_budgets, savings_goal)
                 VALUES (%s, %s, %s, %s)
@@ -364,12 +382,15 @@ def init_session_state():
         st.session_state.user = None
     if 'page' not in st.session_state:
         st.session_state.page = 'login'
+    if 'selected_option' not in st.session_state:
+        st.session_state.selected_option = None
 
 def logout():
     """Logout user"""
     st.session_state.authenticated = False
     st.session_state.user = None
     st.session_state.page = 'login'
+    st.session_state.selected_option = None
     st.rerun()
 
 # ============================================
@@ -378,7 +399,6 @@ def logout():
 
 def login_page():
     """Display login page"""
-    # Center the title
     st.markdown("<h1 style='text-align: center;'>🔐 Finance Hub Login</h1>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -414,7 +434,6 @@ def login_page():
 
 def register_page():
     """Display registration page"""
-    # Center the title
     st.markdown("<h1 style='text-align: center;'>📝 Register New Account</h1>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -430,7 +449,6 @@ def register_page():
         
         with col_btn1:
             if st.button("Create Account", use_container_width=True):
-                # Validation
                 if not username or not email or not password:
                     st.error("All fields are required")
                 elif len(username) < 3:
@@ -468,7 +486,6 @@ def main_app():
     from email.message import EmailMessage
     from io import BytesIO
     import tempfile
-    import os
     from PIL import Image
     import pdfplumber
 
@@ -480,7 +497,6 @@ def main_app():
 
     from fpdf import FPDF
 
-    # Sidebar user info at the top
     with st.sidebar:
         st.markdown(f"### 👤 {st.session_state.user['username']}")
         st.markdown(f"📧 {st.session_state.user['email']}")
@@ -492,8 +508,27 @@ def main_app():
             logout()
         st.markdown("---")
 
-    # ---------- Helper Functions ----------
+    # Centered title
+    st.markdown("<h1 style='text-align: center;'>💼 Welcome to Finance Hub</h1>", unsafe_allow_html=True)
 
+    # Feature selection with buttons instead of radio
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("📊 Spending Analysis", use_container_width=True, key="btn_spending"):
+            st.session_state.selected_option = "📊 Spending Analysis"
+    
+    with col2:
+        if st.button("📅 Budget Planner", use_container_width=True, key="btn_budget"):
+            st.session_state.selected_option = "📅 Budget Planner"
+    
+    with col3:
+        if st.button("🌐 Network Analysis", use_container_width=True, key="btn_network"):
+            st.session_state.selected_option = "🌐 Network Analysis"
+
+    option = st.session_state.selected_option
+
+    # Helper Functions
     def process_csv(file):
         try:
             df = pd.read_csv(file)
@@ -603,17 +638,6 @@ def main_app():
                 pdf.cell(0, 10, line.encode('latin-1', 'ignore').decode('latin-1'), ln=True)
                 
             return pdf.output(dest='S').encode('latin1')
-
-    # ---------- Main App UI ----------
-    
-    st.title("💼 Welcome to Finance Hub")
-    st.markdown("Choose a feature below to get started:")
-
-    option = st.radio(
-        "What would you like to do?",
-        ["📊 Spending Analysis", "📅 Budget Planner", "🌐 Network Analysis"],
-        index=0
-    )
 
     if option == "📊 Spending Analysis":
         st.markdown("### 📊 Spending Analysis")
