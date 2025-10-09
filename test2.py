@@ -23,7 +23,7 @@ st.markdown("""
             background-color: #050f40 !important;
         }
         [data-testid="stSidebar"] {
-            background-color: #002266 !important;
+            background-color: #2a3c91 !important;
         }
         body {
             color: ##51ff00 !important;
