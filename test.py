@@ -31,11 +31,11 @@ except (KeyError, FileNotFoundError):
     
     # Use environment variables with fallback to Aiven credentials
     DB_CONFIG = {
-        'host': os.getenv('MYSQL_HOST') or 'mysql-11beff9b-kamarwatson36-874b.g.aivencloud.com',
+        'host': os.getenv('MYSQL_HOST'),
         'port': int(os.getenv('MYSQL_PORT') or '11510'),
-        'user': os.getenv('MYSQL_USER') or 'avnadmin',
-        'password': os.getenv('MYSQL_PASSWORD') or 'AVNS_Dxyg2mu3MEiRoVyasff',
-        'database': os.getenv('MYSQL_DATABASE') or 'defaultdb',
+        'user': os.getenv('MYSQL_USER'),
+        'password': os.getenv('MYSQL_PASSWORD'),
+        'database': os.getenv('MYSQL_DATABASE'),
         'ssl_disabled': False,
         'ssl_verify_cert': False,
         'ssl_verify_identity': False
