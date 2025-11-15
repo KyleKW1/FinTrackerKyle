@@ -568,80 +568,99 @@ def load_all_user_data(user_id):
 # ============================================
 # PRE-COMPUTED SUMMARIES
 # ============================================
-
 def compute_monthly_summary(user_id, year_month, df):
-    """Compute and store monthly summary"""
+    """Compute and store monthly summary (robust quoting + VALUES() in UPDATE)"""
     connection = create_connection()
     if not connection:
         return False
-    
+
     try:
         # Filter data for the month
         month_data = df[df['YearMonth'] == year_month]
-        
+
         if month_data.empty:
             return False
-        
-        total_income = month_data[month_data['Category'] == 'Credit']['Amount'].sum()
-        total_spending = month_data[month_data['Category'] == 'Debit']['Amount'].sum()
-        
-        # Compute category breakdown
+
+        total_income = float(month_data[month_data['Category'] == 'Credit']['Amount'].sum())
+        total_spending = float(month_data[month_data['Category'] == 'Debit']['Amount'].sum())
+
+        # Compute category breakdown safely (ensure keys are serializable)
         spending_by_category = month_data[month_data['Category'] == 'Debit'].groupby('Spending Category')['Amount'].sum()
-        category_breakdown = json.dumps(spending_by_category.to_dict())
-        
-        transaction_count = len(month_data)
-        
+        category_breakdown = json.dumps({str(k): float(v) for k, v in spending_by_category.to_dict().items()})
+
+        transaction_count = int(len(month_data))
+
         cursor = connection.cursor()
-        cursor.execute("""
-            INSERT INTO monthly_summaries 
-            (user_id, year_month, total_income, total_spending, category_breakdown, transaction_count)
+        sql = """
+            INSERT INTO `monthly_summaries`
+            (`user_id`, `year_month`, `total_income`, `total_spending`, `category_breakdown`, `transaction_count`)
             VALUES (%s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
-            total_income = %s, total_spending = %s, category_breakdown = %s, 
-            transaction_count = %s, computed_at = CURRENT_TIMESTAMP
-        """, (user_id, year_month, total_income, total_spending, category_breakdown, 
-              transaction_count, total_income, total_spending, category_breakdown, transaction_count))
-        
+                `total_income` = VALUES(`total_income`),
+                `total_spending` = VALUES(`total_spending`),
+                `category_breakdown` = VALUES(`category_breakdown`),
+                `transaction_count` = VALUES(`transaction_count`),
+                `computed_at` = CURRENT_TIMESTAMP
+        """
+        params = (user_id, year_month, total_income, total_spending, category_breakdown, transaction_count)
+        cursor.execute(sql, params)
+
         connection.commit()
         cursor.close()
         connection.close()
         return True
-        
+
     except Error as e:
-        st.error(f"Error computing summary: {e}")
+        # Show the SQL and params to make debugging easier (do NOT log passwords)
+        try:
+            st.error(f"Error computing summary: {e}")
+            st.error(f"SQL: {sql}")
+            st.error(f"Params: {params}")
+        except Exception:
+            st.error(f"Error computing summary (and failed to show SQL): {e}")
         connection.close()
         return False
 
+
 def get_monthly_summary(user_id, year_month):
-    """Get pre-computed monthly summary"""
+    """Get pre-computed monthly summary (quoted identifiers)"""
     connection = create_connection()
     if not connection:
         return None
-    
+
     try:
         cursor = connection.cursor(dictionary=True)
-        cursor.execute("""
-            SELECT total_income, total_spending, category_breakdown, 
-                   transaction_count, computed_at
-            FROM monthly_summaries
-            WHERE user_id = %s AND year_month = %s
-        """, (user_id, year_month))
-        
+        sql = """
+            SELECT `total_income`, `total_spending`, `category_breakdown`,
+                   `transaction_count`, `computed_at`
+            FROM `monthly_summaries`
+            WHERE `user_id` = %s AND `year_month` = %s
+        """
+        cursor.execute(sql, (user_id, year_month))
+
         summary = cursor.fetchone()
         cursor.close()
         connection.close()
-        
-        if summary:
-            summary['category_breakdown'] = json.loads(summary['category_breakdown'])
+
+        if summary and summary.get('category_breakdown'):
+            try:
+                summary['category_breakdown'] = json.loads(summary['category_breakdown'])
+            except Exception:
+                # If stored value is not JSON, leave as-is
+                pass
             return summary
-        
-        return None
-        
-    except Error as e:
-        st.error(f"Error retrieving summary: {e}")
-        connection.close()
+
         return None
 
+    except Error as e:
+        try:
+            st.error(f"Error retrieving summary: {e}")
+            st.error(f"SQL: {sql}")
+            st.error(f"Params: {(user_id, year_month)}")
+        except Exception:
+            st.error(f"Error retrieving summary: {e}")
+        connection.close()
+        return None
 # ============================================
 # USER PREFERENCES
 # ============================================
