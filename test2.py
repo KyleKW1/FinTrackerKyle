@@ -5,7 +5,7 @@ import hashlib
 import re
 import os
 import pandas as pd
-import plotly.express as px
+import plotly.express as px 
 import calendar
 import smtplib
 from email.message import EmailMessage
