@@ -166,20 +166,21 @@ def init_database():
         """)
         
         # Monthly summaries table for pre-computed data
+        # Use quoted identifiers and more compatible definitions to avoid syntax issues on different MySQL versions.
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS monthly_summaries (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                user_id INT NOT NULL,
-                year_month VARCHAR(7) NOT NULL,
-                total_income DECIMAL(12,2) DEFAULT 0,
-                total_spending DECIMAL(12,2) DEFAULT 0,
-                category_breakdown TEXT,
-                transaction_count INT DEFAULT 0,
-                computed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE KEY unique_user_month (user_id, year_month),
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-                INDEX idx_monthly_summaries (user_id, year_month)
-            )
+            CREATE TABLE IF NOT EXISTS `monthly_summaries` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `user_id` INT NOT NULL,
+                `year_month` VARCHAR(7) NOT NULL,
+                `total_income` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                `total_spending` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                `category_breakdown` TEXT,
+                `transaction_count` INT NOT NULL DEFAULT 0,
+                `computed_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY `unique_user_month` (`user_id`, `year_month`),
+                KEY `idx_monthly_summaries` (`user_id`, `year_month`),
+                CONSTRAINT `fk_monthly_user` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """)
         
         conn.commit()
