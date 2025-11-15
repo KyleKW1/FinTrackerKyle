@@ -28,7 +28,7 @@ except (KeyError, FileNotFoundError):
         load_dotenv()
     except ImportError:
         pass  # dotenv not installed, will use os.getenv with defaults
-    
+
     # Use environment variables with fallback to Aiven credentials
     DB_CONFIG = {
         'host': os.getenv('MYSQL_HOST'),
@@ -41,13 +41,26 @@ except (KeyError, FileNotFoundError):
         'ssl_verify_identity': False
     }
 
+# Helper to mask sensitive DB config for error display
+def _masked_db_info(cfg):
+    host = cfg.get('host')
+    port = cfg.get('port')
+    user = cfg.get('user')
+    return f"host={host}, port={port}, user={user}"
+
 # ============================================
 # DATABASE FUNCTIONS
 # ============================================
 
 def create_connection():
     """Create a database connection"""
+    # Allow a dev mode to skip DB entirely (useful when you don't have a MySQL server running)
+    if os.getenv('SKIP_DB_INIT', '').lower() in ('1', 'true', 'yes'):
+        st.warning("SKIP_DB_INIT is set — skipping creation of a MySQL connection (running in limited demo mode).")
+        return None
+
     try:
+        # Short connection timeout so failures surface quickly
         connection = mysql.connector.connect(
             host=DB_CONFIG['host'],
             port=DB_CONFIG['port'],
@@ -56,17 +69,25 @@ def create_connection():
             database=DB_CONFIG['database'],
             ssl_disabled=DB_CONFIG.get('ssl_disabled', False),
             ssl_verify_cert=DB_CONFIG.get('ssl_verify_cert', False),
-            ssl_verify_identity=DB_CONFIG.get('ssl_verify_identity', False)
+            ssl_verify_identity=DB_CONFIG.get('ssl_verify_identity', False),
+            connection_timeout=10
         )
         return connection
     except Error as e:
+        # Avoid printing secrets; show helpful, masked info
         st.error(f"Database connection error: {e}")
+        st.info(f"Checked DB config: {_masked_db_info(DB_CONFIG)}")
         return None
 
 def init_database():
     """Initialize database and create users table if it doesn't exist"""
+    # Allow skipping DB initialization for quick local testing
+    if os.getenv('SKIP_DB_INIT', '').lower() in ('1', 'true', 'yes'):
+        st.warning("SKIP_DB_INIT is set — skipping database initialization. Running in limited demo mode.")
+        return True
+
     try:
-        # Connect to Aiven MySQL
+        # Connect to Aiven MySQL (use a short timeout)
         conn = mysql.connector.connect(
             host=DB_CONFIG['host'],
             port=DB_CONFIG['port'],
@@ -75,10 +96,11 @@ def init_database():
             database=DB_CONFIG['database'],
             ssl_disabled=DB_CONFIG.get('ssl_disabled', False),
             ssl_verify_cert=DB_CONFIG.get('ssl_verify_cert', False),
-            ssl_verify_identity=DB_CONFIG.get('ssl_verify_identity', False)
+            ssl_verify_identity=DB_CONFIG.get('ssl_verify_identity', False),
+            connection_timeout=10
         )
         cursor = conn.cursor()
-        
+
         # Create users table (database already exists in Aiven)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -90,7 +112,7 @@ def init_database():
                 last_login TIMESTAMP NULL
             )
         """)
-        
+
         # Create user_files table for storing uploaded files
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS user_files (
@@ -103,7 +125,7 @@ def init_database():
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
         """)
-        
+
         # Create user_preferences table for storing budget and category settings
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS user_preferences (
@@ -116,13 +138,16 @@ def init_database():
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
         """)
-        
+
         conn.commit()
         cursor.close()
         conn.close()
         return True
     except Error as e:
+        # Provide actionable debugging info without leaking credentials
         st.error(f"Database initialization error: {e}")
+        st.info(f"Checked DB config: {_masked_db_info(DB_CONFIG)}")
+        st.info("If you're running locally and don't have a MySQL server, you can run the app in demo mode by setting the environment variable SKIP_DB_INIT=1")
         return False
 
 def hash_password(password):
@@ -139,21 +164,21 @@ def register_user(username, email, password):
     connection = create_connection()
     if not connection:
         return False, "Database connection failed"
-    
+
     try:
         cursor = connection.cursor()
         password_hash = hash_password(password)
-        
+
         cursor.execute(
             "INSERT INTO users (username, email, password_hash) VALUES (%s, %s, %s)",
             (username, email, password_hash)
         )
-        
+
         connection.commit()
         cursor.close()
         connection.close()
         return True, "Registration successful!"
-    
+
     except mysql.connector.IntegrityError:
         connection.close()
         return False, "Username or email already exists"
@@ -166,18 +191,18 @@ def authenticate_user(username, password):
     connection = create_connection()
     if not connection:
         return False, None
-    
+
     try:
         cursor = connection.cursor(dictionary=True)
         password_hash = hash_password(password)
-        
+
         cursor.execute(
             "SELECT * FROM users WHERE username = %s AND password_hash = %s",
             (username, password_hash)
         )
-        
+
         user = cursor.fetchone()
-        
+
         if user:
             # Update last login
             cursor.execute(
@@ -185,12 +210,12 @@ def authenticate_user(username, password):
                 (user['id'],)
             )
             connection.commit()
-        
+
         cursor.close()
         connection.close()
-        
+
         return user is not None, user
-    
+
     except Error as e:
         st.error(f"Authentication error: {e}")
         connection.close()
@@ -205,7 +230,7 @@ def save_user_file(user_id, filename, file_data, file_type):
     connection = create_connection()
     if not connection:
         return False
-    
+
     try:
         cursor = connection.cursor()
         cursor.execute(
@@ -226,7 +251,7 @@ def get_user_files(user_id):
     connection = create_connection()
     if not connection:
         return []
-    
+
     try:
         cursor = connection.cursor(dictionary=True)
         cursor.execute(
@@ -247,7 +272,7 @@ def get_file_data(file_id, user_id):
     connection = create_connection()
     if not connection:
         return None
-    
+
     try:
         cursor = connection.cursor(dictionary=True)
         cursor.execute(
@@ -268,7 +293,7 @@ def delete_user_file(file_id, user_id):
     connection = create_connection()
     if not connection:
         return False
-    
+
     try:
         cursor = connection.cursor()
         cursor.execute(
@@ -294,7 +319,7 @@ def get_user_preferences(user_id):
     connection = create_connection()
     if not connection:
         return None
-    
+
     try:
         cursor = connection.cursor(dictionary=True)
         cursor.execute(
@@ -316,18 +341,18 @@ def save_user_preferences(user_id, category_keywords, monthly_budgets, savings_g
     connection = create_connection()
     if not connection:
         return False
-    
+
     try:
         cursor = connection.cursor()
-        
+
         # Convert dictionaries to JSON strings
         category_json = json.dumps(category_keywords)
         budgets_json = json.dumps(monthly_budgets)
-        
+
         # Check if preferences exist
         cursor.execute("SELECT id FROM user_preferences WHERE user_id = %s", (user_id,))
         existing = cursor.fetchone()
-        
+
         if existing:
             # Update existing preferences
             cursor.execute("""
@@ -341,7 +366,7 @@ def save_user_preferences(user_id, category_keywords, monthly_budgets, savings_g
                 INSERT INTO user_preferences (user_id, category_keywords, monthly_budgets, savings_goal)
                 VALUES (%s, %s, %s, %s)
             """, (user_id, category_json, budgets_json, float(savings_goal)))
-        
+
         connection.commit()
         cursor.close()
         connection.close()
@@ -380,16 +405,16 @@ def login_page():
     """Display login page"""
     # Center the title
     st.markdown("<h1 style='text-align: center;'>🔐 Finance Hub Login</h1>", unsafe_allow_html=True)
-    
+
     col1, col2, col3 = st.columns([1, 2, 1])
-    
+
     with col2:
         st.markdown("---")
         username = st.text_input("Username", key="login_username")
         password = st.text_input("Password", type="password", key="login_password")
-        
+
         col_btn1, col_btn2 = st.columns(2)
-        
+
         with col_btn1:
             if st.button("Login", use_container_width=True):
                 if username and password:
@@ -403,12 +428,12 @@ def login_page():
                         st.error("Invalid username or password")
                 else:
                     st.warning("Please enter both username and password")
-        
+
         with col_btn2:
             if st.button("Register", use_container_width=True):
                 st.session_state.page = 'register'
                 st.rerun()
-        
+
         st.markdown("---")
         st.info("💡 **Demo:** Create a new account to get started!")
 
@@ -416,18 +441,18 @@ def register_page():
     """Display registration page"""
     # Center the title
     st.markdown("<h1 style='text-align: center;'>📝 Register New Account</h1>", unsafe_allow_html=True)
-    
+
     col1, col2, col3 = st.columns([1, 2, 1])
-    
+
     with col2:
         st.markdown("---")
         username = st.text_input("Username", key="reg_username", help="Minimum 3 characters")
         email = st.text_input("Email", key="reg_email", help="Valid email address")
         password = st.text_input("Password", type="password", key="reg_password", help="Minimum 6 characters")
         confirm_password = st.text_input("Confirm Password", type="password", key="reg_confirm")
-        
+
         col_btn1, col_btn2 = st.columns(2)
-        
+
         with col_btn1:
             if st.button("Create Account", use_container_width=True):
                 # Validation
@@ -451,12 +476,12 @@ def register_page():
                         st.rerun()
                     else:
                         st.error(message)
-        
+
         with col_btn2:
             if st.button("Back to Login", use_container_width=True):
                 st.session_state.page = 'login'
                 st.rerun()
-        
+
         st.markdown("---")
 
 def main_app():
@@ -563,7 +588,7 @@ def main_app():
                     server.login(sender_email, sender_password)
                     server.send_message(msg)
                     st.success("✅ Email sent successfully!")
-            
+
             return True
 
         except smtplib.SMTPAuthenticationError:
@@ -598,10 +623,10 @@ def main_app():
             pdf = FPDF()
             pdf.add_page()
             pdf.set_font("Arial", size=12)
-            
+
             for line in text_report.split('\n'):
                 pdf.cell(0, 10, line.encode('latin-1', 'ignore').decode('latin-1'), ln=True)
-                
+
             return pdf.output(dest='S').encode('latin1')
 
     # ---------- Main App UI ----------
