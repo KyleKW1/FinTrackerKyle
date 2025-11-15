@@ -26,77 +26,101 @@ except ImportError:
 
 from fpdf import FPDF
 
-# ============================================
-# DATABASE CONFIGURATION
-# ============================================
+import mysql.connector
+from mysql.connector import Error
+import hashlib
+import re
+import streamlit as st
+import socket
 
-try:
-    DB_CONFIG = {
-        'host': st.secrets["mysql"]["host"],
-        'port': int(st.secrets["mysql"]["port"]),
-        'user': st.secrets["mysql"]["user"],
-        'password': st.secrets["mysql"]["password"],
-        'database': st.secrets["mysql"]["database"],
-        'ssl_disabled': False,
-        'ssl_verify_cert': False,
-        'ssl_verify_identity': False
-    }
-except (KeyError, FileNotFoundError):
+# Configuration - Aiven Cloud MySQL
+DB_CONFIG = {
+    'host': 'mysql-11beff9b-kamarwatson36-874b.g.aivencloud.com',
+    'port': 11510,
+    'user': 'avnadmin',
+    'password': 'AVNS_Dxyg2mu3MEiRoVyasff',
+    'database': 'defaultdb',
+    'ssl_disabled': False,  # SSL REQUIRED for Aiven
+    'ssl_verify_cert': True,
+    'ssl_verify_identity': True
+}
+
+def test_port_connection(host, port):
+    """Test if port is accessible"""
     try:
-        from dotenv import load_dotenv
-        load_dotenv()
-    except ImportError:
-        pass
-    
-    DB_CONFIG = {
-        'host': os.getenv('MYSQL_HOST'),
-        'port': int(os.getenv('MYSQL_PORT') or '11510'),
-        'user': os.getenv('MYSQL_USER'),
-        'password': os.getenv('MYSQL_PASSWORD'),
-        'database': os.getenv('MYSQL_DATABASE'),
-        'ssl_disabled': False,
-        'ssl_verify_cert': False,
-        'ssl_verify_identity': False
-    }
-
-# ============================================
-# DATABASE FUNCTIONS WITH OPTIMIZATION
-# ============================================
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(2)
+        result = sock.connect_ex((host, port))
+        sock.close()
+        return result == 0
+    except Exception as e:
+        return False
 
 def create_connection():
-    """Create a database connection with connection pooling"""
+    """Create a database connection with enhanced error handling"""
+    
+    # First, test if port is reachable
+    if not test_port_connection(DB_CONFIG['host'], DB_CONFIG['port']):
+        st.error(f"Cannot reach {DB_CONFIG['host']}:{DB_CONFIG['port']}. "
+                f"Please check:\n"
+                f"1. MySQL server is running\n"
+                f"2. Port number is correct (default: 3306)\n"
+                f"3. Firewall settings\n"
+                f"4. If using SSH tunnel, ensure it's active")
+        return None
+    
     try:
+        # Aiven requires SSL - configure accordingly
+        ssl_config = {
+            'ssl_disabled': False
+        }
+        
         connection = mysql.connector.connect(
             host=DB_CONFIG['host'],
             port=DB_CONFIG['port'],
             user=DB_CONFIG['user'],
             password=DB_CONFIG['password'],
             database=DB_CONFIG['database'],
-            ssl_disabled=DB_CONFIG.get('ssl_disabled', False),
-            ssl_verify_cert=DB_CONFIG.get('ssl_verify_cert', False),
-            ssl_verify_identity=DB_CONFIG.get('ssl_verify_identity', False),
+            ssl_disabled=ssl_config['ssl_disabled'],
             pool_name="mypool",
-            pool_size=5
+            pool_size=5,
+            connection_timeout=30,  # Increased for cloud connections
+            autocommit=False
         )
         return connection
+    except mysql.connector.errors.ProgrammingError as e:
+        st.error(f"Database '{DB_CONFIG['database']}' does not exist or credentials are incorrect: {e}")
+        return None
+    except mysql.connector.errors.DatabaseError as e:
+        st.error(f"Database access error: {e}")
+        return None
     except Error as e:
         st.error(f"Database connection error: {e}")
         return None
 
 def init_database():
     """Initialize database with optimized schema and indexes"""
+    
+    # Test connection first
+    if not test_port_connection(DB_CONFIG['host'], DB_CONFIG['port']):
+        st.error(f"MySQL server is not accessible at {DB_CONFIG['host']}:{DB_CONFIG['port']}")
+        return False
+    
     try:
+        # Connect without database first for Aiven
         conn = mysql.connector.connect(
             host=DB_CONFIG['host'],
             port=DB_CONFIG['port'],
             user=DB_CONFIG['user'],
             password=DB_CONFIG['password'],
-            database=DB_CONFIG['database'],
-            ssl_disabled=DB_CONFIG.get('ssl_disabled', False),
-            ssl_verify_cert=DB_CONFIG.get('ssl_verify_cert', False),
-            ssl_verify_identity=DB_CONFIG.get('ssl_verify_identity', False)
+            database=DB_CONFIG['database'],  # Aiven uses 'defaultdb'
+            ssl_disabled=False,
+            connection_timeout=30
         )
         cursor = conn.cursor()
+        
+        # Use the default database (already connected to 'defaultdb')
+        # No need to create database on Aiven
         
         # Users table
         cursor.execute("""
@@ -141,7 +165,7 @@ def init_database():
             )
         """)
         
-        # NEW: Monthly summaries table for pre-computed data
+        # Monthly summaries table for pre-computed data
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS monthly_summaries (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -161,7 +185,12 @@ def init_database():
         conn.commit()
         cursor.close()
         conn.close()
+        st.success("Database initialized successfully!")
         return True
+    except mysql.connector.errors.ProgrammingError as e:
+        st.error(f"Database permission error: {e}\n"
+                f"Make sure user '{DB_CONFIG['user']}' has CREATE DATABASE privileges")
+        return False
     except Error as e:
         st.error(f"Database initialization error: {e}")
         return False
@@ -235,6 +264,37 @@ def authenticate_user(username, password):
         st.error(f"Authentication error: {e}")
         connection.close()
         return False, None
+
+# Diagnostic function
+def run_diagnostics():
+    """Run connection diagnostics"""
+    st.write("### Database Connection Diagnostics")
+    st.write(f"**Host:** {DB_CONFIG['host']}")
+    st.write(f"**Port:** {DB_CONFIG['port']}")
+    st.write(f"**Database:** {DB_CONFIG['database']}")
+    
+    if test_port_connection(DB_CONFIG['host'], DB_CONFIG['port']):
+        st.success(f"✓ Port {DB_CONFIG['port']} is reachable")
+    else:
+        st.error(f"✗ Port {DB_CONFIG['port']} is NOT reachable")
+        return
+    
+    try:
+        conn = mysql.connector.connect(
+            host=DB_CONFIG['host'],
+            port=DB_CONFIG['port'],
+            user=DB_CONFIG['user'],
+            password=DB_CONFIG['password'],
+            ssl_disabled=False,
+            connection_timeout=30
+        )
+        st.success("✓ Credentials are valid")
+        conn.close()
+    except Error as e:
+        st.error(f"✗ Connection failed: {e}")
+
+
+
 
 # ============================================
 # OPTIMIZED FILE STORAGE FUNCTIONS
