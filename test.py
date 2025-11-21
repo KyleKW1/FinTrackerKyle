@@ -19,10 +19,14 @@ import json
 import pickle
 from typing import Optional, List  # ← ADD THIS LINE IF MISSING
 import socket
-import plotly.graph_objects as go
-import plotly.io as pio
-from PIL import Image
-import io
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
 
 
 try:
@@ -1246,175 +1250,209 @@ def export_to_excel(month_data, summary, comparison, month_income, month_spendin
 
 
 def export_to_pdf(month_data, summary, comparison, month_income, month_spending, 
-                               month_savings, savings_goal, selected_month):
-    """Export comprehensive report to PDF with charts"""
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
+                   month_savings, savings_goal, selected_month):
+    """Export comprehensive report to PDF with proper tables and charts"""
+    
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    elements = []
+    styles = getSampleStyleSheet()
     
     # Title
-    pdf.cell(0, 10, f'Finance Report - {selected_month}', ln=True, align='C')
-    pdf.ln(5)
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.HexColor('#2E7D32'),
+        spaceAfter=30,
+        alignment=1  # Center
+    )
+    elements.append(Paragraph(f'Finance Report - {selected_month}', title_style))
+    elements.append(Spacer(1, 0.3*inch))
     
     # Summary Section
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, 'Monthly Summary', ln=True)
-    pdf.set_font("Arial", '', 11)
+    elements.append(Paragraph('Monthly Summary', styles['Heading2']))
+    elements.append(Spacer(1, 0.2*inch))
     
-    pdf.cell(0, 8, f'Total Income: J${month_income:,.2f}', ln=True)
-    pdf.cell(0, 8, f'Total Spending: J${month_spending:,.2f}', ln=True)
-    pdf.cell(0, 8, f'Net Savings: J${month_savings:,.2f}', ln=True)
-    pdf.cell(0, 8, f'Savings Goal: J${savings_goal:,.2f}', ln=True)
+    goal_status = 'MET ✓' if month_savings >= savings_goal else f'SHORT by J${savings_goal - month_savings:,.2f}'
     
-    goal_status = 'MET' if month_savings >= savings_goal else f'SHORT by J${savings_goal - month_savings:,.2f}'
-    pdf.cell(0, 8, f'Goal Status: {goal_status}', ln=True)
-    pdf.cell(0, 8, f'Total Transactions: {len(month_data)}', ln=True)
-    pdf.ln(5)
+    summary_data = [
+        ['Metric', 'Value'],
+        ['Total Income', f'J${month_income:,.2f}'],
+        ['Total Spending', f'J${month_spending:,.2f}'],
+        ['Net Savings', f'J${month_savings:,.2f}'],
+        ['Savings Goal', f'J${savings_goal:,.2f}'],
+        ['Goal Status', goal_status],
+        ['Total Transactions', str(len(month_data))]
+    ]
     
-    # Create and embed Income vs Spending chart
-    fig1 = go.Figure(data=[
-        go.Bar(name='Amount', x=['Income', 'Spending'], 
-               y=[month_income, month_spending],
-               marker_color=['#4CAF50', '#F44336'])
-    ])
-    fig1.update_layout(
-        title=f'{selected_month} - Income vs Spending',
-        yaxis_title='Amount (J$)',
-        height=300,
-        width=500
-    )
+    summary_table = Table(summary_data, colWidths=[3*inch, 3*inch])
+    summary_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4CAF50')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 10),
+    ]))
+    elements.append(summary_table)
+    elements.append(Spacer(1, 0.3*inch))
     
-    # Save chart as image
-    img_bytes = pio.to_image(fig1, format='png', width=500, height=300)
+    # Income vs Spending Chart
+    fig, ax = plt.subplots(figsize=(6, 4))
+    categories = ['Income', 'Spending']
+    amounts = [month_income, month_spending]
+    colors_chart = ['#4CAF50', '#F44336']
+    ax.bar(categories, amounts, color=colors_chart)
+    ax.set_ylabel('Amount (J$)')
+    ax.set_title(f'{selected_month} - Income vs Spending')
+    for i, v in enumerate(amounts):
+        ax.text(i, v + max(amounts)*0.02, f'J${v:,.0f}', ha='center', va='bottom', fontweight='bold')
+    plt.tight_layout()
     
-    # Save to temp file and add to PDF
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
-        tmp.write(img_bytes)
-        tmp_path = tmp.name
+    img_buffer = BytesIO()
+    plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight')
+    img_buffer.seek(0)
+    plt.close()
     
-    pdf.image(tmp_path, x=50, w=110)
-    os.unlink(tmp_path)
-    pdf.ln(5)
+    elements.append(Image(img_buffer, width=5*inch, height=3.3*inch))
+    elements.append(PageBreak())
     
     # Spending Breakdown Section
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, 'Spending Breakdown by Category', ln=True)
-    pdf.set_font("Arial", 'B', 10)
+    elements.append(Paragraph('Spending Breakdown by Category', styles['Heading2']))
+    elements.append(Spacer(1, 0.2*inch))
     
-    # Table header
-    pdf.cell(80, 8, 'Category', 1)
-    pdf.cell(50, 8, 'Amount (J$)', 1)
-    pdf.cell(40, 8, 'Percentage', 1, ln=True)
-    
-    pdf.set_font("Arial", '', 10)
+    spending_data = [['Category', 'Amount', 'Percentage']]
     for _, row in summary.iterrows():
-        category_text = str(row['Spending Category'])[:30]
-        pdf.cell(80, 8, category_text, 1)
-        pdf.cell(50, 8, f"{row['Amount']:,.2f}", 1)
-        pdf.cell(40, 8, f"{row['Percentage']:.2f}%", 1, ln=True)
+        spending_data.append([
+            str(row['Spending Category']),
+            f"J${row['Amount']:,.2f}",
+            f"{row['Percentage']:.2f}%"
+        ])
     
-    pdf.ln(5)
+    spending_table = Table(spending_data, colWidths=[2.5*inch, 2*inch, 1.5*inch])
+    spending_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2196F3')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 11),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.lightblue),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 9),
+    ]))
+    elements.append(spending_table)
+    elements.append(Spacer(1, 0.3*inch))
     
-    # Create and embed pie chart
-    fig2 = go.Figure(data=[go.Pie(
-        labels=summary['Spending Category'],
-        values=summary['Amount'],
-        hole=.3
-    )])
-    fig2.update_layout(
-        title=f'{selected_month} Spending Distribution',
-        height=350,
-        width=500
-    )
+    # Pie Chart for Spending
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.pie(summary['Amount'], labels=summary['Spending Category'], autopct='%1.1f%%', startangle=90)
+    ax.set_title(f'{selected_month} Spending Distribution')
+    plt.tight_layout()
     
-    img_bytes2 = pio.to_image(fig2, format='png', width=500, height=350)
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
-        tmp.write(img_bytes2)
-        tmp_path2 = tmp.name
+    img_buffer2 = BytesIO()
+    plt.savefig(img_buffer2, format='png', dpi=150, bbox_inches='tight')
+    img_buffer2.seek(0)
+    plt.close()
     
-    pdf.image(tmp_path2, x=50, w=110)
-    os.unlink(tmp_path2)
-    pdf.ln(5)
+    elements.append(Image(img_buffer2, width=5*inch, height=5*inch))
+    elements.append(PageBreak())
     
     # Budget Comparison Section
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, 'Budget vs Actual Spending', ln=True)
-    pdf.set_font("Arial", 'B', 9)
+    elements.append(Paragraph('Budget vs Actual Spending', styles['Heading2']))
+    elements.append(Spacer(1, 0.2*inch))
     
-    # Table header
-    pdf.cell(50, 8, 'Category', 1)
-    pdf.cell(35, 8, 'Budget', 1)
-    pdf.cell(35, 8, 'Actual', 1)
-    pdf.cell(35, 8, 'Difference', 1)
-    pdf.cell(30, 8, 'Status', 1, ln=True)
-    
-    pdf.set_font("Arial", '', 9)
+    budget_data = [['Category', 'Budget', 'Actual', 'Difference', 'Status']]
     for _, row in comparison.iterrows():
-        category_text = str(row['Spending Category'])[:20]
-        pdf.cell(50, 8, category_text, 1)
-        pdf.cell(35, 8, f"{row['Budget']:,.0f}", 1)
-        pdf.cell(35, 8, f"{row['Amount']:,.0f}", 1)
-        pdf.cell(35, 8, f"{row['Difference']:,.0f}", 1)
-        pdf.cell(30, 8, str(row['Status'])[:15], 1, ln=True)
+        budget_data.append([
+            str(row['Spending Category'])[:25],
+            f"J${row['Budget']:,.0f}",
+            f"J${row['Amount']:,.0f}",
+            f"J${row['Difference']:,.0f}",
+            str(row['Status'])
+        ])
     
-    pdf.ln(5)
+    budget_table = Table(budget_data, colWidths=[1.8*inch, 1.2*inch, 1.2*inch, 1.2*inch, 1.2*inch])
+    budget_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#FF9800')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.lightyellow),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
+    ]))
+    elements.append(budget_table)
+    elements.append(Spacer(1, 0.3*inch))
     
-    # Create and embed budget comparison chart
-    fig3 = go.Figure(data=[
-        go.Bar(name='Budget', x=comparison['Spending Category'], y=comparison['Budget']),
-        go.Bar(name='Actual', x=comparison['Spending Category'], y=comparison['Amount'])
-    ])
-    fig3.update_layout(
-        title='Budget vs Actual Spending',
-        yaxis_title='Amount (J$)',
-        barmode='group',
-        height=350,
-        width=550
-    )
+    # Budget Comparison Chart
+    fig, ax = plt.subplots(figsize=(8, 5))
+    x = range(len(comparison))
+    width = 0.35
+    ax.bar([i - width/2 for i in x], comparison['Budget'], width, label='Budget', color='#2196F3')
+    ax.bar([i + width/2 for i in x], comparison['Amount'], width, label='Actual', color='#FF9800')
+    ax.set_xlabel('Category')
+    ax.set_ylabel('Amount (J$)')
+    ax.set_title('Budget vs Actual Spending')
+    ax.set_xticks(x)
+    ax.set_xticklabels([str(cat)[:15] for cat in comparison['Spending Category']], rotation=45, ha='right')
+    ax.legend()
+    plt.tight_layout()
     
-    img_bytes3 = pio.to_image(fig3, format='png', width=550, height=350)
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
-        tmp.write(img_bytes3)
-        tmp_path3 = tmp.name
+    img_buffer3 = BytesIO()
+    plt.savefig(img_buffer3, format='png', dpi=150, bbox_inches='tight')
+    img_buffer3.seek(0)
+    plt.close()
     
-    pdf.image(tmp_path3, x=30, w=150)
-    os.unlink(tmp_path3)
+    elements.append(Image(img_buffer3, width=6.5*inch, height=4*inch))
+    elements.append(PageBreak())
     
-    # Transactions Section
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, 'Transaction Details (Sample)', ln=True)
-    pdf.set_font("Arial", 'B', 8)
+    # Transaction Details
+    elements.append(Paragraph('Transaction Details (Sample)', styles['Heading2']))
+    elements.append(Spacer(1, 0.2*inch))
     
-    # Table header
-    pdf.cell(25, 7, 'Date', 1)
-    pdf.cell(70, 7, 'Description', 1)
-    pdf.cell(30, 7, 'Amount', 1)
-    pdf.cell(25, 7, 'Type', 1)
-    pdf.cell(35, 7, 'Category', 1, ln=True)
+    trans_data = [['Date', 'Description', 'Amount', 'Type', 'Category']]
+    for _, row in month_data.head(40).iterrows():
+        trans_data.append([
+            row['Date'].strftime('%Y-%m-%d'),
+            str(row['Description'])[:35],
+            f"J${row['Amount']:,.0f}",
+            str(row['Category'])[:8],
+            str(row['Spending Category'])[:15]
+        ])
     
-    pdf.set_font("Arial", '', 8)
-    for idx, (_, row) in enumerate(month_data.head(30).iterrows()):
-        date_str = row['Date'].strftime('%Y-%m-%d')
-        desc_text = str(row['Description'])[:28]
-        amount_str = f"{row['Amount']:,.0f}"
-        category_text = str(row['Category'])[:10]
-        spend_cat = str(row['Spending Category'])[:15]
-        
-        pdf.cell(25, 7, date_str, 1)
-        pdf.cell(70, 7, desc_text, 1)
-        pdf.cell(30, 7, amount_str, 1)
-        pdf.cell(25, 7, category_text, 1)
-        pdf.cell(35, 7, spend_cat, 1, ln=True)
+    trans_table = Table(trans_data, colWidths=[0.9*inch, 2.5*inch, 1*inch, 0.8*inch, 1.3*inch])
+    trans_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#9C27B0')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.lavender),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 7),
+    ]))
+    elements.append(trans_table)
     
-    if len(month_data) > 30:
-        pdf.ln(5)
-        pdf.set_font("Arial", 'I', 9)
-        pdf.cell(0, 7, f'Showing 30 of {len(month_data)} total transactions', ln=True)
+    if len(month_data) > 40:
+        elements.append(Spacer(1, 0.2*inch))
+        elements.append(Paragraph(f'<i>Showing 40 of {len(month_data)} total transactions</i>', styles['Normal']))
     
-    return bytes(pdf.output())
+    # Build PDF
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer.getvalue()
 
 
 # Updated download section with charts
