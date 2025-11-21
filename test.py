@@ -703,6 +703,53 @@ def process_pdf_ncb(file) -> pd.DataFrame:
         return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
 
 
+# Add this debug section to your sidebar
+
+with st.sidebar.expander("🔧 Debug: Test File Processing"):
+    test_file = st.file_uploader("Upload a file to test", type=["csv", "pdf"], key="debug_upload")
+    
+    if test_file:
+        st.write(f"**File name:** {test_file.name}")
+        st.write(f"**File type:** {test_file.name.split('.')[-1].upper()}")
+        
+        try:
+            if test_file.name.endswith('.pdf'):
+                st.write("🔄 Testing NCB PDF processor...")
+                
+                # Reset file pointer
+                test_file.seek(0)
+                
+                # Convert to BytesIO for processing
+                pdf_bytes = BytesIO(test_file.read())
+                df = process_pdf_ncb(pdf_bytes)
+                
+                if df.empty:
+                    st.error("❌ No transactions extracted!")
+                    st.info("Possible causes:")
+                    st.write("- PDF is not an NCB statement")
+                    st.write("- PDF is password protected")
+                    st.write("- Transaction format is different")
+                else:
+                    st.success(f"✅ Extracted {len(df)} transactions")
+                    st.dataframe(df.head(10), use_container_width=True)
+                    st.write("**Column types:**")
+                    st.write(df.dtypes)
+                    
+            elif test_file.name.endswith('.csv'):
+                st.write("🔄 Testing CSV processor...")
+                test_file.seek(0)
+                df = process_csv(test_file)
+                
+                if df.empty:
+                    st.error("❌ No transactions extracted!")
+                else:
+                    st.success(f"✅ Extracted {len(df)} transactions")
+                    st.dataframe(df.head(10), use_container_width=True)
+                    
+        except Exception as e:
+            st.error(f"❌ Error: {str(e)}")
+            import traceback
+            st.error(traceback.format_exc())
 
 
 def process_pdf(file):
