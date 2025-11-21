@@ -1294,11 +1294,11 @@ def main_app():
             "Grocery": ["hi-lo", "supermarket", "wholesale","grocery", "market", "walmart", "costco","shoppers fair"],
             "Utilities": ["jps", "nwc", "flow", "internet", "light", "water","electric", "cable", "wifi"],
             "Transport": ["uber", "taxi", "gas","shell", "parking", "lyft", "bus"],
-            "Income": ["remitly", "deposit", "transfer", "payroll","salary", "refund"],
+            "Income": ["remitly", "deposit", "transfer", "payroll","salary", "refund", "ELink TRF-FR"],
             "Home Improvement": ["lumber depot limited", "ping's fabric"],
             "Retail": ["boss destinations", "n k wholesale liquor stor","digicel ding"],
             "Miscellaneous": ["atm", "fee", "charge","GCT"],
-            "Other": []
+            "Other": ["ELink TRF-To"]
         }
 
         
