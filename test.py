@@ -1115,8 +1115,8 @@ def send_email_alert(receiver_email, subject, body, sender_email, sender_passwor
         return False
 
 def export_to_excel(month_data, summary, comparison, month_income, month_spending, 
-                              month_savings, savings_goal, selected_month):
-    """Export comprehensive data to Excel with multiple sheets"""
+                                 month_savings, savings_goal, selected_month):
+    """Export comprehensive data to Excel with charts embedded"""
     output = BytesIO()
     
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -1131,9 +1131,8 @@ def export_to_excel(month_data, summary, comparison, month_income, month_spendin
         })
         
         currency_format = workbook.add_format({'num_format': 'J$#,##0.00'})
-        percent_format = workbook.add_format({'num_format': '0.00%'})
         
-        # Sheet 1: Summary Overview
+        # Sheet 1: Summary Overview with Chart
         summary_data = pd.DataFrame({
             'Metric': ['Month', 'Total Income', 'Total Spending', 'Net Savings', 'Savings Goal', 
                       'Goal Status', 'Number of Transactions'],
@@ -1147,10 +1146,24 @@ def export_to_excel(month_data, summary, comparison, month_income, month_spendin
                 len(month_data)
             ]
         })
-        summary_data.to_excel(writer, sheet_name='Summary', index=False)
+        summary_data.to_excel(writer, sheet_name='Summary', index=False, startrow=1)
         worksheet = writer.sheets['Summary']
-        worksheet.set_column('A:A', 20)
-        worksheet.set_column('B:B', 30)
+        worksheet.set_column('A:A', 25)
+        worksheet.set_column('B:B', 35)
+        
+        # Add Income vs Spending chart to Summary sheet
+        chart1 = workbook.add_chart({'type': 'column'})
+        chart1.add_series({
+            'name': 'Amount',
+            'categories': ['Summary', 2, 0, 3, 0],  # Income and Spending rows
+            'values': ['Summary', 2, 1, 3, 1],
+            'fill': {'color': '#4CAF50'},
+        })
+        chart1.set_title({'name': f'{selected_month} - Income vs Spending'})
+        chart1.set_x_axis({'name': 'Category'})
+        chart1.set_y_axis({'name': 'Amount (J$)'})
+        chart1.set_style(11)
+        worksheet.insert_chart('D2', chart1, {'x_scale': 1.5, 'y_scale': 1.2})
         
         # Sheet 2: All Transactions
         transactions_export = month_data[['Date', 'Description', 'Amount', 'Category', 'Spending Category']].copy()
@@ -1160,46 +1173,76 @@ def export_to_excel(month_data, summary, comparison, month_income, month_spendin
         worksheet.set_column('A:A', 12)
         worksheet.set_column('B:B', 40)
         worksheet.set_column('C:C', 15, currency_format)
-        worksheet.set_column('D:E', 18)
+        worksheet.set_column('D:E', 20)
         
-        # Sheet 3: Spending Breakdown
+        # Sheet 3: Spending Breakdown with Pie Chart
         summary_export = summary.copy()
-        summary_export['Percentage_Decimal'] = summary_export['Percentage'] / 100
-        summary_export = summary_export[['Spending Category', 'Amount', 'Percentage']]
-        summary_export.to_excel(writer, sheet_name='Spending Breakdown', index=False)
+        summary_export.to_excel(writer, sheet_name='Spending Breakdown', index=False, startrow=1)
         worksheet = writer.sheets['Spending Breakdown']
         worksheet.set_column('A:A', 25)
         worksheet.set_column('B:B', 15, currency_format)
         worksheet.set_column('C:C', 12)
         
-        # Sheet 4: Budget vs Actual
+        # Add pie chart for spending breakdown
+        chart2 = workbook.add_chart({'type': 'pie'})
+        chart2.add_series({
+            'name': 'Spending by Category',
+            'categories': ['Spending Breakdown', 2, 0, len(summary_export)+1, 0],
+            'values': ['Spending Breakdown', 2, 1, len(summary_export)+1, 1],
+            'data_labels': {'percentage': True, 'category': True},
+        })
+        chart2.set_title({'name': f'{selected_month} Spending Distribution'})
+        chart2.set_style(10)
+        worksheet.insert_chart('E2', chart2, {'x_scale': 1.5, 'y_scale': 1.5})
+        
+        # Sheet 4: Budget vs Actual with Chart
         budget_export = comparison[['Spending Category', 'Budget', 'Amount', 'Difference', 'Status']].copy()
-        budget_export.to_excel(writer, sheet_name='Budget Comparison', index=False)
+        budget_export.to_excel(writer, sheet_name='Budget Comparison', index=False, startrow=1)
         worksheet = writer.sheets['Budget Comparison']
         worksheet.set_column('A:A', 25)
         worksheet.set_column('B:D', 15, currency_format)
         worksheet.set_column('E:E', 15)
         
         # Add conditional formatting for Status column
-        worksheet.conditional_format('E2:E100', {
+        worksheet.conditional_format(2, 4, len(budget_export)+1, 4, {
             'type': 'text',
             'criteria': 'containing',
             'value': 'Over Budget',
             'format': workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
         })
-        worksheet.conditional_format('E2:E100', {
+        worksheet.conditional_format(2, 4, len(budget_export)+1, 4, {
             'type': 'text',
             'criteria': 'containing',
             'value': 'Within Budget',
             'format': workbook.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
         })
+        
+        # Add budget comparison chart
+        chart3 = workbook.add_chart({'type': 'column'})
+        chart3.add_series({
+            'name': 'Budget',
+            'categories': ['Budget Comparison', 2, 0, len(budget_export)+1, 0],
+            'values': ['Budget Comparison', 2, 1, len(budget_export)+1, 1],
+            'fill': {'color': '#2196F3'},
+        })
+        chart3.add_series({
+            'name': 'Actual',
+            'categories': ['Budget Comparison', 2, 0, len(budget_export)+1, 0],
+            'values': ['Budget Comparison', 2, 2, len(budget_export)+1, 2],
+            'fill': {'color': '#FF9800'},
+        })
+        chart3.set_title({'name': 'Budget vs Actual Spending'})
+        chart3.set_x_axis({'name': 'Category'})
+        chart3.set_y_axis({'name': 'Amount (J$)'})
+        chart3.set_style(11)
+        worksheet.insert_chart('G2', chart3, {'x_scale': 2, 'y_scale': 1.5})
     
     return output.getvalue()
 
 
 def export_to_pdf(month_data, summary, comparison, month_income, month_spending, 
-                   month_savings, savings_goal, selected_month):
-    """Export comprehensive report to PDF"""
+                               month_savings, savings_goal, selected_month):
+    """Export comprehensive report to PDF with charts"""
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
@@ -1223,7 +1266,33 @@ def export_to_pdf(month_data, summary, comparison, month_income, month_spending,
     pdf.cell(0, 8, f'Total Transactions: {len(month_data)}', ln=True)
     pdf.ln(5)
     
+    # Create and embed Income vs Spending chart
+    fig1 = go.Figure(data=[
+        go.Bar(name='Amount', x=['Income', 'Spending'], 
+               y=[month_income, month_spending],
+               marker_color=['#4CAF50', '#F44336'])
+    ])
+    fig1.update_layout(
+        title=f'{selected_month} - Income vs Spending',
+        yaxis_title='Amount (J$)',
+        height=300,
+        width=500
+    )
+    
+    # Save chart as image
+    img_bytes = pio.to_image(fig1, format='png', width=500, height=300)
+    
+    # Save to temp file and add to PDF
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
+        tmp.write(img_bytes)
+        tmp_path = tmp.name
+    
+    pdf.image(tmp_path, x=50, w=110)
+    os.unlink(tmp_path)
+    pdf.ln(5)
+    
     # Spending Breakdown Section
+    pdf.add_page()
     pdf.set_font("Arial", 'B', 14)
     pdf.cell(0, 10, 'Spending Breakdown by Category', ln=True)
     pdf.set_font("Arial", 'B', 10)
@@ -1242,7 +1311,29 @@ def export_to_pdf(month_data, summary, comparison, month_income, month_spending,
     
     pdf.ln(5)
     
+    # Create and embed pie chart
+    fig2 = go.Figure(data=[go.Pie(
+        labels=summary['Spending Category'],
+        values=summary['Amount'],
+        hole=.3
+    )])
+    fig2.update_layout(
+        title=f'{selected_month} Spending Distribution',
+        height=350,
+        width=500
+    )
+    
+    img_bytes2 = pio.to_image(fig2, format='png', width=500, height=350)
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
+        tmp.write(img_bytes2)
+        tmp_path2 = tmp.name
+    
+    pdf.image(tmp_path2, x=50, w=110)
+    os.unlink(tmp_path2)
+    pdf.ln(5)
+    
     # Budget Comparison Section
+    pdf.add_page()
     pdf.set_font("Arial", 'B', 14)
     pdf.cell(0, 10, 'Budget vs Actual Spending', ln=True)
     pdf.set_font("Arial", 'B', 9)
@@ -1264,6 +1355,27 @@ def export_to_pdf(month_data, summary, comparison, month_income, month_spending,
         pdf.cell(30, 8, str(row['Status'])[:15], 1, ln=True)
     
     pdf.ln(5)
+    
+    # Create and embed budget comparison chart
+    fig3 = go.Figure(data=[
+        go.Bar(name='Budget', x=comparison['Spending Category'], y=comparison['Budget']),
+        go.Bar(name='Actual', x=comparison['Spending Category'], y=comparison['Amount'])
+    ])
+    fig3.update_layout(
+        title='Budget vs Actual Spending',
+        yaxis_title='Amount (J$)',
+        barmode='group',
+        height=350,
+        width=550
+    )
+    
+    img_bytes3 = pio.to_image(fig3, format='png', width=550, height=350)
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
+        tmp.write(img_bytes3)
+        tmp_path3 = tmp.name
+    
+    pdf.image(tmp_path3, x=30, w=150)
+    os.unlink(tmp_path3)
     
     # Transactions Section
     pdf.add_page()
@@ -1297,8 +1409,64 @@ def export_to_pdf(month_data, summary, comparison, month_income, month_spending,
         pdf.set_font("Arial", 'I', 9)
         pdf.cell(0, 7, f'Showing 30 of {len(month_data)} total transactions', ln=True)
     
-    # Return PDF as bytes - compatible with both old and new FPDF versions
     return bytes(pdf.output())
+
+
+# Updated download section with charts
+st.subheader("📤 Export Reports")
+
+export_format = st.selectbox("Select export format", options=["Excel (with charts)", "PDF (with charts)"])
+
+if st.button("Download Report with Charts"):
+    try:
+        if "Excel" in export_format:
+            # Generate Excel file with charts
+            excel_bytes = export_to_excel_with_charts(
+                month_data=month_data,
+                summary=summary,
+                comparison=comparison,
+                month_income=month_income,
+                month_spending=month_spending,
+                month_savings=month_savings,
+                savings_goal=SAVINGS_GOAL,
+                selected_month=selected_month
+            )
+            
+            st.download_button(
+                label="📥 Download Excel Report with Charts",
+                data=excel_bytes,
+                file_name=f"Finance_Report_{selected_month.replace(' ', '_')}_with_charts.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_excel_charts"
+            )
+            st.success("✅ Excel report with charts generated successfully!")
+            
+        else:  # PDF
+            # Generate PDF file with charts
+            pdf_bytes = export_to_pdf_with_charts(
+                month_data=month_data,
+                summary=summary,
+                comparison=comparison,
+                month_income=month_income,
+                month_spending=month_spending,
+                month_savings=month_savings,
+                savings_goal=SAVINGS_GOAL,
+                selected_month=selected_month
+            )
+            
+            st.download_button(
+                label="📥 Download PDF Report with Charts",
+                data=pdf_bytes,
+                file_name=f"Finance_Report_{selected_month.replace(' ', '_')}_with_charts.pdf",
+                mime="application/pdf",
+                key="download_pdf_charts"
+            )
+            st.success("✅ PDF report with charts generated successfully!")
+            
+    except Exception as e:
+        st.error(f"❌ Error generating report: {str(e)}")
+        import traceback
+        st.error(f"Details: {traceback.format_exc()}")
 
 # ============================================
 # MAIN APP
