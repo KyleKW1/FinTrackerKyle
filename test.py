@@ -777,7 +777,7 @@ def process_pdf(file):
         return pd.DataFrame()
 
 def load_all_user_data(user_id):
-    """Load all user data with caching"""
+    """Load all user data with caching and proper file type detection"""
     # Check cache first
     cached_data = get_cached_data(user_id)
     if cached_data is not None:
@@ -791,7 +791,7 @@ def load_all_user_data(user_id):
     try:
         cursor = connection.cursor(dictionary=True)
         cursor.execute(
-            "SELECT id, file_data, file_type FROM user_files WHERE user_id = %s",
+            "SELECT id, file_data, file_type, filename FROM user_files WHERE user_id = %s",
             (user_id,)
         )
         files = cursor.fetchall()
@@ -799,18 +799,46 @@ def load_all_user_data(user_id):
         connection.close()
         
         all_data = []
+        
         for file_info in files:
-            file_bytes = BytesIO(file_info['file_data'])
-            
-            if file_info['file_type'] == 'csv':
-                df = process_csv(file_bytes)
-            elif file_info['file_type'] == 'pdf':
-                df = process_pdf(file_bytes)
-            else:
+            try:
+                file_bytes = BytesIO(file_info['file_data'])
+                filename = file_info.get('filename', '')
+                
+                # Determine file type - check both file_type column and filename
+                file_type = file_info['file_type'].lower()
+                
+                if file_type == 'pdf':
+                    # Check if it's an NCB PDF by filename
+                    if 'ncb' in filename.lower():
+                        df = process_pdf_ncb(file_bytes)
+                    else:
+                        # Try to detect from content
+                        try:
+                            file_bytes.seek(0)
+                            with pdfplumber.open(file_bytes) as pdf:
+                                first_page_text = pdf.pages[0].extract_text().lower()
+                                if 'ncb' in first_page_text or 'national commercial bank' in first_page_text:
+                                    file_bytes.seek(0)
+                                    df = process_pdf_ncb(file_bytes)
+                                else:
+                                    file_bytes.seek(0)
+                                    df = process_pdf(file_bytes)
+                        except:
+                            file_bytes.seek(0)
+                            df = process_pdf(file_bytes)
+                            
+                elif file_type == 'csv':
+                    df = process_csv(file_bytes)
+                else:
+                    continue
+                
+                if not df.empty:
+                    all_data.append(df)
+                    
+            except Exception as e:
+                st.warning(f"Error processing {filename}: {str(e)}")
                 continue
-            
-            if not df.empty:
-                all_data.append(df)
         
         if not all_data:
             return pd.DataFrame()
