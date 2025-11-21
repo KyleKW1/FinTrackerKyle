@@ -19,6 +19,11 @@ import json
 import pickle
 from typing import Optional, List  # ← ADD THIS LINE IF MISSING
 import socket
+import plotly.graph_objects as go
+import plotly.io as pio
+from PIL import Image
+import io
+
 
 try:
     import pdfkit
