@@ -594,6 +594,39 @@ def upload_and_process_files():
                 
                 if success_count > 0:
                     st.rerun()
+
+# Add this to your app for debugging - put it in a sidebar expander
+
+with st.sidebar.expander("🔧 Debug: Test File Processing"):
+    test_file = st.file_uploader("Upload a file to test", type=["csv", "pdf"], key="debug_upload")
+    
+    if test_file:
+        st.write(f"**File name:** {test_file.name}")
+        st.write(f"**File type:** {test_file.name.split('.')[-1].upper()}")
+        
+        if test_file.name.endswith('.pdf'):
+            st.write("Testing NCB PDF processor...")
+            df = process_pdf_ncb(test_file)
+            
+            if df.empty:
+                st.error("❌ No transactions extracted!")
+            else:
+                st.success(f"✅ Extracted {len(df)} transactions")
+                st.dataframe(df.head(10))
+                st.write("**Columns:**", df.columns.tolist())
+                st.write("**Data types:**", df.dtypes.to_dict())
+                
+        elif test_file.name.endswith('.csv'):
+            st.write("Testing CSV processor...")
+            df = process_csv(test_file)
+            
+            if df.empty:
+                st.error("❌ No transactions extracted!")
+            else:
+                st.success(f"✅ Extracted {len(df)} transactions")
+                st.dataframe(df.head(10))
+
+
 def process_pdf(file):
     """Process PDF file"""
     try:
