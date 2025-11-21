@@ -1225,81 +1225,121 @@ def main_app():
         st.markdown("### 📊 Spending Analysis")
         st.title("Personal Finance Tracker")
 
-        # File Management with Pagination
-        st.subheader("📁 Your Files")
+        st.markdown("---")
+
+# File Management with Pagination
+st.subheader("📁 Your Files")
+
+if 'file_page' not in st.session_state:
+    st.session_state.file_page = 0
+
+user_files, total_files = get_user_files_paginated(
+    st.session_state.user['id'], 
+    page=st.session_state.file_page, 
+    page_size=9
+)
+
+if total_files > 0:
+    st.markdown(f"**You have {total_files} stored file(s)** (Showing page {st.session_state.file_page + 1})")
+    
+    # Display files in grid
+    for i in range(0, len(user_files), 3):
+        cols = st.columns(3)
+        for j, col in enumerate(cols):
+            if i + j < len(user_files):
+                file = user_files[i + j]
+                with col:
+                    st.markdown(f"**{file['filename']}**")
+                    st.caption(f"Uploaded: {str(file['upload_date'])[:19]}")
+                    st.caption(f"Type: {file['file_type'].upper()}")
+                    if st.button(f"🗑️ Delete", key=f"del_{file['id']}"):
+                        if delete_user_file(file['id'], st.session_state.user['id']):
+                            st.success(f"Deleted {file['filename']}")
+                            st.rerun()
+                        else:
+                            st.error("Failed to delete file")
+    
+    # Pagination controls
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col1:
+        if st.session_state.file_page > 0:
+            if st.button("⬅️ Previous"):
+                st.session_state.file_page -= 1
+                st.rerun()
+    with col3:
+        max_pages = (total_files - 1) // 9
+        if st.session_state.file_page < max_pages:
+            if st.button("Next ➡️"):
+                st.session_state.file_page += 1
+                st.rerun()
+    
+    st.markdown("---")
+else:
+    st.info("No files uploaded yet. Upload your first file below!")
+
+# File Upload Section - FIXED
+with st.expander("📤 Upload New Files", expanded=not user_files):
+    uploaded_files = st.file_uploader(
+        "Upload CSV or PDF files",
+        type=["csv", "pdf"],
+        accept_multiple_files=True,
+        key="file_uploader"
+    )
+
+    if uploaded_files:
+        st.info(f"📁 {len(uploaded_files)} file(s) selected for upload")
         
-        if 'file_page' not in st.session_state:
-            st.session_state.file_page = 0
-        
-        user_files, total_files = get_user_files_paginated(
-            st.session_state.user['id'], 
-            page=st.session_state.file_page, 
-            page_size=9
-        )
-        
-        if total_files > 0:
-            st.markdown(f"**You have {total_files} stored file(s)** (Showing page {st.session_state.file_page + 1})")
+        if st.button("💾 Save Files to Account", type="primary"):
+            success_count = 0
+            error_list = []
             
-            # Display files in grid
-            for i in range(0, len(user_files), 3):
-                cols = st.columns(3)
-                for j, col in enumerate(cols):
-                    if i + j < len(user_files):
-                        file = user_files[i + j]
-                        with col:
-                            st.markdown(f"**{file['filename']}**")
-                            st.caption(f"Uploaded: {str(file['upload_date'])[:19]}")
-                            st.caption(f"Type: {file['file_type'].upper()}")
-                            if st.button(f"🗑️ Delete", key=f"del_{file['id']}"):
-                                if delete_user_file(file['id'], st.session_state.user['id']):
-                                    st.success(f"Deleted {file['filename']}")
-                                    st.rerun()
-                                else:
-                                    st.error("Failed to delete file")
-            
-            # Pagination controls
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col1:
-                if st.session_state.file_page > 0:
-                    if st.button("⬅️ Previous"):
-                        st.session_state.file_page -= 1
-                        st.rerun()
-            with col3:
-                max_pages = (total_files - 1) // 9
-                if st.session_state.file_page < max_pages:
-                    if st.button("Next ➡️"):
-                        st.session_state.file_page += 1
-                        st.rerun()
+            for file in uploaded_files:
+                try:
+                    # Read the file data
+                    file_data = file.read()
+                    file_type = file.name.split('.')[-1].lower()
+                    
+                    st.write(f"Processing {file.name}...")
+                    
+                    # Save to database
+                    if save_user_file(st.session_state.user['id'], file.name, file_data, file_type):
+                        success_count += 1
+                        st.success(f"✅ {file.name}")
+                    else:
+                        error_list.append(f"{file.name} - Save failed")
+                        
+                except Exception as e:
+                    error_list.append(f"{file.name} - {str(e)}")
             
             st.markdown("---")
-        else:
-            st.info("No files uploaded yet. Upload your first file below!")
+            
+            if success_count > 0:
+                st.success(f"✅ Successfully saved {success_count} file(s)!")
+                st.info("Processing files... Please wait a moment and refresh the page.")
+                # Small delay to ensure database writes
+                import time
+                time.sleep(1)
+                st.rerun()
+            
+            if error_list:
+                st.error(f"❌ Failed to save {len(error_list)} file(s):")
+                for error in error_list:
+                    st.error(f"  • {error}")
 
-        # File Upload Section
-        with st.expander("📤 Upload New Files", expanded=not user_files):
-            uploaded_files = st.file_uploader(
-                "Upload CSV or PDF files",
-                type=["csv", "pdf"],
-                accept_multiple_files=True,
-                key="file_uploader"
-            )
+st.markdown("---")
 
-            if uploaded_files:
-                if st.button("💾 Save Files to Account"):
-                    success_count = 0
-                    for file in uploaded_files:
-                        file_data = file.read()
-                        file_type = file.name.split('.')[-1].lower()
-                        
-                        if save_user_file(st.session_state.user['id'], file.name, file_data, file_type):
-                            success_count += 1
-                        file.seek(0)
-                    
-                    if success_count > 0:
-                        st.success(f"✅ Saved {success_count} file(s) to your account!")
-                        st.rerun()
+# Load all user data (with caching)
+with st.spinner("Loading your financial data..."):
+    data = load_all_user_data(st.session_state.user['id'])
 
-        st.markdown("---")
+if data.empty:
+    st.warning("⚠️ No transactions found.")
+    st.info("📤 Upload your bank statements using the form above to get started!")
+    st.stop()
+
+# Show success message with transaction count
+st.success(f"✅ Loaded {len(data):,} transactions")
+st.info(f"📅 Data from {len(data['Month-Year'].unique())} month(s)")
 
         # Load all user data (with caching)
         with st.spinner("Loading your financial data..."):
