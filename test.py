@@ -1114,7 +1114,7 @@ def send_email_alert(receiver_email, subject, body, sender_email, sender_passwor
         st.error(f"❌ Email Error: {str(e)}")
         return False
 
-def export_to_excel_enhanced(month_data, summary, comparison, month_income, month_spending, 
+def export_to_excel(month_data, summary, comparison, month_income, month_spending, 
                               month_savings, savings_goal, selected_month):
     """Export comprehensive data to Excel with multiple sheets"""
     output = BytesIO()
@@ -1197,7 +1197,7 @@ def export_to_excel_enhanced(month_data, summary, comparison, month_income, mont
     return output.getvalue()
 
 
-def export_to_pdf_enhanced(month_data, summary, comparison, month_income, month_spending, 
+def export_to_pdf(month_data, summary, comparison, month_income, month_spending, 
                            month_savings, savings_goal, selected_month):
     """Export comprehensive report to PDF"""
     pdf = FPDF()
