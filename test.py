@@ -1415,59 +1415,43 @@ def export_to_pdf(month_data, summary, comparison, month_income, month_spending,
 # Updated download section with charts
 st.subheader("📤 Export Reports")
 
-export_format = st.selectbox("Select export format", options=["Excel (with charts)", "PDF (with charts)"])
+# Find this section around line 1040 in your code and replace it:
 
-if st.button("Download Report with Charts"):
-    try:
-        if "Excel" in export_format:
-            # Generate Excel file with charts
-            excel_bytes = export_to_excel_with_charts(
-                month_data=month_data,
-                summary=summary,
-                comparison=comparison,
-                month_income=month_income,
-                month_spending=month_spending,
-                month_savings=month_savings,
-                savings_goal=SAVINGS_GOAL,
-                selected_month=selected_month
-            )
-            
-            st.download_button(
-                label="📥 Download Excel Report with Charts",
-                data=excel_bytes,
-                file_name=f"Finance_Report_{selected_month.replace(' ', '_')}_with_charts.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="download_excel_charts"
-            )
-            st.success("✅ Excel report with charts generated successfully!")
-            
-        else:  # PDF
-            # Generate PDF file with charts
-            pdf_bytes = export_to_pdf_with_charts(
-                month_data=month_data,
-                summary=summary,
-                comparison=comparison,
-                month_income=month_income,
-                month_spending=month_spending,
-                month_savings=month_savings,
-                savings_goal=SAVINGS_GOAL,
-                selected_month=selected_month
-            )
-            
-            st.download_button(
-                label="📥 Download PDF Report with Charts",
-                data=pdf_bytes,
-                file_name=f"Finance_Report_{selected_month.replace(' ', '_')}_with_charts.pdf",
-                mime="application/pdf",
-                key="download_pdf_charts"
-            )
-            st.success("✅ PDF report with charts generated successfully!")
-            
-    except Exception as e:
-        st.error(f"❌ Error generating report: {str(e)}")
-        import traceback
-        st.error(f"Details: {traceback.format_exc()}")
-
+if st.button("Download Report"):
+    if export_format == "Excel":
+        excel_bytes = export_to_excel(
+            month_data=month_data,
+            summary=summary,
+            comparison=comparison,
+            month_income=month_income,
+            month_spending=month_spending,
+            month_savings=month_savings,
+            savings_goal=SAVINGS_GOAL,
+            selected_month=selected_month
+        )
+        st.download_button(
+            label="📥 Download Excel Report",
+            data=excel_bytes,
+            file_name=f"Finance_Report_{selected_month.replace(' ', '_')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    else:
+        pdf_bytes = export_to_pdf(
+            month_data=month_data,
+            summary=summary,
+            comparison=comparison,
+            month_income=month_income,
+            month_spending=month_spending,
+            month_savings=month_savings,
+            savings_goal=SAVINGS_GOAL,
+            selected_month=selected_month
+        )
+        st.download_button(
+            label="📥 Download PDF Report",
+            data=pdf_bytes,
+            file_name=f"Finance_Report_{selected_month.replace(' ', '_')}.pdf",
+            mime="application/pdf"
+        )
 # ============================================
 # MAIN APP
 # ============================================
