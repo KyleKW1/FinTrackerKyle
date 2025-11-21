@@ -1114,36 +1114,204 @@ def send_email_alert(receiver_email, subject, body, sender_email, sender_passwor
         st.error(f"❌ Email Error: {str(e)}")
         return False
 
-def export_to_excel(df):
-    """Export data to Excel"""
+def export_to_excel_enhanced(month_data, summary, comparison, month_income, month_spending, 
+                              month_savings, savings_goal, selected_month):
+    """Export comprehensive data to Excel with multiple sheets"""
     output = BytesIO()
+    
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False, sheet_name='Transactions')
-    processed_data = output.getvalue()
-    return processed_data
-
-def export_to_pdf(text_report):
-    """Export report to PDF"""
-    if PDFKIT_INSTALLED:
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.html') as f:
-            f.write(text_report.encode('utf-8'))
-            f.flush()
-            pdf_file = f.name.replace('.html', '.pdf')
-            pdfkit.from_file(f.name, pdf_file)
-            with open(pdf_file, 'rb') as pdf_f:
-                pdf_bytes = pdf_f.read()
-            os.unlink(f.name)
-            os.unlink(pdf_file)
-            return pdf_bytes
-    else:
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=12)
+        workbook = writer.book
         
-        for line in text_report.split('\n'):
-            pdf.cell(0, 10, line.encode('latin-1', 'ignore').decode('latin-1'), ln=True)
-            
-        return pdf.output(dest='S').encode('latin1')
+        # Format definitions
+        header_format = workbook.add_format({
+            'bold': True,
+            'bg_color': '#4CAF50',
+            'font_color': 'white',
+            'border': 1
+        })
+        
+        currency_format = workbook.add_format({'num_format': 'J$#,##0.00'})
+        percent_format = workbook.add_format({'num_format': '0.00%'})
+        
+        # Sheet 1: Summary Overview
+        summary_data = pd.DataFrame({
+            'Metric': ['Month', 'Total Income', 'Total Spending', 'Net Savings', 'Savings Goal', 
+                      'Goal Status', 'Number of Transactions'],
+            'Value': [
+                selected_month,
+                f'J${month_income:,.2f}',
+                f'J${month_spending:,.2f}',
+                f'J${month_savings:,.2f}',
+                f'J${savings_goal:,.2f}',
+                'Met' if month_savings >= savings_goal else f'Short by J${savings_goal - month_savings:,.2f}',
+                len(month_data)
+            ]
+        })
+        summary_data.to_excel(writer, sheet_name='Summary', index=False)
+        worksheet = writer.sheets['Summary']
+        worksheet.set_column('A:A', 20)
+        worksheet.set_column('B:B', 30)
+        
+        # Sheet 2: All Transactions
+        transactions_export = month_data[['Date', 'Description', 'Amount', 'Category', 'Spending Category']].copy()
+        transactions_export['Date'] = transactions_export['Date'].dt.strftime('%Y-%m-%d')
+        transactions_export.to_excel(writer, sheet_name='Transactions', index=False)
+        worksheet = writer.sheets['Transactions']
+        worksheet.set_column('A:A', 12)
+        worksheet.set_column('B:B', 40)
+        worksheet.set_column('C:C', 15, currency_format)
+        worksheet.set_column('D:E', 18)
+        
+        # Sheet 3: Spending Breakdown
+        summary_export = summary.copy()
+        summary_export['Percentage_Decimal'] = summary_export['Percentage'] / 100
+        summary_export = summary_export[['Spending Category', 'Amount', 'Percentage']]
+        summary_export.to_excel(writer, sheet_name='Spending Breakdown', index=False)
+        worksheet = writer.sheets['Spending Breakdown']
+        worksheet.set_column('A:A', 25)
+        worksheet.set_column('B:B', 15, currency_format)
+        worksheet.set_column('C:C', 12)
+        
+        # Sheet 4: Budget vs Actual
+        budget_export = comparison[['Spending Category', 'Budget', 'Amount', 'Difference', 'Status']].copy()
+        budget_export.to_excel(writer, sheet_name='Budget Comparison', index=False)
+        worksheet = writer.sheets['Budget Comparison']
+        worksheet.set_column('A:A', 25)
+        worksheet.set_column('B:D', 15, currency_format)
+        worksheet.set_column('E:E', 15)
+        
+        # Add conditional formatting for Status column
+        worksheet.conditional_format('E2:E100', {
+            'type': 'text',
+            'criteria': 'containing',
+            'value': 'Over Budget',
+            'format': workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
+        })
+        worksheet.conditional_format('E2:E100', {
+            'type': 'text',
+            'criteria': 'containing',
+            'value': 'Within Budget',
+            'format': workbook.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
+        })
+    
+    return output.getvalue()
+
+
+def export_to_pdf_enhanced(month_data, summary, comparison, month_income, month_spending, 
+                           month_savings, savings_goal, selected_month):
+    """Export comprehensive report to PDF"""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    
+    # Title
+    pdf.cell(0, 10, f'Finance Report - {selected_month}', ln=True, align='C')
+    pdf.ln(5)
+    
+    # Summary Section
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(0, 10, 'Monthly Summary', ln=True)
+    pdf.set_font("Arial", '', 11)
+    
+    pdf.cell(0, 8, f'Total Income: J${month_income:,.2f}', ln=True)
+    pdf.cell(0, 8, f'Total Spending: J${month_spending:,.2f}', ln=True)
+    pdf.cell(0, 8, f'Net Savings: J${month_savings:,.2f}', ln=True)
+    pdf.cell(0, 8, f'Savings Goal: J${savings_goal:,.2f}', ln=True)
+    
+    goal_status = 'MET' if month_savings >= savings_goal else f'SHORT by J${savings_goal - month_savings:,.2f}'
+    pdf.cell(0, 8, f'Goal Status: {goal_status}', ln=True)
+    pdf.cell(0, 8, f'Total Transactions: {len(month_data)}', ln=True)
+    pdf.ln(5)
+    
+    # Spending Breakdown Section
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(0, 10, 'Spending Breakdown by Category', ln=True)
+    pdf.set_font("Arial", 'B', 10)
+    
+    # Table header
+    pdf.cell(80, 8, 'Category', 1)
+    pdf.cell(50, 8, 'Amount (J$)', 1)
+    pdf.cell(40, 8, 'Percentage', 1, ln=True)
+    
+    pdf.set_font("Arial", '', 10)
+    for _, row in summary.iterrows():
+        category_text = row['Spending Category'][:30]  # Truncate if too long
+        pdf.cell(80, 8, category_text, 1)
+        pdf.cell(50, 8, f"{row['Amount']:,.2f}", 1)
+        pdf.cell(40, 8, f"{row['Percentage']:.2f}%", 1, ln=True)
+    
+    pdf.ln(5)
+    
+    # Budget Comparison Section
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(0, 10, 'Budget vs Actual Spending', ln=True)
+    pdf.set_font("Arial", 'B', 9)
+    
+    # Table header
+    pdf.cell(50, 8, 'Category', 1)
+    pdf.cell(35, 8, 'Budget', 1)
+    pdf.cell(35, 8, 'Actual', 1)
+    pdf.cell(35, 8, 'Difference', 1)
+    pdf.cell(30, 8, 'Status', 1, ln=True)
+    
+    pdf.set_font("Arial", '', 9)
+    for _, row in comparison.iterrows():
+        category_text = row['Spending Category'][:20]
+        pdf.cell(50, 8, category_text, 1)
+        pdf.cell(35, 8, f"{row['Budget']:,.0f}", 1)
+        pdf.cell(35, 8, f"{row['Amount']:,.0f}", 1)
+        pdf.cell(35, 8, f"{row['Difference']:,.0f}", 1)
+        pdf.cell(30, 8, row['Status'][:15], 1, ln=True)
+    
+    pdf.ln(5)
+    
+    # Transactions Section (First 30 transactions)
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(0, 10, 'Transaction Details (Sample)', ln=True)
+    pdf.set_font("Arial", 'B', 8)
+    
+    # Table header
+    pdf.cell(25, 7, 'Date', 1)
+    pdf.cell(70, 7, 'Description', 1)
+    pdf.cell(30, 7, 'Amount', 1)
+    pdf.cell(25, 7, 'Type', 1)
+    pdf.cell(35, 7, 'Category', 1, ln=True)
+    
+    pdf.set_font("Arial", '', 8)
+    transaction_count = 0
+    for _, row in month_data.head(30).iterrows():
+        date_str = row['Date'].strftime('%Y-%m-%d')
+        desc_text = str(row['Description'])[:28]
+        amount_str = f"{row['Amount']:,.0f}"
+        category_text = str(row['Category'])[:10]
+        spend_cat = str(row['Spending Category'])[:15]
+        
+        pdf.cell(25, 7, date_str, 1)
+        pdf.cell(70, 7, desc_text, 1)
+        pdf.cell(30, 7, amount_str, 1)
+        pdf.cell(25, 7, category_text, 1)
+        pdf.cell(35, 7, spend_cat, 1, ln=True)
+        
+        transaction_count += 1
+        
+        # Add new page if needed
+        if transaction_count % 30 == 0 and transaction_count < len(month_data):
+            pdf.add_page()
+            pdf.set_font("Arial", 'B', 8)
+            pdf.cell(25, 7, 'Date', 1)
+            pdf.cell(70, 7, 'Description', 1)
+            pdf.cell(30, 7, 'Amount', 1)
+            pdf.cell(25, 7, 'Type', 1)
+            pdf.cell(35, 7, 'Category', 1, ln=True)
+            pdf.set_font("Arial", '', 8)
+    
+    if len(month_data) > 30:
+        pdf.ln(5)
+        pdf.set_font("Arial", 'I', 9)
+        pdf.cell(0, 7, f'Showing 30 of {len(month_data)} total transactions', ln=True)
+    
+    return pdf.output(dest='S').encode('latin1')
 
 # ============================================
 # MAIN APP
