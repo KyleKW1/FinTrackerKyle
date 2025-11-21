@@ -17,8 +17,8 @@ from functools import lru_cache
 from datetime import datetime, timedelta
 import json
 import pickle
-import re
-
+from typing import Optional, List  # ← ADD THIS LINE IF MISSING
+import socket
 
 try:
     import pdfkit
