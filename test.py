@@ -1458,7 +1458,6 @@ def export_to_pdf(month_data, summary, comparison, month_income, month_spending,
 # Updated download section with charts
 st.subheader("📤 Export Reports")
 
-# Find this section around line 1040 in your code and replace it:
 
 if st.button("Download Report"):
     if export_format == "Excel":
