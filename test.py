@@ -4,104 +4,127 @@ from mysql.connector import Error
 import hashlib
 import re
 import os
+import pandas as pd
+import plotly.express as px 
+import calendar
+import smtplib
+from email.message import EmailMessage
+from io import BytesIO
+import tempfile
+from PIL import Image
+import pdfplumber
+from functools import lru_cache
+from datetime import datetime, timedelta
+import json
+import pickle
+import re
+from typing import Optional, List
 
-# ============================================
-# DATABASE CONFIGURATION
-# ============================================
-
-# Try Streamlit secrets first (for Streamlit Cloud), then fall back to environment variables
 try:
-    DB_CONFIG = {
-        'host': st.secrets["mysql"]["host"],
-        'port': int(st.secrets["mysql"]["port"]),
-        'user': st.secrets["mysql"]["user"],
-        'password': st.secrets["mysql"]["password"],
-        'database': st.secrets["mysql"]["database"],
-        'ssl_disabled': False,
-        'ssl_verify_cert': False,
-        'ssl_verify_identity': False
-    }
-except (KeyError, FileNotFoundError):
-    # Fall back to environment variables or direct config
+    import pdfkit
+    PDFKIT_INSTALLED = True
+except ImportError:
+    PDFKIT_INSTALLED = False
+
+from fpdf import FPDF
+
+import mysql.connector
+from mysql.connector import Error
+import hashlib
+import re
+import streamlit as st
+import socket
+
+# Configuration - Aiven Cloud MySQL
+DB_CONFIG = {
+    'host': 'mysql-11beff9b-kamarwatson36-874b.g.aivencloud.com',
+    'port': 11510,
+    'user': 'avnadmin',
+    'password': 'AVNS_Dxyg2mu3MEiRoVyasff',
+    'database': 'defaultdb',
+    'ssl_disabled': False,  # SSL REQUIRED for Aiven
+    'ssl_verify_cert': True,
+    'ssl_verify_identity': True
+}
+
+def test_port_connection(host, port):
+    """Test if port is accessible"""
     try:
-        from dotenv import load_dotenv
-        load_dotenv()
-    except ImportError:
-        pass  # dotenv not installed, will use os.getenv with defaults
-
-    # Use environment variables with fallback to Aiven credentials
-    DB_CONFIG = {
-        'host': os.getenv('MYSQL_HOST'),
-        'port': int(os.getenv('MYSQL_PORT') or '11510'),
-        'user': os.getenv('MYSQL_USER'),
-        'password': os.getenv('MYSQL_PASSWORD'),
-        'database': os.getenv('MYSQL_DATABASE'),
-        'ssl_disabled': False,
-        'ssl_verify_cert': False,
-        'ssl_verify_identity': False
-    }
-
-# Helper to mask sensitive DB config for error display
-def _masked_db_info(cfg):
-    host = cfg.get('host')
-    port = cfg.get('port')
-    user = cfg.get('user')
-    return f"host={host}, port={port}, user={user}"
-
-# ============================================
-# DATABASE FUNCTIONS
-# ============================================
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(2)
+        result = sock.connect_ex((host, port))
+        sock.close()
+        return result == 0
+    except Exception as e:
+        return False
 
 def create_connection():
-    """Create a database connection"""
-    # Allow a dev mode to skip DB entirely (useful when you don't have a MySQL server running)
-    if os.getenv('SKIP_DB_INIT', '').lower() in ('1', 'true', 'yes'):
-        st.warning("SKIP_DB_INIT is set — skipping creation of a MySQL connection (running in limited demo mode).")
+    """Create a database connection with enhanced error handling"""
+    
+    # First, test if port is reachable
+    if not test_port_connection(DB_CONFIG['host'], DB_CONFIG['port']):
+        st.error(f"Cannot reach {DB_CONFIG['host']}:{DB_CONFIG['port']}. "
+                f"Please check:\n"
+                f"1. MySQL server is running\n"
+                f"2. Port number is correct (default: 3306)\n"
+                f"3. Firewall settings\n"
+                f"4. If using SSH tunnel, ensure it's active")
         return None
-
+    
     try:
-        # Short connection timeout so failures surface quickly
+        # Aiven requires SSL - configure accordingly
+        ssl_config = {
+            'ssl_disabled': False
+        }
+        
         connection = mysql.connector.connect(
             host=DB_CONFIG['host'],
             port=DB_CONFIG['port'],
             user=DB_CONFIG['user'],
             password=DB_CONFIG['password'],
             database=DB_CONFIG['database'],
-            ssl_disabled=DB_CONFIG.get('ssl_disabled', False),
-            ssl_verify_cert=DB_CONFIG.get('ssl_verify_cert', False),
-            ssl_verify_identity=DB_CONFIG.get('ssl_verify_identity', False),
-            connection_timeout=10
+            ssl_disabled=ssl_config['ssl_disabled'],
+            pool_name="mypool",
+            pool_size=5,
+            connection_timeout=30,  # Increased for cloud connections
+            autocommit=False
         )
         return connection
+    except mysql.connector.errors.ProgrammingError as e:
+        st.error(f"Database '{DB_CONFIG['database']}' does not exist or credentials are incorrect: {e}")
+        return None
+    except mysql.connector.errors.DatabaseError as e:
+        st.error(f"Database access error: {e}")
+        return None
     except Error as e:
-        # Avoid printing secrets; show helpful, masked info
         st.error(f"Database connection error: {e}")
-        st.info(f"Checked DB config: {_masked_db_info(DB_CONFIG)}")
         return None
 
 def init_database():
-    """Initialize database and create users table if it doesn't exist"""
-    # Allow skipping DB initialization for quick local testing
-    if os.getenv('SKIP_DB_INIT', '').lower() in ('1', 'true', 'yes'):
-        st.warning("SKIP_DB_INIT is set — skipping database initialization. Running in limited demo mode.")
-        return True
-
+    """Initialize database with optimized schema and indexes"""
+    
+    # Test connection first
+    if not test_port_connection(DB_CONFIG['host'], DB_CONFIG['port']):
+        st.error(f"MySQL server is not accessible at {DB_CONFIG['host']}:{DB_CONFIG['port']}")
+        return False
+    
     try:
-        # Connect to Aiven MySQL (use a short timeout)
+        # Connect without database first for Aiven
         conn = mysql.connector.connect(
             host=DB_CONFIG['host'],
             port=DB_CONFIG['port'],
             user=DB_CONFIG['user'],
             password=DB_CONFIG['password'],
-            database=DB_CONFIG['database'],
-            ssl_disabled=DB_CONFIG.get('ssl_disabled', False),
-            ssl_verify_cert=DB_CONFIG.get('ssl_verify_cert', False),
-            ssl_verify_identity=DB_CONFIG.get('ssl_verify_identity', False),
-            connection_timeout=10
+            database=DB_CONFIG['database'],  # Aiven uses 'defaultdb'
+            ssl_disabled=False,
+            connection_timeout=30
         )
         cursor = conn.cursor()
-
-        # Create users table (database already exists in Aiven)
+        
+        # Use the default database (already connected to 'defaultdb')
+        # No need to create database on Aiven
+        
+        # Users table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -109,11 +132,13 @@ def init_database():
                 email VARCHAR(100) UNIQUE NOT NULL,
                 password_hash VARCHAR(64) NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_login TIMESTAMP NULL
+                last_login TIMESTAMP NULL,
+                INDEX idx_username (username),
+                INDEX idx_email (email)
             )
         """)
-
-        # Create user_files table for storing uploaded files
+        
+        # User files table with indexes
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS user_files (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -122,11 +147,13 @@ def init_database():
                 file_data LONGBLOB NOT NULL,
                 file_type VARCHAR(10) NOT NULL,
                 upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                INDEX idx_user_files_user_id (user_id),
+                INDEX idx_user_files_upload_date (upload_date)
             )
         """)
-
-        # Create user_preferences table for storing budget and category settings
+        
+        # User preferences table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS user_preferences (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -135,19 +162,40 @@ def init_database():
                 monthly_budgets TEXT,
                 savings_goal DECIMAL(10,2) DEFAULT 5000,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                INDEX idx_user_preferences_user_id (user_id)
             )
         """)
-
+        
+        # Monthly summaries table for pre-computed data
+        # Use quoted identifiers and more compatible definitions to avoid syntax issues on different MySQL versions.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS `monthly_summaries` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `user_id` INT NOT NULL,
+                `year_month` VARCHAR(7) NOT NULL,
+                `total_income` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                `total_spending` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                `category_breakdown` TEXT,
+                `transaction_count` INT NOT NULL DEFAULT 0,
+                `computed_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY `unique_user_month` (`user_id`, `year_month`),
+                KEY `idx_monthly_summaries` (`user_id`, `year_month`),
+                CONSTRAINT `fk_monthly_user` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """)
+        
         conn.commit()
         cursor.close()
         conn.close()
+        st.success("Database initialized successfully!")
         return True
+    except mysql.connector.errors.ProgrammingError as e:
+        st.error(f"Database permission error: {e}\n"
+                f"Make sure user '{DB_CONFIG['user']}' has CREATE DATABASE privileges")
+        return False
     except Error as e:
-        # Provide actionable debugging info without leaking credentials
         st.error(f"Database initialization error: {e}")
-        st.info(f"Checked DB config: {_masked_db_info(DB_CONFIG)}")
-        st.info("If you're running locally and don't have a MySQL server, you can run the app in demo mode by setting the environment variable SKIP_DB_INIT=1")
         return False
 
 def hash_password(password):
@@ -164,21 +212,21 @@ def register_user(username, email, password):
     connection = create_connection()
     if not connection:
         return False, "Database connection failed"
-
+    
     try:
         cursor = connection.cursor()
         password_hash = hash_password(password)
-
+        
         cursor.execute(
             "INSERT INTO users (username, email, password_hash) VALUES (%s, %s, %s)",
             (username, email, password_hash)
         )
-
+        
         connection.commit()
         cursor.close()
         connection.close()
         return True, "Registration successful!"
-
+    
     except mysql.connector.IntegrityError:
         connection.close()
         return False, "Username or email already exists"
@@ -191,38 +239,68 @@ def authenticate_user(username, password):
     connection = create_connection()
     if not connection:
         return False, None
-
+    
     try:
         cursor = connection.cursor(dictionary=True)
         password_hash = hash_password(password)
-
+        
         cursor.execute(
             "SELECT * FROM users WHERE username = %s AND password_hash = %s",
             (username, password_hash)
         )
-
+        
         user = cursor.fetchone()
-
+        
         if user:
-            # Update last login
             cursor.execute(
                 "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = %s",
                 (user['id'],)
             )
             connection.commit()
-
+        
         cursor.close()
         connection.close()
-
+        
         return user is not None, user
-
+    
     except Error as e:
         st.error(f"Authentication error: {e}")
         connection.close()
         return False, None
 
+# Diagnostic function
+def run_diagnostics():
+    """Run connection diagnostics"""
+    st.write("### Database Connection Diagnostics")
+    st.write(f"**Host:** {DB_CONFIG['host']}")
+    st.write(f"**Port:** {DB_CONFIG['port']}")
+    st.write(f"**Database:** {DB_CONFIG['database']}")
+    
+    if test_port_connection(DB_CONFIG['host'], DB_CONFIG['port']):
+        st.success(f"✓ Port {DB_CONFIG['port']} is reachable")
+    else:
+        st.error(f"✗ Port {DB_CONFIG['port']} is NOT reachable")
+        return
+    
+    try:
+        conn = mysql.connector.connect(
+            host=DB_CONFIG['host'],
+            port=DB_CONFIG['port'],
+            user=DB_CONFIG['user'],
+            password=DB_CONFIG['password'],
+            ssl_disabled=False,
+            connection_timeout=30
+        )
+        st.success("✓ Credentials are valid")
+        conn.close()
+    except Error as e:
+        st.error(f"✗ Connection failed: {e}")
+
+
+
+
 # ============================================
-# FILE STORAGE FUNCTIONS
+# OPTIMIZED FILE STORAGE FUNCTIONS
 # ============================================
 
 def save_user_file(user_id, filename, file_data, file_type):
@@ -230,7 +308,7 @@ def save_user_file(user_id, filename, file_data, file_type):
     connection = create_connection()
     if not connection:
         return False
-
+    
     try:
         cursor = connection.cursor()
         cursor.execute(
@@ -240,39 +318,57 @@ def save_user_file(user_id, filename, file_data, file_type):
         connection.commit()
         cursor.close()
         connection.close()
+        
+        # Invalidate cache
+        invalidate_user_cache(user_id)
         return True
     except Error as e:
         st.error(f"Error saving file: {e}")
         connection.close()
         return False
 
-def get_user_files(user_id):
-    """Get all files for a user"""
+def get_user_files_paginated(user_id, page=0, page_size=10):
+    """Get files with pagination for better performance"""
     connection = create_connection()
     if not connection:
-        return []
-
+        return [], 0
+    
     try:
         cursor = connection.cursor(dictionary=True)
+        offset = page * page_size
+        
+        # Get total count
         cursor.execute(
-            "SELECT id, filename, file_type, upload_date FROM user_files WHERE user_id = %s ORDER BY upload_date DESC",
+            "SELECT COUNT(*) as total FROM user_files WHERE user_id = %s",
             (user_id,)
         )
+        total = cursor.fetchone()['total']
+        
+        # Get paginated results
+        cursor.execute(
+            """SELECT id, filename, file_type, upload_date 
+               FROM user_files 
+               WHERE user_id = %s 
+               ORDER BY upload_date DESC 
+               LIMIT %s OFFSET %s""",
+            (user_id, page_size, offset)
+        )
         files = cursor.fetchall()
+        
         cursor.close()
         connection.close()
-        return files
+        return files, total
     except Error as e:
         st.error(f"Error retrieving files: {e}")
         connection.close()
-        return []
+        return [], 0
 
 def get_file_data(file_id, user_id):
     """Get file data from database"""
     connection = create_connection()
     if not connection:
         return None
-
+    
     try:
         cursor = connection.cursor(dictionary=True)
         cursor.execute(
@@ -293,7 +389,7 @@ def delete_user_file(file_id, user_id):
     connection = create_connection()
     if not connection:
         return False
-
+    
     try:
         cursor = connection.cursor()
         cursor.execute(
@@ -304,6 +400,9 @@ def delete_user_file(file_id, user_id):
         deleted = cursor.rowcount > 0
         cursor.close()
         connection.close()
+        
+        # Invalidate cache
+        invalidate_user_cache(user_id)
         return deleted
     except Error as e:
         st.error(f"Error deleting file: {e}")
@@ -311,7 +410,699 @@ def delete_user_file(file_id, user_id):
         return False
 
 # ============================================
-# USER PREFERENCES FUNCTIONS
+# CACHING SYSTEM
+# ============================================
+
+def get_cache_key(user_id, cache_type='data'):
+    """Generate cache key"""
+    return f'user_{user_id}_{cache_type}'
+
+def get_cached_data(user_id):
+    """Get cached user data from session state"""
+    cache_key = get_cache_key(user_id, 'data')
+    time_key = get_cache_key(user_id, 'time')
+    
+    if cache_key in st.session_state:
+        cache_time = st.session_state.get(time_key)
+        if cache_time and (datetime.now() - cache_time).seconds < 300:  # 5 min cache
+            return st.session_state[cache_key]
+    
+    return None
+
+def set_cached_data(user_id, data):
+    """Set cached user data in session state"""
+    cache_key = get_cache_key(user_id, 'data')
+    time_key = get_cache_key(user_id, 'time')
+    
+    st.session_state[cache_key] = data
+    st.session_state[time_key] = datetime.now()
+
+def invalidate_user_cache(user_id):
+    """Invalidate user cache"""
+    cache_key = get_cache_key(user_id, 'data')
+    time_key = get_cache_key(user_id, 'time')
+    
+    if cache_key in st.session_state:
+        del st.session_state[cache_key]
+    if time_key in st.session_state:
+        del st.session_state[time_key]
+
+# ============================================
+# OPTIMIZED DATA PROCESSING
+# ============================================
+
+@lru_cache(maxsize=1000)
+def classify_expense_cached(description, category_keywords_json):
+    """Cached expense classification - O(1) for repeated items"""
+    category_keywords = json.loads(category_keywords_json)
+    desc = str(description).lower()
+    
+    for category, keywords in category_keywords.items():
+        for kw in keywords:
+            if kw in desc:
+                return category
+    return 'Uncategorized'
+
+def process_csv(file):
+    """Process CSV file"""
+    try:
+        df = pd.read_csv(file)
+        df.rename(columns={
+            'TRANS DATE': 'Date',
+            'DETAILS': 'Description',
+            'TOTAL AMOUNT': 'Amount',
+            'TRANS TYPE': 'Category'
+        }, inplace=True)
+        df = df[['Date', 'Description', 'Amount', 'Category']]
+        df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce')
+        df['Category'] = df['Amount'].apply(lambda x: 'Debit' if x < 0 else 'Credit')
+        df['Amount'] = df['Amount'].abs()
+        return df
+    except Exception as e:
+        st.error(f"CSV Error: {e}")
+        return pd.DataFrame()
+
+# Add these imports at the top of your file (with your other imports)
+import re
+from typing import Optional, List
+
+# Add these functions after your existing process_csv and process_pdf functions
+# (around line 500 in your code, after the process_pdf function)
+
+def parse_ncb_transaction_line(line: str, year: str = "2024") -> Optional[List]:
+    """
+    Parse a transaction line from NCB bank statement.
+    
+    Format: DD/Mon Description Amount Balance
+    Example: 27/Sep ABM VMBS UTECH BR,237 OLD KINGSTON -55,000.00 11,357.94
+    
+    Args:
+        line: Raw text line from NCB PDF
+        year: Year to append to date (default: 2024)
+        
+    Returns:
+        List containing [date, description, amount, category] or None
+    """
+    line = line.strip()
+    if not line:
+        return None
+    
+    # Check if line starts with a date pattern (DD/Mon)
+    date_pattern = r'^(\d{1,2}/[A-Za-z]{3})\s+'
+    match = re.match(date_pattern, line)
+    
+    if not match:
+        return None
+    
+    try:
+        date_str = match.group(1)
+        remaining = line[match.end():].strip()
+        
+        # Split remaining into parts
+        parts = remaining.split()
+        if len(parts) < 2:
+            return None
+        
+        # Last part is balance, second-to-last is transaction amount
+        balance = parts[-1]
+        amount_str = parts[-2]
+        
+        # Description is everything except the last two parts
+        description = " ".join(parts[:-2])
+        
+        # Clean and convert amount
+        amount_clean = amount_str.replace(',', '').replace('J$', '')
+        
+        # Determine if debit or credit based on negative sign
+        is_negative = amount_clean.startswith('-')
+        amount = abs(float(amount_clean))
+        category = 'Debit' if is_negative else 'Credit'
+        
+        # Convert date to standard format
+        full_date = f"{date_str}/{year}"
+        
+        return [full_date, description, amount, category]
+        
+    except (ValueError, IndexError) as e:
+        return None
+
+def process_pdf_ncb(file) -> pd.DataFrame:
+    """
+    Process NCB (National Commercial Bank) PDF statement file.
+    
+    NCB statement format:
+    - Date: DD/Mon (e.g., 27/Sep)
+    - Description: Variable length text
+    - Amount: Transaction amount (negative for debits)
+    - Balance: Running balance (last column)
+    
+    Args:
+        file: Uploaded PDF file object
+        
+    Returns:
+        DataFrame with columns: Date, Description, Amount, Category
+    """
+    try:
+        transactions = []
+        year = "2024"  # Default year, can be extracted from statement header
+        
+        with pdfplumber.open(file) as pdf:
+            for page_num, page in enumerate(pdf.pages, 1):
+                text = page.extract_text()
+                
+                if not text:
+                    continue
+                
+                # Try to extract year from the statement date if on first page
+                if page_num == 1:
+                    year_match = re.search(r'(\d{2})-(\d{2})-(\d{4})', text)
+                    if year_match:
+                        year = year_match.group(3)
+                
+                # Process each line
+                for line in text.split('\n'):
+                    line = line.strip()
+                    
+                    # Skip empty lines and common footer text
+                    if not line or 'CONTINUED' in line or 'END OF STATEMENT' in line:
+                        continue
+                    
+                    # Skip lines that are clearly headers (generic patterns)
+                    # Look for patterns that indicate header/footer, not specific user data
+                    skip_patterns = [
+                        'JAMAICA',           # Country name
+                        'REGULAR SAVINGS',   # Account type
+                        'CURRENT ACCOUNT',   # Account type
+                        'SAVINGS ACCOUNT',   # Account type
+                        'JMD',              # Currency
+                        'USD',              # Currency
+                        r'MA \d{2}-\d{2}',  # Statement page numbers like "MA 30-09"
+                        r'^\d{9}
+        
+        # Create DataFrame
+        if not transactions:
+            st.warning("No transactions found in NCB PDF file.")
+            return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
+        
+        df = pd.DataFrame(transactions, columns=['Date', 'Description', 'Amount', 'Category'])
+        
+        # Convert date to datetime
+        try:
+            df['Date'] = pd.to_datetime(df['Date'], format='%d/%b/%Y', errors='coerce')
+        except:
+            pass  # Keep as string if conversion fails
+        
+        # Remove any duplicate transactions
+        df_before = len(df)
+        df = df.drop_duplicates()
+        df_after = len(df)
+        
+        if df_before > df_after:
+            st.info(f"Removed {df_before - df_after} duplicate transactions.")
+        
+        st.success(f"Successfully extracted {len(df)} transactions from NCB PDF.")
+        return df
+        
+    except Exception as e:
+        st.error(f"NCB PDF Processing Error: {str(e)}")
+        return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
+
+# IMPORTANT: Update the load_all_user_data function to use the NCB processor
+# Replace the existing load_all_user_data function with this updated version:
+
+def load_all_user_data(user_id):
+    """Load all user data with caching - supports NCB PDFs"""
+    # Check cache first
+    cached_data = get_cached_data(user_id)
+    if cached_data is not None:
+        return cached_data
+    
+    # Load from database
+    connection = create_connection()
+    if not connection:
+        return pd.DataFrame()
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT id, filename, file_data, file_type FROM user_files WHERE user_id = %s",
+            (user_id,)
+        )
+        files = cursor.fetchall()
+        cursor.close()
+        connection.close()
+        
+        all_data = []
+        for file_info in files:
+            file_bytes = BytesIO(file_info['file_data'])
+            
+            if file_info['file_type'] == 'csv':
+                df = process_csv(file_bytes)
+            elif file_info['file_type'] == 'pdf':
+                # Try NCB format first
+                df = process_pdf_ncb(file_bytes)
+                
+                # If NCB parser fails (empty dataframe), try generic parser
+                if df.empty:
+                    file_bytes.seek(0)  # Reset file pointer
+                    df = process_pdf(file_bytes)
+            else:
+                continue
+            
+            if not df.empty:
+                all_data.append(df)
+        
+        if not all_data:
+            return pd.DataFrame()
+        
+        # Concatenate all data
+        result = pd.concat(all_data, ignore_index=True)
+        
+        # Convert dates
+        result['Date'] = pd.to_datetime(result['Date'], errors='coerce')
+        result = result.dropna(subset=['Date'])
+        
+        # Add month columns
+        result['Month-Year'] = result['Date'].dt.strftime('%B %Y')
+        result['Month-Name'] = result['Date'].dt.strftime('%B')
+        result['YearMonth'] = result['Date'].dt.to_period('M').astype(str)
+        
+        # Cache the result
+        set_cached_data(user_id, result)
+        
+        return result
+        
+    except Error as e:
+        st.error(f"Error loading data: {e}")
+        connection.close()
+        return pd.DataFrame(),         # Account numbers (9 digits alone)
+                        r'^\d{2}-\d{2}-\d{4}
+        
+        # Create DataFrame
+        if not transactions:
+            st.warning("No transactions found in NCB PDF file.")
+            return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
+        
+        df = pd.DataFrame(transactions, columns=['Date', 'Description', 'Amount', 'Category'])
+        
+        # Convert date to datetime
+        try:
+            df['Date'] = pd.to_datetime(df['Date'], format='%d/%b/%Y', errors='coerce')
+        except:
+            pass  # Keep as string if conversion fails
+        
+        # Remove any duplicate transactions
+        df_before = len(df)
+        df = df.drop_duplicates()
+        df_after = len(df)
+        
+        if df_before > df_after:
+            st.info(f"Removed {df_before - df_after} duplicate transactions.")
+        
+        st.success(f"Successfully extracted {len(df)} transactions from NCB PDF.")
+        return df
+        
+    except Exception as e:
+        st.error(f"NCB PDF Processing Error: {str(e)}")
+        return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
+
+# IMPORTANT: Update the load_all_user_data function to use the NCB processor
+# Replace the existing load_all_user_data function with this updated version:
+
+def load_all_user_data(user_id):
+    """Load all user data with caching - supports NCB PDFs"""
+    # Check cache first
+    cached_data = get_cached_data(user_id)
+    if cached_data is not None:
+        return cached_data
+    
+    # Load from database
+    connection = create_connection()
+    if not connection:
+        return pd.DataFrame()
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT id, filename, file_data, file_type FROM user_files WHERE user_id = %s",
+            (user_id,)
+        )
+        files = cursor.fetchall()
+        cursor.close()
+        connection.close()
+        
+        all_data = []
+        for file_info in files:
+            file_bytes = BytesIO(file_info['file_data'])
+            
+            if file_info['file_type'] == 'csv':
+                df = process_csv(file_bytes)
+            elif file_info['file_type'] == 'pdf':
+                # Try NCB format first
+                df = process_pdf_ncb(file_bytes)
+                
+                # If NCB parser fails (empty dataframe), try generic parser
+                if df.empty:
+                    file_bytes.seek(0)  # Reset file pointer
+                    df = process_pdf(file_bytes)
+            else:
+                continue
+            
+            if not df.empty:
+                all_data.append(df)
+        
+        if not all_data:
+            return pd.DataFrame()
+        
+        # Concatenate all data
+        result = pd.concat(all_data, ignore_index=True)
+        
+        # Convert dates
+        result['Date'] = pd.to_datetime(result['Date'], errors='coerce')
+        result = result.dropna(subset=['Date'])
+        
+        # Add month columns
+        result['Month-Year'] = result['Date'].dt.strftime('%B %Y')
+        result['Month-Name'] = result['Date'].dt.strftime('%B')
+        result['YearMonth'] = result['Date'].dt.to_period('M').astype(str)
+        
+        # Cache the result
+        set_cached_data(user_id, result)
+        
+        return result
+        
+    except Error as e:
+        st.error(f"Error loading data: {e}")
+        connection.close()
+        return pd.DataFrame(),  # Date format in header
+                        'P.O.',             # Post office box indicators
+                        'NATIONAL COMMERCIAL BANK',  # Bank name
+                        'NCB',              # Bank abbreviation
+                    ]
+                    
+                    # Check if line matches any skip pattern
+                    should_skip = False
+                    for pattern in skip_patterns:
+                        if re.search(pattern, line, re.IGNORECASE):
+                            should_skip = True
+                            break
+                    
+                    # Also skip lines that are just location names (all caps, no numbers)
+                    if line.isupper() and not any(char.isdigit() for char in line) and len(line.split()) <= 3:
+                        should_skip = True
+                    
+                    # Skip lines that look like customer names (starts with MR, MRS, MS, DR)
+                    if re.match(r'^(MR|MRS|MS|DR|MISS)\s+[A-Z]', line):
+                        should_skip = True
+                    
+                    if should_skip:
+                        continue
+                    
+                    parsed = parse_ncb_transaction_line(line, year)
+                    if parsed:
+                        transactions.append(parsed)
+        
+        # Create DataFrame
+        if not transactions:
+            st.warning("No transactions found in NCB PDF file.")
+            return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
+        
+        df = pd.DataFrame(transactions, columns=['Date', 'Description', 'Amount', 'Category'])
+        
+        # Convert date to datetime
+        try:
+            df['Date'] = pd.to_datetime(df['Date'], format='%d/%b/%Y', errors='coerce')
+        except:
+            pass  # Keep as string if conversion fails
+        
+        # Remove any duplicate transactions
+        df_before = len(df)
+        df = df.drop_duplicates()
+        df_after = len(df)
+        
+        if df_before > df_after:
+            st.info(f"Removed {df_before - df_after} duplicate transactions.")
+        
+        st.success(f"Successfully extracted {len(df)} transactions from NCB PDF.")
+        return df
+        
+    except Exception as e:
+        st.error(f"NCB PDF Processing Error: {str(e)}")
+        return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
+
+# IMPORTANT: Update the load_all_user_data function to use the NCB processor
+# Replace the existing load_all_user_data function with this updated version:
+
+def load_all_user_data(user_id):
+    """Load all user data with caching - supports NCB PDFs"""
+    # Check cache first
+    cached_data = get_cached_data(user_id)
+    if cached_data is not None:
+        return cached_data
+    
+    # Load from database
+    connection = create_connection()
+    if not connection:
+        return pd.DataFrame()
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT id, filename, file_data, file_type FROM user_files WHERE user_id = %s",
+            (user_id,)
+        )
+        files = cursor.fetchall()
+        cursor.close()
+        connection.close()
+        
+        all_data = []
+        for file_info in files:
+            file_bytes = BytesIO(file_info['file_data'])
+            
+            if file_info['file_type'] == 'csv':
+                df = process_csv(file_bytes)
+            elif file_info['file_type'] == 'pdf':
+                # Try NCB format first
+                df = process_pdf_ncb(file_bytes)
+                
+                # If NCB parser fails (empty dataframe), try generic parser
+                if df.empty:
+                    file_bytes.seek(0)  # Reset file pointer
+                    df = process_pdf(file_bytes)
+            else:
+                continue
+            
+            if not df.empty:
+                all_data.append(df)
+        
+        if not all_data:
+            return pd.DataFrame()
+        
+        # Concatenate all data
+        result = pd.concat(all_data, ignore_index=True)
+        
+        # Convert dates
+        result['Date'] = pd.to_datetime(result['Date'], errors='coerce')
+        result = result.dropna(subset=['Date'])
+        
+        # Add month columns
+        result['Month-Year'] = result['Date'].dt.strftime('%B %Y')
+        result['Month-Name'] = result['Date'].dt.strftime('%B')
+        result['YearMonth'] = result['Date'].dt.to_period('M').astype(str)
+        
+        # Cache the result
+        set_cached_data(user_id, result)
+        
+        return result
+        
+    except Error as e:
+        st.error(f"Error loading data: {e}")
+        connection.close()
+        return pd.DataFrame()
+
+def process_pdf(file):
+    """Process PDF file"""
+    try:
+        data = []
+        with pdfplumber.open(file) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text()
+                if not text:
+                    continue
+                for line in text.split('\n'):
+                    if "POS" in line or "TRF" in line or "PURCHASE" in line:
+                        parts = line.split()
+                        if len(parts) >= 4:
+                            date = parts[0]
+                            desc = " ".join(parts[1:-2])
+                            amt = parts[-2].replace('J$', '').replace(',', '')
+                            cat = 'Debit' if '-' in parts[-2] else 'Credit'
+                            data.append([date, desc, abs(float(amt)), cat])
+        df = pd.DataFrame(data, columns=['Date', 'Description', 'Amount', 'Category'])
+        return df
+    except Exception as e:
+        st.error(f"PDF Error: {e}")
+        return pd.DataFrame()
+
+def load_all_user_data(user_id):
+    """Load all user data with caching"""
+    # Check cache first
+    cached_data = get_cached_data(user_id)
+    if cached_data is not None:
+        return cached_data
+    
+    # Load from database
+    connection = create_connection()
+    if not connection:
+        return pd.DataFrame()
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT id, file_data, file_type FROM user_files WHERE user_id = %s",
+            (user_id,)
+        )
+        files = cursor.fetchall()
+        cursor.close()
+        connection.close()
+        
+        all_data = []
+        for file_info in files:
+            file_bytes = BytesIO(file_info['file_data'])
+            
+            if file_info['file_type'] == 'csv':
+                df = process_csv(file_bytes)
+            elif file_info['file_type'] == 'pdf':
+                df = process_pdf(file_bytes)
+            else:
+                continue
+            
+            if not df.empty:
+                all_data.append(df)
+        
+        if not all_data:
+            return pd.DataFrame()
+        
+        # Concatenate all data
+        result = pd.concat(all_data, ignore_index=True)
+        
+        # Convert dates
+        result['Date'] = pd.to_datetime(result['Date'], errors='coerce')
+        result = result.dropna(subset=['Date'])
+        
+        # Add month columns
+        result['Month-Year'] = result['Date'].dt.strftime('%B %Y')
+        result['Month-Name'] = result['Date'].dt.strftime('%B')
+        result['YearMonth'] = result['Date'].dt.to_period('M').astype(str)
+        
+        # Cache the result
+        set_cached_data(user_id, result)
+        
+        return result
+        
+    except Error as e:
+        st.error(f"Error loading data: {e}")
+        connection.close()
+        return pd.DataFrame()
+
+# ============================================
+# PRE-COMPUTED SUMMARIES
+# ============================================
+def compute_monthly_summary(user_id, year_month, df):
+    """Compute and store monthly summary (robust quoting + VALUES() in UPDATE)"""
+    connection = create_connection()
+    if not connection:
+        return False
+
+    try:
+        # Filter data for the month
+        month_data = df[df['YearMonth'] == year_month]
+
+        if month_data.empty:
+            return False
+
+        total_income = float(month_data[month_data['Category'] == 'Credit']['Amount'].sum())
+        total_spending = float(month_data[month_data['Category'] == 'Debit']['Amount'].sum())
+
+        # Compute category breakdown safely (ensure keys are serializable)
+        spending_by_category = month_data[month_data['Category'] == 'Debit'].groupby('Spending Category')['Amount'].sum()
+        category_breakdown = json.dumps({str(k): float(v) for k, v in spending_by_category.to_dict().items()})
+
+        transaction_count = int(len(month_data))
+
+        cursor = connection.cursor()
+        sql = """
+            INSERT INTO `monthly_summaries`
+            (`user_id`, `year_month`, `total_income`, `total_spending`, `category_breakdown`, `transaction_count`)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                `total_income` = VALUES(`total_income`),
+                `total_spending` = VALUES(`total_spending`),
+                `category_breakdown` = VALUES(`category_breakdown`),
+                `transaction_count` = VALUES(`transaction_count`),
+                `computed_at` = CURRENT_TIMESTAMP
+        """
+        params = (user_id, year_month, total_income, total_spending, category_breakdown, transaction_count)
+        cursor.execute(sql, params)
+
+        connection.commit()
+        cursor.close()
+        connection.close()
+        return True
+
+    except Error as e:
+        # Show the SQL and params to make debugging easier (do NOT log passwords)
+        try:
+            st.error(f"Error computing summary: {e}")
+            st.error(f"SQL: {sql}")
+            st.error(f"Params: {params}")
+        except Exception:
+            st.error(f"Error computing summary (and failed to show SQL): {e}")
+        connection.close()
+        return False
+
+
+def get_monthly_summary(user_id, year_month):
+    """Get pre-computed monthly summary (quoted identifiers)"""
+    connection = create_connection()
+    if not connection:
+        return None
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        sql = """
+            SELECT `total_income`, `total_spending`, `category_breakdown`,
+                   `transaction_count`, `computed_at`
+            FROM `monthly_summaries`
+            WHERE `user_id` = %s AND `year_month` = %s
+        """
+        cursor.execute(sql, (user_id, year_month))
+
+        summary = cursor.fetchone()
+        cursor.close()
+        connection.close()
+
+        if summary and summary.get('category_breakdown'):
+            try:
+                summary['category_breakdown'] = json.loads(summary['category_breakdown'])
+            except Exception:
+                # If stored value is not JSON, leave as-is
+                pass
+            return summary
+
+        return None
+
+    except Error as e:
+        try:
+            st.error(f"Error retrieving summary: {e}")
+            st.error(f"SQL: {sql}")
+            st.error(f"Params: {(user_id, year_month)}")
+        except Exception:
+            st.error(f"Error retrieving summary: {e}")
+        connection.close()
+        return None
+# ============================================
+# USER PREFERENCES
 # ============================================
 
 def get_user_preferences(user_id):
@@ -319,7 +1110,7 @@ def get_user_preferences(user_id):
     connection = create_connection()
     if not connection:
         return None
-
+    
     try:
         cursor = connection.cursor(dictionary=True)
         cursor.execute(
@@ -337,36 +1128,31 @@ def get_user_preferences(user_id):
 
 def save_user_preferences(user_id, category_keywords, monthly_budgets, savings_goal):
     """Save user's preferences"""
-    import json
     connection = create_connection()
     if not connection:
         return False
-
+    
     try:
         cursor = connection.cursor()
-
-        # Convert dictionaries to JSON strings
+        
         category_json = json.dumps(category_keywords)
         budgets_json = json.dumps(monthly_budgets)
-
-        # Check if preferences exist
+        
         cursor.execute("SELECT id FROM user_preferences WHERE user_id = %s", (user_id,))
         existing = cursor.fetchone()
-
+        
         if existing:
-            # Update existing preferences
             cursor.execute("""
                 UPDATE user_preferences 
                 SET category_keywords = %s, monthly_budgets = %s, savings_goal = %s
                 WHERE user_id = %s
             """, (category_json, budgets_json, float(savings_goal), user_id))
         else:
-            # Insert new preferences
             cursor.execute("""
                 INSERT INTO user_preferences (user_id, category_keywords, monthly_budgets, savings_goal)
                 VALUES (%s, %s, %s, %s)
             """, (user_id, category_json, budgets_json, float(savings_goal)))
-
+        
         connection.commit()
         cursor.close()
         connection.close()
@@ -403,18 +1189,17 @@ def logout():
 
 def login_page():
     """Display login page"""
-    # Center the title
     st.markdown("<h1 style='text-align: center;'>🔐 Finance Hub Login</h1>", unsafe_allow_html=True)
-
+    
     col1, col2, col3 = st.columns([1, 2, 1])
-
+    
     with col2:
         st.markdown("---")
         username = st.text_input("Username", key="login_username")
         password = st.text_input("Password", type="password", key="login_password")
-
+        
         col_btn1, col_btn2 = st.columns(2)
-
+        
         with col_btn1:
             if st.button("Login", use_container_width=True):
                 if username and password:
@@ -428,34 +1213,32 @@ def login_page():
                         st.error("Invalid username or password")
                 else:
                     st.warning("Please enter both username and password")
-
+        
         with col_btn2:
             if st.button("Register", use_container_width=True):
                 st.session_state.page = 'register'
                 st.rerun()
-
+        
         st.markdown("---")
         st.info("💡 **Demo:** Create a new account to get started!")
 
 def register_page():
     """Display registration page"""
-    # Center the title
     st.markdown("<h1 style='text-align: center;'>📝 Register New Account</h1>", unsafe_allow_html=True)
-
+    
     col1, col2, col3 = st.columns([1, 2, 1])
-
+    
     with col2:
         st.markdown("---")
         username = st.text_input("Username", key="reg_username", help="Minimum 3 characters")
         email = st.text_input("Email", key="reg_email", help="Valid email address")
         password = st.text_input("Password", type="password", key="reg_password", help="Minimum 6 characters")
         confirm_password = st.text_input("Confirm Password", type="password", key="reg_confirm")
-
+        
         col_btn1, col_btn2 = st.columns(2)
-
+        
         with col_btn1:
             if st.button("Create Account", use_container_width=True):
-                # Validation
                 if not username or not email or not password:
                     st.error("All fields are required")
                 elif len(username) < 3:
@@ -476,36 +1259,88 @@ def register_page():
                         st.rerun()
                     else:
                         st.error(message)
-
+        
         with col_btn2:
             if st.button("Back to Login", use_container_width=True):
                 st.session_state.page = 'login'
                 st.rerun()
-
+        
         st.markdown("---")
 
-def main_app():
-    """Display main application - Your Finance Hub"""
-    import pandas as pd
-    import plotly.express as px
-    import calendar
-    import smtplib
-    from email.message import EmailMessage
-    from io import BytesIO
-    import tempfile
-    import os
-    from PIL import Image
-    import pdfplumber
+# ============================================
+# HELPER FUNCTIONS
+# ============================================
 
+def send_email_alert(receiver_email, subject, body, sender_email, sender_password, smtp_server, smtp_port=587):
+    """Send email alerts"""
     try:
-        import pdfkit
-        PDFKIT_INSTALLED = True
-    except ImportError:
-        PDFKIT_INSTALLED = False
+        msg = EmailMessage()
+        msg.set_content(body)
+        msg['Subject'] = subject
+        msg['From'] = sender_email
+        msg['To'] = receiver_email
 
-    from fpdf import FPDF
+        if 'gmail' in smtp_server.lower():
+            with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+                st.success("✅ Email sent successfully!")
+        else:
+            with smtplib.SMTP(smtp_server, smtp_port) as server:
+                server.starttls()
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+                st.success("✅ Email sent successfully!")
+        
+        return True
 
-    # Sidebar user info at the top
+    except smtplib.SMTPAuthenticationError:
+        st.error("❌ Authentication Failed - Check your email credentials")
+        if 'gmail' in smtp_server.lower():
+            st.info("📌 Gmail users must use App Passwords")
+        return False
+    except Exception as e:
+        st.error(f"❌ Email Error: {str(e)}")
+        return False
+
+def export_to_excel(df):
+    """Export data to Excel"""
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Transactions')
+    processed_data = output.getvalue()
+    return processed_data
+
+def export_to_pdf(text_report):
+    """Export report to PDF"""
+    if PDFKIT_INSTALLED:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.html') as f:
+            f.write(text_report.encode('utf-8'))
+            f.flush()
+            pdf_file = f.name.replace('.html', '.pdf')
+            pdfkit.from_file(f.name, pdf_file)
+            with open(pdf_file, 'rb') as pdf_f:
+                pdf_bytes = pdf_f.read()
+            os.unlink(f.name)
+            os.unlink(pdf_file)
+            return pdf_bytes
+    else:
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+        
+        for line in text_report.split('\n'):
+            pdf.cell(0, 10, line.encode('latin-1', 'ignore').decode('latin-1'), ln=True)
+            
+        return pdf.output(dest='S').encode('latin1')
+
+# ============================================
+# MAIN APP
+# ============================================
+
+def main_app():
+    """Display main application with optimizations"""
+    
     with st.sidebar:
         st.markdown(f"### 👤 {st.session_state.user['username']}")
         st.markdown(f"📧 {st.session_state.user['email']}")
@@ -517,120 +1352,6 @@ def main_app():
             logout()
         st.markdown("---")
 
-    # ---------- Helper Functions ----------
-
-    def process_csv(file):
-        try:
-            df = pd.read_csv(file)
-            df.rename(columns={
-                'TRANS DATE': 'Date',
-                'DETAILS': 'Description',
-                'TOTAL AMOUNT': 'Amount',
-                'TRANS TYPE': 'Category'
-            }, inplace=True)
-            df = df[['Date', 'Description', 'Amount', 'Category']]
-            df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce')
-            df['Category'] = df['Amount'].apply(lambda x: 'Debit' if x < 0 else 'Credit')
-            df['Amount'] = df['Amount'].abs()
-            return df
-        except Exception as e:
-            st.error(f"CSV Error: {e}")
-            return pd.DataFrame()
-
-    def process_pdf(file):
-        try:
-            data = []
-            with pdfplumber.open(file) as pdf:
-                for page in pdf.pages:
-                    text = page.extract_text()
-                    if not text:
-                        continue
-                    for line in text.split('\n'):
-                        if "POS" in line or "TRF" in line or "PURCHASE" in line:
-                            parts = line.split()
-                            if len(parts) >= 4:
-                                date = parts[0]
-                                desc = " ".join(parts[1:-2])
-                                amt = parts[-2].replace('J$', '').replace(',', '')
-                                cat = 'Debit' if '-' in parts[-2] else 'Credit'
-                                data.append([date, desc, abs(float(amt)), cat])
-            df = pd.DataFrame(data, columns=['Date', 'Description', 'Amount', 'Category'])
-            return df
-        except Exception as e:
-            st.error(f"PDF Error: {e}")
-            return pd.DataFrame()
-
-    def classify_expense(description, mapping):
-        desc = description.lower()
-        for category, keywords in mapping.items():
-            for kw in keywords:
-                if kw in desc:
-                    return category
-        return 'Uncategorized'
-
-    def send_email_alert(receiver_email, subject, body, sender_email, sender_password, smtp_server, smtp_port=587):
-        """Send email alerts with proper error handling"""
-        try:
-            msg = EmailMessage()
-            msg.set_content(body)
-            msg['Subject'] = subject
-            msg['From'] = sender_email
-            msg['To'] = receiver_email
-
-            if 'gmail' in smtp_server.lower():
-                with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-                    server.login(sender_email, sender_password)
-                    server.send_message(msg)
-                    st.success("✅ Email sent successfully!")
-            else:
-                with smtplib.SMTP(smtp_server, smtp_port) as server:
-                    server.starttls()
-                    server.login(sender_email, sender_password)
-                    server.send_message(msg)
-                    st.success("✅ Email sent successfully!")
-
-            return True
-
-        except smtplib.SMTPAuthenticationError:
-            st.error("❌ Authentication Failed - Check your email credentials")
-            if 'gmail' in smtp_server.lower():
-                st.info("📌 Gmail users must use App Passwords, not regular passwords")
-            return False
-        except Exception as e:
-            st.error(f"❌ Email Error: {str(e)}")
-            return False
-
-    def export_to_excel(df):
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            df.to_excel(writer, index=False, sheet_name='Transactions')
-        processed_data = output.getvalue()
-        return processed_data
-
-    def export_to_pdf(text_report):
-        if PDFKIT_INSTALLED:
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.html') as f:
-                f.write(text_report.encode('utf-8'))
-                f.flush()
-                pdf_file = f.name.replace('.html', '.pdf')
-                pdfkit.from_file(f.name, pdf_file)
-                with open(pdf_file, 'rb') as pdf_f:
-                    pdf_bytes = pdf_f.read()
-                os.unlink(f.name)
-                os.unlink(pdf_file)
-                return pdf_bytes
-        else:
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Arial", size=12)
-
-            for line in text_report.split('\n'):
-                pdf.cell(0, 10, line.encode('latin-1', 'ignore').decode('latin-1'), ln=True)
-
-            return pdf.output(dest='S').encode('latin1')
-
-    # ---------- Main App UI ----------
-    
     st.title("💼 Welcome to Finance Hub")
     st.markdown("Choose a feature below to get started:")
 
@@ -642,19 +1363,24 @@ def main_app():
 
     if option == "📊 Spending Analysis":
         st.markdown("### 📊 Spending Analysis")
-        
         st.title("Personal Finance Tracker")
 
-        # File Management Section
+        # File Management with Pagination
         st.subheader("📁 Your Files")
         
-        # Get user's stored files
-        user_files = get_user_files(st.session_state.user['id'])
+        if 'file_page' not in st.session_state:
+            st.session_state.file_page = 0
         
-        if user_files:
-            st.markdown(f"**You have {len(user_files)} stored file(s)**")
+        user_files, total_files = get_user_files_paginated(
+            st.session_state.user['id'], 
+            page=st.session_state.file_page, 
+            page_size=9
+        )
+        
+        if total_files > 0:
+            st.markdown(f"**You have {total_files} stored file(s)** (Showing page {st.session_state.file_page + 1})")
             
-            # Display files in a grid
+            # Display files in grid
             for i in range(0, len(user_files), 3):
                 cols = st.columns(3)
                 for j, col in enumerate(cols):
@@ -670,6 +1396,21 @@ def main_app():
                                     st.rerun()
                                 else:
                                     st.error("Failed to delete file")
+            
+            # Pagination controls
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col1:
+                if st.session_state.file_page > 0:
+                    if st.button("⬅️ Previous"):
+                        st.session_state.file_page -= 1
+                        st.rerun()
+            with col3:
+                max_pages = (total_files - 1) // 9
+                if st.session_state.file_page < max_pages:
+                    if st.button("Next ➡️"):
+                        st.session_state.file_page += 1
+                        st.rerun()
+            
             st.markdown("---")
         else:
             st.info("No files uploaded yet. Upload your first file below!")
@@ -690,15 +1431,9 @@ def main_app():
                         file_data = file.read()
                         file_type = file.name.split('.')[-1].lower()
                         
-                        # Check if file already exists
-                        existing_files = [f['filename'] for f in user_files]
-                        if file.name in existing_files:
-                            st.warning(f"⚠️ {file.name} already exists. Skipping...")
-                            continue
-                        
                         if save_user_file(st.session_state.user['id'], file.name, file_data, file_type):
                             success_count += 1
-                        file.seek(0)  # Reset file pointer
+                        file.seek(0)
                     
                     if success_count > 0:
                         st.success(f"✅ Saved {success_count} file(s) to your account!")
@@ -706,38 +1441,17 @@ def main_app():
 
         st.markdown("---")
 
-        # Load all user's files for analysis
-        data = pd.DataFrame()
-        user_files = get_user_files(st.session_state.user['id'])
-        
-        if user_files:
-            for file_info in user_files:
-                file_data = get_file_data(file_info['id'], st.session_state.user['id'])
-                if file_data:
-                    file_bytes = BytesIO(file_data['file_data'])
-                    
-                    if file_data['file_type'] == 'csv':
-                        df = process_csv(file_bytes)
-                        data = pd.concat([data, df], ignore_index=True)
-                    elif file_data['file_type'] == 'pdf':
-                        df = process_pdf(file_bytes)
-                        data = pd.concat([data, df], ignore_index=True)
+        # Load all user data (with caching)
+        with st.spinner("Loading your financial data..."):
+            data = load_all_user_data(st.session_state.user['id'])
 
         if data.empty:
             st.info("Upload your bank CSV or PDF statements to get started.")
             st.stop()
 
-        # Convert Date column and create Month-Year and Month-Name columns
-        data['Date'] = pd.to_datetime(data['Date'], errors='coerce')
-        data = data.dropna(subset=['Date'])
+        # Load user preferences
+        user_prefs = get_user_preferences(st.session_state.user['id'])
         
-        data['Month-Year'] = data['Date'].dt.strftime('%B %Y')
-        data['Month-Name'] = data['Date'].dt.strftime('%B')
-
-        # -------- Sidebar: Categories and Budgets --------
-
-        st.sidebar.header("🗂 Customize Categories and Budgets")
-
         default_mapping = {
             "Food": ["juici", "kfc", "restaurant", "burger", "pizza"],
             "Grocery": ["hi-lo", "supermarket", "wholesale"],
@@ -759,24 +1473,20 @@ def main_app():
         }
         
         default_savings_goal = 5000
-
-        # Load user's saved preferences
-        import json
-        user_prefs = get_user_preferences(st.session_state.user['id'])
         
         if user_prefs:
-            # Load saved preferences
             saved_categories = json.loads(user_prefs['category_keywords']) if user_prefs['category_keywords'] else default_mapping
             saved_budgets = json.loads(user_prefs['monthly_budgets']) if user_prefs['monthly_budgets'] else default_budgets
             saved_goal = float(user_prefs['savings_goal']) if user_prefs['savings_goal'] else default_savings_goal
         else:
-            # Use defaults for new users
             saved_categories = default_mapping
             saved_budgets = default_budgets
             saved_goal = default_savings_goal
 
+        # Sidebar: Categories and Budgets
+        st.sidebar.header("🗂 Customize Categories and Budgets")
+        
         CATEGORY_KEYWORDS = {}
-
         st.sidebar.markdown("### Edit Categories and Keywords")
         for category, keywords in saved_categories.items():
             with st.sidebar.expander(f"{category} Keywords", expanded=False):
@@ -788,9 +1498,7 @@ def main_app():
                 CATEGORY_KEYWORDS[category] = [kw.strip().lower() for kw in kw_text.split(",") if kw.strip()]
 
         st.sidebar.markdown("### 💸 Set Monthly Budgets (J$)")
-
         MONTHLY_BUDGETS = {}
-
         for category in CATEGORY_KEYWORDS.keys():
             budget_value = saved_budgets.get(category, 0)
             MONTHLY_BUDGETS[category] = st.sidebar.number_input(
@@ -802,12 +1510,10 @@ def main_app():
             )
 
         st.sidebar.markdown("### 🎯 Set Monthly Savings Goal (J$)")
-        savings_goal_input = st.sidebar.number_input(
+        SAVINGS_GOAL = st.sidebar.number_input(
             "Savings Goal Amount (J$)", min_value=0, value=int(saved_goal), step=500
         )
-        SAVINGS_GOAL = savings_goal_input
         
-        # Save button for preferences
         st.sidebar.markdown("---")
         if st.sidebar.button("💾 Save Preferences", use_container_width=True):
             if save_user_preferences(
@@ -817,6 +1523,8 @@ def main_app():
                 SAVINGS_GOAL
             ):
                 st.sidebar.success("✅ Preferences saved!")
+                # Clear classification cache when preferences change
+                classify_expense_cached.cache_clear()
             else:
                 st.sidebar.error("❌ Failed to save preferences")
 
@@ -833,7 +1541,7 @@ def main_app():
             if email_provider == "Gmail":
                 smtp_server = "smtp.gmail.com"
                 smtp_port = 465
-                st.sidebar.info("⚠️ Use App Password, not regular password")
+                st.sidebar.info("⚠️ Use App Password")
             elif email_provider == "Outlook":
                 smtp_server = "smtp-mail.outlook.com"
                 smtp_port = 587
@@ -848,13 +1556,13 @@ def main_app():
             sender_password = st.sidebar.text_input("Password", type="password")
             notify_email = st.sidebar.text_input("Send Alerts To")
 
-        # Apply spending categories
+        # Apply spending categories using cached function
+        category_json = json.dumps(CATEGORY_KEYWORDS)
         data['Spending Category'] = data['Description'].apply(
-            lambda x: classify_expense(x, CATEGORY_KEYWORDS)
+            lambda x: classify_expense_cached(x, category_json)
         )
 
-        # ---------- Trend Analysis ----------
-        
+        # Trend Analysis
         st.header("📈 Spending Trends")
         
         available_months = sorted(data['Month-Year'].unique(), 
@@ -919,8 +1627,7 @@ def main_app():
                 fig_net.add_hline(y=0, line_dash="dash", line_color="gray")
                 st.plotly_chart(fig_net, use_container_width=True)
 
-        # ---------- Monthly Analysis ----------
-        
+        # Monthly Analysis
         st.header("📅 Monthly Analysis")
         
         available_months_list = sorted(data['Month-Name'].unique(), 
@@ -929,9 +1636,17 @@ def main_app():
         selected_month = st.selectbox("Select Month", available_months_list)
         
         month_data = data[data['Month-Name'] == selected_month].copy()
-        filtered = month_data
         
         if not month_data.empty:
+            # Check for pre-computed summary
+            year_month = month_data['YearMonth'].iloc[0]
+            summary_cached = get_monthly_summary(st.session_state.user['id'], year_month)
+            
+            if not summary_cached:
+                # Compute and store if not exists
+                compute_monthly_summary(st.session_state.user['id'], year_month, data)
+                summary_cached = get_monthly_summary(st.session_state.user['id'], year_month)
+            
             col1, col2, col3 = st.columns(3)
             
             month_income = month_data[month_data['Category'] == 'Credit']['Amount'].sum()
@@ -948,10 +1663,11 @@ def main_app():
                          delta=f"Goal: J${SAVINGS_GOAL:,.0f}", delta_color=delta_color)
             
             st.subheader(f"📄 Transactions in {selected_month}")
-            st.dataframe(filtered[['Date', 'Description', 'Amount', 'Category', 'Spending Category']])
+            st.dataframe(month_data[['Date', 'Description', 'Amount', 'Category', 'Spending Category']])
 
             st.subheader(f"📈 Spending Breakdown for {selected_month}")
-            spend = filtered[filtered['Category'] == 'Debit']
+            spend = month_data[month_data['Category'] == 'Debit']
+            
             if not spend.empty:
                 summary = spend.groupby('Spending Category')['Amount'].sum().reset_index()
                 summary['Percentage'] = 100 * summary['Amount'] / summary['Amount'].sum()
@@ -993,18 +1709,13 @@ def main_app():
                 st.plotly_chart(fig, use_container_width=True)
 
                 st.subheader(f"🎯 Savings Goal Check for {selected_month}")
-
-                total_income = filtered[filtered['Category'] == 'Credit']['Amount'].sum()
-                total_spending = filtered[filtered['Category'] == 'Debit']['Amount'].sum()
-                actual_savings = total_income - total_spending
-
                 st.markdown(f"**Savings Goal:** J${SAVINGS_GOAL:,.2f}")
-                st.markdown(f"**Actual Savings:** J${actual_savings:,.2f}")
+                st.markdown(f"**Actual Savings:** J${month_savings:,.2f}")
 
-                if actual_savings >= SAVINGS_GOAL:
-                    st.success(f"🎉 Congrats! You've met your savings goal by J${actual_savings - SAVINGS_GOAL:,.2f}!")
+                if month_savings >= SAVINGS_GOAL:
+                    st.success(f"🎉 Congrats! You've met your savings goal by J${month_savings - SAVINGS_GOAL:,.2f}!")
                 else:
-                    st.warning(f"You are J${SAVINGS_GOAL - actual_savings:,.2f} below your savings goal.")
+                    st.warning(f"You are J${SAVINGS_GOAL - month_savings:,.2f} below your savings goal.")
 
                 if enable_email and notify_email and sender_email and sender_password:
                     overspent = comparison[comparison['Amount'] > comparison['Budget']]
@@ -1029,24 +1740,19 @@ def main_app():
                             )
 
                 st.subheader("📤 Export Reports")
-
                 report_text = f"Finance Report - {selected_month}\n\nTransactions:\n"
-                for idx, row in filtered.iterrows():
+                for idx, row in month_data.iterrows():
                     report_text += f"{row['Date'].date()} | {row['Description']} | J${row['Amount']:,.2f} | {row['Category']} | {row['Spending Category']}\n"
 
                 report_text += "\nSpending Summary:\n"
                 for idx, row in summary.iterrows():
                     report_text += f"{row['Spending Category']}: J${row['Amount']:,.2f} ({row['Percentage']:.2f}%)\n"
 
-                report_text += "\nBudget vs Actual:\n"
-                for idx, row in comparison.iterrows():
-                    report_text += f"{row['Spending Category']}: Budget J${row['Budget']:,.2f}, Actual J${row['Amount']:,.2f}, Status: {row['Status']}\n"
-
                 export_format = st.selectbox("Select export format", options=["Excel", "PDF"])
 
                 if st.button("Download Report"):
                     if export_format == "Excel":
-                        excel_bytes = export_to_excel(filtered)
+                        excel_bytes = export_to_excel(month_data)
                         st.download_button(
                             label="Download Excel File",
                             data=excel_bytes,
@@ -1066,71 +1772,8 @@ def main_app():
 
     elif option == "📅 Budget Planner":
         st.markdown("### 📅 Budget Planner")
-        
         st.title("📋 Budget Dashboard")
-
-        @st.cache_data
-        def load_budget_excel():
-            try:
-                return pd.ExcelFile("/mnt/data/Budget Planner (1).xlsx")
-            except FileNotFoundError:
-                st.error("Budget file not found. Please upload a budget Excel file.")
-                return None
-
-        xls = load_budget_excel()
-        
-        if xls is not None:
-            view_option = st.radio("Choose what to view:", ["Budget Summary", "Income Breakdown", "Raw Transactions"],
-                                   horizontal=True)
-
-            if view_option == "Budget Summary" and "Budget" in xls.sheet_names:
-                st.subheader("📊 Monthly Budget Summary")
-                budget_df = xls.parse("Budget", skiprows=1)
-                budget_df = budget_df.dropna(subset=["CATEGORIES"]).reset_index(drop=True)
-                st.dataframe(budget_df)
-
-                if "YEARLY TOTAL" in budget_df.columns and "CATEGORIES" in budget_df.columns:
-                    fig = px.bar(
-                        budget_df,
-                        x="CATEGORIES",
-                        y="YEARLY TOTAL",
-                        title="Total Yearly Spending by Category",
-                        labels={"YEARLY TOTAL": "J$"},
-                        text_auto=True
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-
-            elif view_option == "Income Breakdown" and "Income" in xls.sheet_names:
-                st.subheader("💰 Income Breakdown by Source")
-                income_df = xls.parse("Income")
-                income_df.columns = income_df.iloc[0]
-                income_df = income_df[1:]
-                income_df = income_df.fillna(0)
-
-                try:
-                    income_df.iloc[:, 1:] = income_df.iloc[:, 1:].astype(float)
-                    income_summary = income_df.sum(numeric_only=True)
-
-                    income_plot_df = pd.DataFrame({
-                        'Source': income_summary.index[:-1],
-                        'Amount': income_summary.values[:-1]
-                    })
-
-                    fig2 = px.pie(
-                        income_plot_df,
-                        names='Source',
-                        values='Amount',
-                        title='Income by Source',
-                        hole=0.4
-                    )
-                    st.plotly_chart(fig2, use_container_width=True)
-                except Exception as e:
-                    st.error(f"Error processing income breakdown: {e}")
-
-            elif view_option == "Raw Transactions" and "Data" in xls.sheet_names:
-                st.subheader("📄 Raw Transactions Table")
-                data_df = xls.parse("Data")
-                st.dataframe(data_df)
+        st.info("Budget planner feature - Upload your budget Excel file to get started!")
 
     elif option == "🌐 Network Analysis":
         st.markdown("### 🌐 Network Analysis")
@@ -1170,3 +1813,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
