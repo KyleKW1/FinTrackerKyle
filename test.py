@@ -481,176 +481,119 @@ def process_csv(file):
     except Exception as e:
         st.error(f"CSV Error: {e}")
         return pd.DataFrame()
-
-# Add these two functions after your process_csv function
-# Replace any duplicate or broken versions with these clean ones
-
-def parse_ncb_transaction_line(line: str, year: str = "2024") -> Optional[List]:
+def process_uploaded_file(file, filename):
     """
-    Parse a transaction line from NCB bank statement.
-    
-    Format: DD/Mon Description Amount Balance
-    Example: 27/Sep ABM VMBS UTECH BR,237 OLD KINGSTON -55,000.00 11,357.94
+    Process uploaded files - auto-detect format (JMMB CSV, NCB PDF, etc.)
     
     Args:
-        line: Raw text line from NCB PDF
-        year: Year to append to date (default: 2024)
+        file: File object from st.file_uploader
+        filename: Name of the file
         
     Returns:
-        List containing [date, description, amount, category] or None
+        pd.DataFrame with columns: Date, Description, Amount, Category
     """
-    line = line.strip()
-    if not line:
-        return None
-    
-    # Check if line starts with a date pattern (DD/Mon)
-    date_pattern = r'^(\d{1,2}/[A-Za-z]{3})\s+'
-    match = re.match(date_pattern, line)
-    
-    if not match:
-        return None
+    file_type = filename.split('.')[-1].lower()
     
     try:
-        date_str = match.group(1)
-        remaining = line[match.end():].strip()
+        if file_type == 'csv':
+            # Your existing CSV processor
+            df = process_csv(file)
+            
+        elif file_type == 'pdf':
+            # Detect which bank's PDF format
+            file_bytes = file.read()
+            text_sample = ""
+            
+            try:
+                with pdfplumber.open(BytesIO(file_bytes)) as pdf:
+                    # Get first page to identify bank
+                    if len(pdf.pages) > 0:
+                        text_sample = pdf.pages[0].extract_text().lower()
+            except:
+                pass
+            
+            # Reset file pointer
+            file.seek(0)
+            
+            # Detect NCB format by looking for "NCB" or characteristic patterns
+            if "ncb" in text_sample or "national commercial bank" in text_sample:
+                st.info("📊 Detected NCB Bank statement format")
+                df = process_pdf_ncb(file)
+            else:
+                # Fallback to generic PDF processor
+                st.info("📊 Processing generic PDF format")
+                df = process_pdf(file)
+        else:
+            st.error(f"Unsupported file type: {file_type}")
+            return pd.DataFrame()
         
-        # Split remaining into parts
-        parts = remaining.split()
-        if len(parts) < 2:
-            return None
-        
-        # Last part is balance, second-to-last is transaction amount
-        balance = parts[-1]
-        amount_str = parts[-2]
-        
-        # Description is everything except the last two parts
-        description = " ".join(parts[:-2])
-        
-        # Clean and convert amount
-        amount_clean = amount_str.replace(',', '').replace('J$', '')
-        
-        # Determine if debit or credit based on negative sign
-        is_negative = amount_clean.startswith('-')
-        amount = abs(float(amount_clean))
-        category = 'Debit' if is_negative else 'Credit'
-        
-        # Convert date to standard format
-        full_date = f"{date_str}/{year}"
-        
-        return [full_date, description, amount, category]
-        
-    except (ValueError, IndexError) as e:
-        return None
-
-def process_pdf_ncb(file) -> pd.DataFrame:
-    """
-    Process NCB (National Commercial Bank) PDF statement file.
-    
-    NCB statement format:
-    - Date: DD/Mon (e.g., 27/Sep)
-    - Description: Variable length text
-    - Amount: Transaction amount (negative for debits)
-    - Balance: Running balance (last column)
-    
-    Args:
-        file: Uploaded PDF file object
-        
-    Returns:
-        DataFrame with columns: Date, Description, Amount, Category
-    """
-    try:
-        transactions = []
-        year = "2024"  # Default year, can be extracted from statement header
-        
-        with pdfplumber.open(file) as pdf:
-            for page_num, page in enumerate(pdf.pages, 1):
-                text = page.extract_text()
-                
-                if not text:
-                    continue
-                
-                # Try to extract year from the statement date if on first page
-                if page_num == 1:
-                    year_match = re.search(r'(\d{2})-(\d{2})-(\d{4})', text)
-                    if year_match:
-                        year = year_match.group(3)
-                
-                # Process each line
-                for line in text.split('\n'):
-                    line = line.strip()
-                    
-                    # Skip empty lines and common footer text
-                    if not line or 'CONTINUED' in line or 'END OF STATEMENT' in line:
-                        continue
-                    
-                    # Skip lines that are clearly headers (generic patterns)
-                    skip_patterns = [
-                        'JAMAICA',
-                        'REGULAR SAVINGS',
-                        'CURRENT ACCOUNT',
-                        'SAVINGS ACCOUNT',
-                        'JMD',
-                        'USD',
-                        r'MA \d{2}-\d{2}',
-                        r'^\d{9}$',
-                        r'^\d{2}-\d{2}-\d{4}$',
-                        'P.O.',
-                        'NATIONAL COMMERCIAL BANK',
-                        'NCB',
-                    ]
-                    
-                    # Check if line matches any skip pattern
-                    should_skip = False
-                    for pattern in skip_patterns:
-                        if re.search(pattern, line, re.IGNORECASE):
-                            should_skip = True
-                            break
-                    
-                    # Also skip lines that are just location names (all caps, no numbers)
-                    if line.isupper() and not any(char.isdigit() for char in line) and len(line.split()) <= 3:
-                        should_skip = True
-                    
-                    # Skip lines that look like customer names (starts with MR, MRS, MS, DR)
-                    if re.match(r'^(MR|MRS|MS|DR|MISS)\s+[A-Z]', line):
-                        should_skip = True
-                    
-                    if should_skip:
-                        continue
-                    
-                    parsed = parse_ncb_transaction_line(line, year)
-                    if parsed:
-                        transactions.append(parsed)
-        
-        # Create DataFrame
-        if not transactions:
-            st.warning("No transactions found in NCB PDF file.")
-            return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
-        
-        df = pd.DataFrame(transactions, columns=['Date', 'Description', 'Amount', 'Category'])
-        
-        # Convert date to datetime
-        try:
-            df['Date'] = pd.to_datetime(df['Date'], format='%d/%b/%Y', errors='coerce')
-        except:
-            pass  # Keep as string if conversion fails
-        
-        # Remove any duplicate transactions
-        df_before = len(df)
-        df = df.drop_duplicates()
-        df_after = len(df)
-        
-        if df_before > df_after:
-            st.info(f"Removed {df_before - df_after} duplicate transactions.")
-        
-        st.success(f"Successfully extracted {len(df)} transactions from NCB PDF.")
         return df
         
     except Exception as e:
-        st.error(f"NCB PDF Processing Error: {str(e)}")
-        return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
+        st.error(f"Error processing {filename}: {str(e)}")
+        return pd.DataFrame()
 
 
+# Updated file upload section for your main app
+def upload_and_process_files():
+    """Enhanced file upload with auto-detection"""
+    
+    with st.expander("📤 Upload New Files", expanded=True):
+        st.markdown("**Supported formats:**")
+        st.markdown("- 📄 **CSV files** (JMMB, Scotia, etc.)")
+        st.markdown("- 📕 **PDF files** (NCB bank statements)")
+        
+        uploaded_files = st.file_uploader(
+            "Upload your bank statements",
+            type=["csv", "pdf"],
+            accept_multiple_files=True,
+            key="file_uploader"
+        )
 
+        if uploaded_files:
+            if st.button("💾 Process & Save Files"):
+                success_count = 0
+                failed_files = []
+                
+                for file in uploaded_files:
+                    try:
+                        # Auto-detect and process
+                        df = process_uploaded_file(file, file.name)
+                        
+                        if df.empty:
+                            failed_files.append(f"{file.name} (no data extracted)")
+                            continue
+                        
+                        # Save raw file to database
+                        file_data = file.read()
+                        file_type = file.name.split('.')[-1].lower()
+                        
+                        if save_user_file(
+                            st.session_state.user['id'],
+                            file.name,
+                            file_data,
+                            file_type
+                        ):
+                            success_count += 1
+                            st.success(f"✅ {file.name} - {len(df)} transactions extracted")
+                        else:
+                            failed_files.append(f"{file.name} (save error)")
+                            
+                    except Exception as e:
+                        failed_files.append(f"{file.name} ({str(e)})")
+                
+                # Summary
+                st.markdown("---")
+                if success_count > 0:
+                    st.success(f"✅ Successfully processed {success_count} file(s)!")
+                
+                if failed_files:
+                    with st.expander("❌ Failed Files"):
+                        for failed in failed_files:
+                            st.error(failed)
+                
+                if success_count > 0:
+                    st.rerun()
 def process_pdf(file):
     """Process PDF file"""
     try:
