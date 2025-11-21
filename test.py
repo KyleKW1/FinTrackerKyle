@@ -1198,7 +1198,7 @@ def export_to_excel(month_data, summary, comparison, month_income, month_spendin
 
 
 def export_to_pdf(month_data, summary, comparison, month_income, month_spending, 
-                           month_savings, savings_goal, selected_month):
+                   month_savings, savings_goal, selected_month):
     """Export comprehensive report to PDF"""
     pdf = FPDF()
     pdf.add_page()
@@ -1235,7 +1235,7 @@ def export_to_pdf(month_data, summary, comparison, month_income, month_spending,
     
     pdf.set_font("Arial", '', 10)
     for _, row in summary.iterrows():
-        category_text = row['Spending Category'][:30]  # Truncate if too long
+        category_text = str(row['Spending Category'])[:30]
         pdf.cell(80, 8, category_text, 1)
         pdf.cell(50, 8, f"{row['Amount']:,.2f}", 1)
         pdf.cell(40, 8, f"{row['Percentage']:.2f}%", 1, ln=True)
@@ -1256,16 +1256,16 @@ def export_to_pdf(month_data, summary, comparison, month_income, month_spending,
     
     pdf.set_font("Arial", '', 9)
     for _, row in comparison.iterrows():
-        category_text = row['Spending Category'][:20]
+        category_text = str(row['Spending Category'])[:20]
         pdf.cell(50, 8, category_text, 1)
         pdf.cell(35, 8, f"{row['Budget']:,.0f}", 1)
         pdf.cell(35, 8, f"{row['Amount']:,.0f}", 1)
         pdf.cell(35, 8, f"{row['Difference']:,.0f}", 1)
-        pdf.cell(30, 8, row['Status'][:15], 1, ln=True)
+        pdf.cell(30, 8, str(row['Status'])[:15], 1, ln=True)
     
     pdf.ln(5)
     
-    # Transactions Section (First 30 transactions)
+    # Transactions Section
     pdf.add_page()
     pdf.set_font("Arial", 'B', 14)
     pdf.cell(0, 10, 'Transaction Details (Sample)', ln=True)
@@ -1279,8 +1279,7 @@ def export_to_pdf(month_data, summary, comparison, month_income, month_spending,
     pdf.cell(35, 7, 'Category', 1, ln=True)
     
     pdf.set_font("Arial", '', 8)
-    transaction_count = 0
-    for _, row in month_data.head(30).iterrows():
+    for idx, (_, row) in enumerate(month_data.head(30).iterrows()):
         date_str = row['Date'].strftime('%Y-%m-%d')
         desc_text = str(row['Description'])[:28]
         amount_str = f"{row['Amount']:,.0f}"
@@ -1292,26 +1291,14 @@ def export_to_pdf(month_data, summary, comparison, month_income, month_spending,
         pdf.cell(30, 7, amount_str, 1)
         pdf.cell(25, 7, category_text, 1)
         pdf.cell(35, 7, spend_cat, 1, ln=True)
-        
-        transaction_count += 1
-        
-        # Add new page if needed
-        if transaction_count % 30 == 0 and transaction_count < len(month_data):
-            pdf.add_page()
-            pdf.set_font("Arial", 'B', 8)
-            pdf.cell(25, 7, 'Date', 1)
-            pdf.cell(70, 7, 'Description', 1)
-            pdf.cell(30, 7, 'Amount', 1)
-            pdf.cell(25, 7, 'Type', 1)
-            pdf.cell(35, 7, 'Category', 1, ln=True)
-            pdf.set_font("Arial", '', 8)
     
     if len(month_data) > 30:
         pdf.ln(5)
         pdf.set_font("Arial", 'I', 9)
         pdf.cell(0, 7, f'Showing 30 of {len(month_data)} total transactions', ln=True)
     
-    return pdf.output(dest='S').encode('latin1')
+    # Return PDF as bytes - compatible with both old and new FPDF versions
+    return bytes(pdf.output())
 
 # ============================================
 # MAIN APP
