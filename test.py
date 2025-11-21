@@ -482,6 +482,8 @@ def process_csv(file):
         st.error(f"CSV Error: {e}")
         return pd.DataFrame()
 
+# Add these two functions after your process_csv function
+# Replace any duplicate or broken versions with these clean ones
 
 def parse_ncb_transaction_line(line: str, year: str = "2024") -> Optional[List]:
     """
@@ -582,216 +584,19 @@ def process_pdf_ncb(file) -> pd.DataFrame:
                         continue
                     
                     # Skip lines that are clearly headers (generic patterns)
-                    # Look for patterns that indicate header/footer, not specific user data
                     skip_patterns = [
-                        'JAMAICA',           # Country name
-                        'REGULAR SAVINGS',   # Account type
-                        'CURRENT ACCOUNT',   # Account type
-                        'SAVINGS ACCOUNT',   # Account type
-                        'JMD',              # Currency
-                        'USD',              # Currency
-                        r'MA \d{2}-\d{2}',  # Statement page numbers like "MA 30-09"
-                        r'^\d{9}
-        
-        # Create DataFrame
-        if not transactions:
-            st.warning("No transactions found in NCB PDF file.")
-            return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
-        
-        df = pd.DataFrame(transactions, columns=['Date', 'Description', 'Amount', 'Category'])
-        
-        # Convert date to datetime
-        try:
-            df['Date'] = pd.to_datetime(df['Date'], format='%d/%b/%Y', errors='coerce')
-        except:
-            pass  # Keep as string if conversion fails
-        
-        # Remove any duplicate transactions
-        df_before = len(df)
-        df = df.drop_duplicates()
-        df_after = len(df)
-        
-        if df_before > df_after:
-            st.info(f"Removed {df_before - df_after} duplicate transactions.")
-        
-        st.success(f"Successfully extracted {len(df)} transactions from NCB PDF.")
-        return df
-        
-    except Exception as e:
-        st.error(f"NCB PDF Processing Error: {str(e)}")
-        return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
-
-# IMPORTANT: Update the load_all_user_data function to use the NCB processor
-# Replace the existing load_all_user_data function with this updated version:
-
-def load_all_user_data(user_id):
-    """Load all user data with caching - supports NCB PDFs"""
-    # Check cache first
-    cached_data = get_cached_data(user_id)
-    if cached_data is not None:
-        return cached_data
-    
-    # Load from database
-    connection = create_connection()
-    if not connection:
-        return pd.DataFrame()
-    
-    try:
-        cursor = connection.cursor(dictionary=True)
-        cursor.execute(
-            "SELECT id, filename, file_data, file_type FROM user_files WHERE user_id = %s",
-            (user_id,)
-        )
-        files = cursor.fetchall()
-        cursor.close()
-        connection.close()
-        
-        all_data = []
-        for file_info in files:
-            file_bytes = BytesIO(file_info['file_data'])
-            
-            if file_info['file_type'] == 'csv':
-                df = process_csv(file_bytes)
-            elif file_info['file_type'] == 'pdf':
-                # Try NCB format first
-                df = process_pdf_ncb(file_bytes)
-                
-                # If NCB parser fails (empty dataframe), try generic parser
-                if df.empty:
-                    file_bytes.seek(0)  # Reset file pointer
-                    df = process_pdf(file_bytes)
-            else:
-                continue
-            
-            if not df.empty:
-                all_data.append(df)
-        
-        if not all_data:
-            return pd.DataFrame()
-        
-        # Concatenate all data
-        result = pd.concat(all_data, ignore_index=True)
-        
-        # Convert dates
-        result['Date'] = pd.to_datetime(result['Date'], errors='coerce')
-        result = result.dropna(subset=['Date'])
-        
-        # Add month columns
-        result['Month-Year'] = result['Date'].dt.strftime('%B %Y')
-        result['Month-Name'] = result['Date'].dt.strftime('%B')
-        result['YearMonth'] = result['Date'].dt.to_period('M').astype(str)
-        
-        # Cache the result
-        set_cached_data(user_id, result)
-        
-        return result
-        
-    except Error as e:
-        st.error(f"Error loading data: {e}")
-        connection.close()
-        return pd.DataFrame(),         # Account numbers (9 digits alone)
-                        r'^\d{2}-\d{2}-\d{4}
-        
-        # Create DataFrame
-        if not transactions:
-            st.warning("No transactions found in NCB PDF file.")
-            return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
-        
-        df = pd.DataFrame(transactions, columns=['Date', 'Description', 'Amount', 'Category'])
-        
-        # Convert date to datetime
-        try:
-            df['Date'] = pd.to_datetime(df['Date'], format='%d/%b/%Y', errors='coerce')
-        except:
-            pass  # Keep as string if conversion fails
-        
-        # Remove any duplicate transactions
-        df_before = len(df)
-        df = df.drop_duplicates()
-        df_after = len(df)
-        
-        if df_before > df_after:
-            st.info(f"Removed {df_before - df_after} duplicate transactions.")
-        
-        st.success(f"Successfully extracted {len(df)} transactions from NCB PDF.")
-        return df
-        
-    except Exception as e:
-        st.error(f"NCB PDF Processing Error: {str(e)}")
-        return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
-
-# IMPORTANT: Update the load_all_user_data function to use the NCB processor
-# Replace the existing load_all_user_data function with this updated version:
-
-def load_all_user_data(user_id):
-    """Load all user data with caching - supports NCB PDFs"""
-    # Check cache first
-    cached_data = get_cached_data(user_id)
-    if cached_data is not None:
-        return cached_data
-    
-    # Load from database
-    connection = create_connection()
-    if not connection:
-        return pd.DataFrame()
-    
-    try:
-        cursor = connection.cursor(dictionary=True)
-        cursor.execute(
-            "SELECT id, filename, file_data, file_type FROM user_files WHERE user_id = %s",
-            (user_id,)
-        )
-        files = cursor.fetchall()
-        cursor.close()
-        connection.close()
-        
-        all_data = []
-        for file_info in files:
-            file_bytes = BytesIO(file_info['file_data'])
-            
-            if file_info['file_type'] == 'csv':
-                df = process_csv(file_bytes)
-            elif file_info['file_type'] == 'pdf':
-                # Try NCB format first
-                df = process_pdf_ncb(file_bytes)
-                
-                # If NCB parser fails (empty dataframe), try generic parser
-                if df.empty:
-                    file_bytes.seek(0)  # Reset file pointer
-                    df = process_pdf(file_bytes)
-            else:
-                continue
-            
-            if not df.empty:
-                all_data.append(df)
-        
-        if not all_data:
-            return pd.DataFrame()
-        
-        # Concatenate all data
-        result = pd.concat(all_data, ignore_index=True)
-        
-        # Convert dates
-        result['Date'] = pd.to_datetime(result['Date'], errors='coerce')
-        result = result.dropna(subset=['Date'])
-        
-        # Add month columns
-        result['Month-Year'] = result['Date'].dt.strftime('%B %Y')
-        result['Month-Name'] = result['Date'].dt.strftime('%B')
-        result['YearMonth'] = result['Date'].dt.to_period('M').astype(str)
-        
-        # Cache the result
-        set_cached_data(user_id, result)
-        
-        return result
-        
-    except Error as e:
-        st.error(f"Error loading data: {e}")
-        connection.close()
-        return pd.DataFrame(),  # Date format in header
-                        'P.O.',             # Post office box indicators
-                        'NATIONAL COMMERCIAL BANK',  # Bank name
-                        'NCB',              # Bank abbreviation
+                        'JAMAICA',
+                        'REGULAR SAVINGS',
+                        'CURRENT ACCOUNT',
+                        'SAVINGS ACCOUNT',
+                        'JMD',
+                        'USD',
+                        r'MA \d{2}-\d{2}',
+                        r'^\d{9}$',
+                        r'^\d{2}-\d{2}-\d{4}$',
+                        'P.O.',
+                        'NATIONAL COMMERCIAL BANK',
+                        'NCB',
                     ]
                     
                     # Check if line matches any skip pattern
@@ -844,75 +649,7 @@ def load_all_user_data(user_id):
         st.error(f"NCB PDF Processing Error: {str(e)}")
         return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
 
-# IMPORTANT: Update the load_all_user_data function to use the NCB processor
-# Replace the existing load_all_user_data function with this updated version:
 
-def load_all_user_data(user_id):
-    """Load all user data with caching - supports NCB PDFs"""
-    # Check cache first
-    cached_data = get_cached_data(user_id)
-    if cached_data is not None:
-        return cached_data
-    
-    # Load from database
-    connection = create_connection()
-    if not connection:
-        return pd.DataFrame()
-    
-    try:
-        cursor = connection.cursor(dictionary=True)
-        cursor.execute(
-            "SELECT id, filename, file_data, file_type FROM user_files WHERE user_id = %s",
-            (user_id,)
-        )
-        files = cursor.fetchall()
-        cursor.close()
-        connection.close()
-        
-        all_data = []
-        for file_info in files:
-            file_bytes = BytesIO(file_info['file_data'])
-            
-            if file_info['file_type'] == 'csv':
-                df = process_csv(file_bytes)
-            elif file_info['file_type'] == 'pdf':
-                # Try NCB format first
-                df = process_pdf_ncb(file_bytes)
-                
-                # If NCB parser fails (empty dataframe), try generic parser
-                if df.empty:
-                    file_bytes.seek(0)  # Reset file pointer
-                    df = process_pdf(file_bytes)
-            else:
-                continue
-            
-            if not df.empty:
-                all_data.append(df)
-        
-        if not all_data:
-            return pd.DataFrame()
-        
-        # Concatenate all data
-        result = pd.concat(all_data, ignore_index=True)
-        
-        # Convert dates
-        result['Date'] = pd.to_datetime(result['Date'], errors='coerce')
-        result = result.dropna(subset=['Date'])
-        
-        # Add month columns
-        result['Month-Year'] = result['Date'].dt.strftime('%B %Y')
-        result['Month-Name'] = result['Date'].dt.strftime('%B')
-        result['YearMonth'] = result['Date'].dt.to_period('M').astype(str)
-        
-        # Cache the result
-        set_cached_data(user_id, result)
-        
-        return result
-        
-    except Error as e:
-        st.error(f"Error loading data: {e}")
-        connection.close()
-        return pd.DataFrame()
 
 def process_pdf(file):
     """Process PDF file"""
