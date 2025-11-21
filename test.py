@@ -1608,3 +1608,40 @@ def main_app():
     elif option == "🌐 Network Analysis":
         st.markdown("### 🌐 Network Analysis")
         st.info("Network analysis feature coming soon! This will show transaction patterns and relationships.")
+
+
+
+# ============================================
+# MAIN APPLICATION
+# ============================================
+
+def main():
+    st.set_page_config(
+        page_title="Finance Hub",
+        page_icon="💼",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    
+    # Initialize database
+    if 'db_initialized' not in st.session_state:
+        if init_database():
+            st.session_state.db_initialized = True
+        else:
+            st.error("Failed to initialize database. Please check your MySQL configuration.")
+            st.stop()
+    
+    # Initialize session state
+    init_session_state()
+    
+    # Route to appropriate page
+    if not st.session_state.authenticated:
+        if st.session_state.page == 'register':
+            register_page()
+        else:
+            login_page()
+    else:
+        main_app()
+
+if __name__ == "__main__":
+    main()
