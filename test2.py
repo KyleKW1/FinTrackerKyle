@@ -1012,17 +1012,18 @@ def main_app():
         # Load user preferences
         user_prefs = get_user_preferences(st.session_state.user['id'])
         
-     default_mapping = {
+    default_mapping = {
             "Food": ["juici", "kfc", "restaurant", "burger", "pizza","subway", "mcdonald", "starbucks", "diner", "grill", "v.o.d.a. foods", "cafe blue", "tutti frutti", "popeyesohr","ribbiz lounge", "beifang kitchen"],
             "Grocery": ["hi-lo", "supermarket", "wholesale","grocery", "market", "walmart", "costco","shoppers fair"],
-            "Utilities": ["jps", "nwc", "flow", "internet", "light", "water","electric", "cable", "wifi"],
+            "Utilities": ["jps", "nwc", "flow", "internet", "light", "water","electric", "cable", "wifi","BPYMT"],
             "Transport": ["uber", "taxi", "gas","shell", "parking", "lyft", "bus"],
             "Income": ["remitly", "deposit", "transfer", "payroll","salary", "refund", "ELink TRF-FR"],
             "Home Improvement": ["lumber depot limited", "ping's fabric"],
-            "Retail": ["boss destinations", "n k wholesale liquor stor","digicel ding"],
+            "Retail & Entertainment": ["boss destinations", "n k wholesale liquor stor","digicel ding"],
             "Miscellaneous": ["atm", "fee", "charge","GCT"],
             "Other": ["ELink TRF-To"]
         }
+
         
         default_budgets = {
             "Food": 15000,
@@ -1031,6 +1032,8 @@ def main_app():
             "Transport": 6000,
             "Miscellaneous": 5000,
             "Income": 0,
+            "Retail & Entertainment":0,
+            "Home Improvement":0,
             "Other": 0
         }
         
