@@ -1020,7 +1020,7 @@ def main_app():
             "Income": ["remitly", "deposit", "transfer", "payroll","salary", "refund"],
             "Home Improvement": ["lumber depot limited", "ping's fabric"],
             "Retail": ["boss destinations", "n k wholesale liquor stor","digicel ding"],
-            "Miscellaneous": ["atm", "fee", "charge"],
+            "Miscellaneous": ["atm", "fee", "charge", "GCT"],
             "Other": []
         }
         
