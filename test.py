@@ -1756,21 +1756,29 @@ def main_app():
 
                 if st.button("Download Report"):
                     if export_format == "Excel":
-                        excel_bytes = export_to_excel(month_data)
-                        st.download_button(
-                            label="Download Excel File",
-                            data=excel_bytes,
-                            file_name=f"Finance_Report_{selected_month}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        excel_bytes = export_to_excel(
+                            month_data=month_data,
+                            summary=summary,
+                            comparison=comparison,
+                            month_income=month_income,
+                            month_spending=month_spending,
+                            month_savings=month_savings,
+                            savings_goal=SAVINGS_GOAL,
+                            selected_month=selected_month
                         )
+                        st.download_button(...)
                     else:
-                        pdf_bytes = export_to_pdf(report_text)
-                        st.download_button(
-                            label="Download PDF File",
-                            data=pdf_bytes,
-                            file_name=f"Finance_Report_{selected_month}.pdf",
-                            mime="application/pdf"
+                        pdf_bytes = export_to_pdf(
+                            month_data=month_data,
+                            summary=summary,
+                            comparison=comparison,
+                            month_income=month_income,
+                            month_spending=month_spending,
+                            month_savings=month_savings,
+                            savings_goal=SAVINGS_GOAL,
+                            selected_month=selected_month
                         )
+                        st.download_button(...)
             else:
                 st.info(f"No spending transactions found for {selected_month}")
 
