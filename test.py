@@ -482,12 +482,6 @@ def process_csv(file):
         st.error(f"CSV Error: {e}")
         return pd.DataFrame()
 
-# Add these imports at the top of your file (with your other imports)
-import re
-from typing import Optional, List
-
-# Add these functions after your existing process_csv and process_pdf functions
-# (around line 500 in your code, after the process_pdf function)
 
 def parse_ncb_transaction_line(line: str, year: str = "2024") -> Optional[List]:
     """
