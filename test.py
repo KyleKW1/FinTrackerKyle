@@ -24,9 +24,9 @@ import socket
 #from reportlab.lib.units import inch
 #from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageBreak
 #from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-import matplotlib.pyplot as plt
-import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend
+#import matplotlib.pyplot as plt
+#import matplotlib
+#matplotlib.use('Agg')  # Use non-interactive backend
 
 
 try:
