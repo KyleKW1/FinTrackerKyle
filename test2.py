@@ -1337,16 +1337,12 @@ def main_app():
                 st.info(f"No spending transactions found for {selected_month}")
 
         st.sidebar.markdown("---")
-                    st.sidebar.markdown("### 🌐 External Tools")
-                    if st.sidebar.button("🚀 Finance Tracker Web", use_container_width=True):
-                        st.sidebar.markdown(
-                            '<a href="https://fintrackerkyle-7v7hh5zxbav938wtpv8a3p.streamlit.app/" target="_blank">Click here if not redirected</a>',
-                            unsafe_allow_html=True
-                        )
-                        st.components.v1.html(
-                            '<meta http-equiv="refresh" content="0; url=https://fintrackerkyle-7v7hh5zxbav938wtpv8a3p.streamlit.app/">',
-                            height=0
-                        )
+        st.sidebar.markdown("### 🌐 External Tools")
+        if st.sidebar.button("🚀 Finance Tracker Web", use_container_width=True):
+            st.sidebar.markdown('<a href="https://fintrackerkyle-7v7hh5zxbav938wtpv8a3p.streamlit.app/" target="_blank">Click here if not redirected</a>',
+                                unsafe_allow_html=True)
+            st.components.v1.html('<meta http-equiv="refresh" content="0; url=https://fintrackerkyle-7v7hh5zxbav938wtpv8a3p.streamlit.app/">',
+                                  height=0)
 
     elif option == "📅 Budget Planner":
         st.markdown("### 📅 Budget Planner")
