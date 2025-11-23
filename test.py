@@ -1971,7 +1971,7 @@ def main_app():
                             mime="application/pdf"
                         )
                     else:
-                    st.info(f"No spending transactions found for {selected_month}")
+                        st.info(f"No spending transactions found for {selected_month}")
 
     elif option == "📅 Budget Planner":
         st.markdown("### 📅 Budget Planner")
