@@ -1924,10 +1924,10 @@ def main_app():
                                 smtp_port
                             )
 
-                #st.subheader("📤 Export Reports")
-                #report_text = f"Finance Report - {selected_month}\n\nTransactions:\n"
-                #for idx, row in month_data.iterrows():
-                    #report_text += f"{row['Date'].date()} | {row['Description']} | J${row['Amount']:,.2f} | {row['Category']} | {row['Spending Category']}\n"
+                st.subheader("📤 Export Reports")
+                report_text = f"Finance Report - {selected_month}\n\nTransactions:\n"
+                for idx, row in month_data.iterrows():
+                    report_text += f"{row['Date'].date()} | {row['Description']} | J${row['Amount']:,.2f} | {row['Category']} | {row['Spending Category']}\n"
 
                 report_text += "\nSpending Summary:\n"
                 for idx, row in summary.iterrows():
@@ -1936,43 +1936,43 @@ def main_app():
                 export_format = st.selectbox("Select export format", options=["Excel", "PDF"])
 
 
-                if st.button("Download Report"):
-                    if export_format == "Excel":
-                        excel_bytes = export_to_excel(
-                            month_data=month_data,
-                            summary=summary,
-                            comparison=comparison,
-                            month_income=month_income,
-                            month_spending=month_spending,
-                            month_savings=month_savings,
-                            savings_goal=SAVINGS_GOAL,
-                            selected_month=selected_month
-                        )
-                        st.download_button(
-                            label="📥 Download Excel Report",
-                            data=excel_bytes,
-                            file_name=f"Finance_Report_{selected_month.replace(' ', '_')}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
+                    if st.button("Download Report"):
+                        if export_format == "Excel":
+                            excel_bytes = export_to_excel(
+                                month_data=month_data,
+                                summary=summary,
+                                comparison=comparison,
+                                month_income=month_income,
+                                month_spending=month_spending,
+                                month_savings=month_savings,
+                                savings_goal=SAVINGS_GOAL,
+                                selected_month=selected_month
+                            )
+                            st.download_button(
+                                label="📥 Download Excel Report",
+                                data=excel_bytes,
+                                file_name=f"Finance_Report_{selected_month.replace(' ', '_')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            )
+                        else:
+                            pdf_bytes = export_to_pdf(
+                                month_data=month_data,
+                                summary=summary,
+                                comparison=comparison,
+                                month_income=month_income,
+                                month_spending=month_spending,
+                                month_savings=month_savings,
+                                savings_goal=SAVINGS_GOAL,
+                                selected_month=selected_month
+                            )
+                            st.download_button(
+                                label="📥 Download PDF Report",
+                                data=pdf_bytes,
+                                file_name=f"Finance_Report_{selected_month.replace(' ', '_')}.pdf",
+                                mime="application/pdf"
+                            )
                     else:
-                        pdf_bytes = export_to_pdf(
-                            month_data=month_data,
-                            summary=summary,
-                            comparison=comparison,
-                            month_income=month_income,
-                            month_spending=month_spending,
-                            month_savings=month_savings,
-                            savings_goal=SAVINGS_GOAL,
-                            selected_month=selected_month
-                        )
-                        st.download_button(
-                            label="📥 Download PDF Report",
-                            data=pdf_bytes,
-                            file_name=f"Finance_Report_{selected_month.replace(' ', '_')}.pdf",
-                            mime="application/pdf"
-                        )
-                else:
-                    st.info(f"No spending transactions found for {selected_month}")
+                        st.info(f"No spending transactions found for {selected_month}")
 
     elif option == "📅 Budget Planner":
         st.markdown("### 📅 Budget Planner")
