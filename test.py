@@ -1924,10 +1924,10 @@ def main_app():
                                 smtp_port
                             )
 
-                st.subheader("📤 Export Reports")
-                report_text = f"Finance Report - {selected_month}\n\nTransactions:\n"
-                for idx, row in month_data.iterrows():
-                    report_text += f"{row['Date'].date()} | {row['Description']} | J${row['Amount']:,.2f} | {row['Category']} | {row['Spending Category']}\n"
+                #st.subheader("📤 Export Reports")
+                #report_text = f"Finance Report - {selected_month}\n\nTransactions:\n"
+                #for idx, row in month_data.iterrows():
+                    #report_text += f"{row['Date'].date()} | {row['Description']} | J${row['Amount']:,.2f} | {row['Category']} | {row['Spending Category']}\n"
 
                 report_text += "\nSpending Summary:\n"
                 for idx, row in summary.iterrows():
