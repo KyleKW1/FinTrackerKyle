@@ -1935,6 +1935,7 @@ def main_app():
 
                 export_format = st.selectbox("Select export format", options=["Excel", "PDF"])
 
+
                 if st.button("Download Report"):
                     if export_format == "Excel":
                         excel_bytes = export_to_excel(
@@ -1970,8 +1971,8 @@ def main_app():
                             file_name=f"Finance_Report_{selected_month.replace(' ', '_')}.pdf",
                             mime="application/pdf"
                         )
-                    else:
-                        st.info(f"No spending transactions found for {selected_month}")
+                            else:
+                                st.info(f"No spending transactions found for {selected_month}")
 
     elif option == "📅 Budget Planner":
         st.markdown("### 📅 Budget Planner")
