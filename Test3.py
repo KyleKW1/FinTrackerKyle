@@ -544,65 +544,6 @@ def process_dataframe(df):
     
     return df
 
-def standardize_dataframe_columns(df):
-    """Standardize column names from different bank formats"""
-    df = df.copy()
-    
-    column_mappings = {
-        'description': 'Description',
-        'desc': 'Description',
-        'transaction description': 'Description',
-        'details': 'Description',
-        'narrative': 'Description',
-        'particulars': 'Description',
-        
-        'amount': 'Amount',
-        'transaction amount': 'Amount',
-        'value': 'Amount',
-        'debit': 'Amount',
-        'credit': 'Amount',
-        
-        'date': 'Date',
-        'transaction date': 'Date',
-        'posting date': 'Date',
-        'value date': 'Date',
-        
-        'type': 'Category',
-        'transaction type': 'Category',
-        'dr/cr': 'Category',
-    }
-    
-    df.columns = df.columns.str.lower().str.strip()
-    df = df.rename(columns=column_mappings)
-    
-    if 'Description' not in df.columns:
-        if len(df.columns) >= 2:
-            df['Description'] = df.iloc[:, 1].astype(str)
-        else:
-            df['Description'] = 'Unknown'
-    
-    if 'Date' not in df.columns:
-        if len(df.columns) >= 1:
-            df['Date'] = pd.to_datetime(df.iloc[:, 0], errors='coerce')
-        else:
-            df['Date'] = pd.Timestamp.now()
-    
-    # THE KEY FIX - use list comprehension instead of pd.to_numeric
-    if 'Amount' not in df.columns:
-        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-        if numeric_cols:
-            df['Amount'] = [float(x) if pd.notna(x) else 0.0 for x in df[numeric_cols[0]]]
-        else:
-            df['Amount'] = [0.0] * len(df)
-    else:
-        df['Amount'] = [float(x) if pd.notna(x) else 0.0 for x in df['Amount']]
-    
-    if 'Category' not in df.columns:
-        df['Category'] = ['Credit' if x >= 0 else 'Debit' for x in df['Amount']]
-    
-    df['Amount'] = df['Amount'].abs()
-    
-    return df
 
 def process_dataframe(df):
     """Process and standardize dataframe"""
