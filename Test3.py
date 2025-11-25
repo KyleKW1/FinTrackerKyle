@@ -1112,7 +1112,8 @@ def process_pdf_ncb(file, debug=True):
         st.error(f"NCB PDF Processing Error: {str(e)}")
         import traceback
         st.error(f"Details: {traceback.format_exc()}")
-        return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category']), line):
+        return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
+, line):
                         continue
                     
                     if line.isupper() and not any(c.isdigit() for c in line) and len(line.split()) <= 3:
@@ -1304,6 +1305,7 @@ def process_pdf_ncb(file, debug=True):
         import traceback
         st.error(f"Details: {traceback.format_exc()}")
         return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
+
 def extract_from_pdf(pdf_file):
     """Main PDF extraction function - routes to correct processor"""
     try:
