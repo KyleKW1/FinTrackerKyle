@@ -974,13 +974,17 @@ def load_all_user_data(user_id):
         # Process the combined dataframe
         result = process_dataframe(result)
         
+        # **FIX: Remove duplicate columns**
+        result = result.loc[:, ~result.columns.duplicated()]
+        
+        print(f"📊 Final columns: {list(result.columns)}")
+        
         return result
         
     except Error as e:
         st.error(f"Error loading data: {e}")
         connection.close()
         return pd.DataFrame()
-
 
 
 
