@@ -1059,7 +1059,7 @@ def standardize_dataframe_columns(df):
         df['Amount'] = df['Amount'].abs()
     
     return df
-
+    
 def show_spending_analysis():
     """Enhanced spending analysis with full functionality"""
     st.markdown("<div class='content-container'>", unsafe_allow_html=True)
