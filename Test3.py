@@ -933,6 +933,65 @@ def enhanced_main_app():
 # FEATURE PAGES (Simplified versions)
 # ============================================
 
+def standardize_dataframe_columns(df):
+    """Standardize column names from different bank formats"""
+    # Common column name mappings
+    column_mappings = {
+        'description': 'Description',
+        'desc': 'Description',
+        'transaction description': 'Description',
+        'details': 'Description',
+        'narrative': 'Description',
+        'particulars': 'Description',
+        
+        'amount': 'Amount',
+        'transaction amount': 'Amount',
+        'value': 'Amount',
+        'debit': 'Amount',
+        'credit': 'Amount',
+        
+        'date': 'Date',
+        'transaction date': 'Date',
+        'posting date': 'Date',
+        'value date': 'Date',
+        
+        'type': 'Category',
+        'transaction type': 'Category',
+        'dr/cr': 'Category',
+    }
+    
+    # Rename columns to standard names
+    df.columns = df.columns.str.lower().str.strip()
+    df = df.rename(columns=column_mappings)
+    
+    # Ensure required columns exist
+    if 'Description' not in df.columns:
+        if len(df.columns) >= 2:
+            df['Description'] = df.iloc[:, 1].astype(str)
+        else:
+            df['Description'] = 'Unknown'
+    
+    if 'Amount' not in df.columns:
+        # Try to find a numeric column
+        numeric_cols = df.select_dtypes(include=['number']).columns
+        if len(numeric_cols) > 0:
+            df['Amount'] = df[numeric_cols[0]]
+        else:
+            df['Amount'] = 0
+    
+    if 'Date' not in df.columns:
+        if len(df.columns) >= 1:
+            df['Date'] = pd.to_datetime(df.iloc[:, 0], errors='coerce')
+        else:
+            df['Date'] = pd.Timestamp.now()
+    
+    if 'Category' not in df.columns:
+        # Determine category based on amount sign
+        df['Category'] = df['Amount'].apply(lambda x: 'Credit' if x >= 0 else 'Debit')
+        df['Amount'] = df['Amount'].abs()
+    
+    return df
+
 def show_spending_analysis():
     """Enhanced spending analysis with full functionality"""
     st.markdown("<div class='content-container'>", unsafe_allow_html=True)
