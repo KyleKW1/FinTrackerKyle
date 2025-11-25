@@ -500,7 +500,7 @@ def parse_ncb_transaction_line(line, year):
     """
     # Pattern for NCB format: DD/Mon DESCRIPTION AMOUNT BALANCE
     # The pattern captures: date, description, transaction amount, and balance
-    pattern = r'(\d{2}/\w{3})\s+(.*?)\s+(-?[\d,]+\.\d{2})\s+([\d,]+\.\d{2})
+    pattern = r'(\d{2}/\w{3})\s+(.*?)\s+(-?[\d,]+\.\d{2})\s+([\d,]+\.\d{2})'
 
 
 def process_pdf_ncb(file, debug=True):
