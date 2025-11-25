@@ -505,7 +505,7 @@ def parse_ncb_transaction_line(line, year):
     pattern3 = r'(\d{2}/\w{3}-\d{2})\s+(.*?)\s+([\d,]+\.\d{2})\s+(DR|CR)'
     
     # Pattern 4: More flexible - date at start, DR/CR at end, amount before DR/CR
-    pattern4 = r'(\d{2}[/-]\w{3}(?:-\d{2})?)\s+(.*?)\s+([\d,]+\.\d{2})\s*(DR|CR)?
+    pattern4 = r'(\d{2}[/-]\w{3}(?:-\d{2})?)\s+(.*?)\s+([\d,]+\.\d{2})\s*(DR|CR)?$'
 
 
 def process_pdf_ncb(file, debug=True) -> pd.DataFrame:
