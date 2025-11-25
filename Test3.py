@@ -489,7 +489,8 @@ def load_all_user_data(user_id):
 
 def parse_ncb_transaction_line(line, year):
     """Parse NCB transaction line: DD/Mon DESCRIPTION AMOUNT BALANCE"""
-    pattern = r'(\d{2}/\w{3})\s+(.*?)\s+(-?[\d,]+\.\d{2})\s+([\d,]+\.\d{2})$'
+    # More flexible pattern that captures everything between date and amounts
+    pattern = r'(\d{2}/\w{3})\s+(.*?)\s+(-?[\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$'
     match = re.search(pattern, line)
     
     if match:
@@ -497,6 +498,10 @@ def parse_ncb_transaction_line(line, year):
             date_str = match.group(1)
             description = match.group(2).strip()
             amount_str = match.group(3).replace(',', '')
+            
+            # Skip if description is empty or just whitespace
+            if not description or description.isspace():
+                return None
             
             full_date = f"{date_str}/{year}"
             amount = float(amount_str)
@@ -509,14 +514,24 @@ def parse_ncb_transaction_line(line, year):
             else:
                 category = 'Credit'
             
-            return {'Date': full_date, 'Description': description, 'Amount': amount, 'Category': category}
-        except:
+            # Validate we got real data
+            if amount == 0 and description == '':
+                return None
+            
+            return {
+                'Date': full_date, 
+                'Description': description, 
+                'Amount': amount, 
+                'Category': category
+            }
+        except Exception as e:
+            print(f"Error parsing line: {line[:50]}... Error: {e}")
             return None
     return None
 
 
-def process_pdf_ncb(file, debug=True):
-    """Process NCB PDF statement"""
+def process_pdf_ncb(file, debug=False):
+    """Process NCB PDF statement with improved parsing"""
     try:
         transactions = []
         year = "2024"
@@ -535,20 +550,18 @@ def process_pdf_ncb(file, debug=True):
                 
                 # Extract year from first page
                 if page_num == 1:
-                    # Try format: "P.O., 30-09-2024" or "P.O., DD-MM-YYYY"
-                    statement_date_match = re.search(r'P\.O\.,\s*\d{2}-\d{2}-(\d{4})', text)
-                    if statement_date_match:
-                        year = statement_date_match.group(1)
-                    else:
-                        # Fallback: Try format "P.O., DD-MM-YYYY" with space variations
-                        statement_date_match = re.search(r'P\.O\.\s*,?\s*\d{2}-\d{2}-(\d{4})', text)
-                        if statement_date_match:
-                            year = statement_date_match.group(1)
-                        else:
-                            # Last resort: find any 4-digit year
-                            all_years = re.findall(r'\b(20\d{2})\b', text)
-                            if all_years:
-                                year = str(max([int(y) for y in all_years]))
+                    # Try various date formats
+                    patterns = [
+                        r'P\.O\.,?\s*\d{2}-\d{2}-(\d{4})',
+                        r'(\d{4})-\d{2}-\d{2}',
+                        r'\b(20\d{2})\b'
+                    ]
+                    
+                    for pattern in patterns:
+                        year_match = re.search(pattern, text)
+                        if year_match:
+                            year = year_match.group(1)
+                            break
                 
                 for line in text.split('\n'):
                     line = line.strip()
@@ -556,74 +569,106 @@ def process_pdf_ncb(file, debug=True):
                     if debug and page_num <= 2:
                         all_lines.append(line)
                     
-                    if not line or 'CONTINUED' in line or 'END OF STATEMENT' in line:
+                    # Skip empty lines
+                    if not line:
                         continue
                     
-                    skip_words = ['JAMAICA', 'REGULAR SAVINGS', 'CURRENT ACCOUNT', 'SAVINGS ACCOUNT', 
-                                  'JMD', 'USD', 'P.O.', 'NATIONAL COMMERCIAL BANK', 'STATEMENT', 
-                                  'BALANCE', 'DATE', 'DESCRIPTION', 'WITHDRAWALS', 'DEPOSITS', 
-                                  'PAGE', 'MANDEVILLE', 'MANCHESTER']
+                    # Skip header/footer lines
+                    skip_patterns = [
+                        'CONTINUED', 'END OF STATEMENT', 'JAMAICA', 'NATIONAL COMMERCIAL BANK',
+                        'REGULAR SAVINGS', 'CURRENT ACCOUNT', 'SAVINGS ACCOUNT', 'STATEMENT',
+                        'PAGE', 'MANDEVILLE', 'MANCHESTER', 'JMD', 'USD', 'P.O.',
+                        '^BALANCE', '^DATE', '^DESCRIPTION', '^WITHDRAWALS', '^DEPOSITS'
+                    ]
                     
-                    if any(word in line.upper() for word in skip_words):
+                    if any(re.search(pattern, line.upper()) for pattern in skip_patterns):
                         continue
                     
+                    # Skip customer info lines
                     if re.match(r'^(MR|MRS|MS|DR|MISS)\s+[A-Z]', line):
                         continue
                     
+                    # Skip address lines
                     if re.search(r'^MA \d{2}-\d{2}', line):
                         continue
                     
-                    if re.search(r'^\d{9}$', line):
+                    # Skip account numbers
+                    if re.search(r'^\d{9,}$', line):
                         continue
                     
+                    # Skip all-caps non-transaction lines
                     if line.isupper() and not any(c.isdigit() for c in line) and len(line.split()) <= 3:
                         continue
                     
+                    # Try to parse as transaction
                     parsed = parse_ncb_transaction_line(line, year)
-                    if parsed:
+                    if parsed and parsed['Amount'] > 0:  # Only add if we got a real amount
                         transactions.append(parsed)
         
         if debug and all_lines:
-            with st.expander("🔍 DEBUG: Sample PDF Lines", expanded=True):
+            with st.expander("🔍 DEBUG: Sample PDF Lines", expanded=False):
                 st.write(f"**Detected Year:** {year}")
                 st.write(f"**Total transactions found:** {len(transactions)}")
-                st.write("**Sample lines:**")
-                for i, line in enumerate(all_lines[:30], 1):
+                st.write("**Sample lines from first 2 pages:**")
+                for i, line in enumerate(all_lines[:40], 1):
                     if line.strip():
                         parsed = parse_ncb_transaction_line(line, year)
                         prefix = "✅" if parsed else "  "
                         status = ""
                         if parsed:
-                            status = f" → {parsed['Category']} J${parsed['Amount']:,.2f}"
-                        st.code(f"{prefix} {i}: {line}{status}", language=None)
+                            status = f" → {parsed['Category']} J${parsed['Amount']:,.2f} - {parsed['Description'][:30]}"
+                        st.text(f"{prefix} {line[:80]}{status}")
         
         if not transactions:
-            st.warning("No transactions found in NCB PDF file.")
+            st.error("❌ No transactions found in NCB PDF file.")
+            st.warning("This might be due to:")
+            st.write("- PDF format is different than expected")
+            st.write("- Text extraction failed")
+            st.write("- Transaction pattern doesn't match")
+            
+            # Show sample of what was extracted
+            with st.expander("📄 Show raw extracted text (first 1000 chars)"):
+                pdf_file.seek(0)
+                with pdfplumber.open(pdf_file) as pdf:
+                    if pdf.pages:
+                        st.code(pdf.pages[0].extract_text()[:1000])
+            
             return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
         
         df = pd.DataFrame(transactions)
+        
+        # Convert date
         df['Date'] = pd.to_datetime(df['Date'], format='%d/%b/%Y', errors='coerce')
         
+        # Remove any rows where date conversion failed
+        df = df.dropna(subset=['Date'])
+        
+        # Remove duplicates
         df_before = len(df)
-        df = df.drop_duplicates()
+        df = df.drop_duplicates(subset=['Date', 'Description', 'Amount'], keep='first')
         df_after = len(df)
         
         if df_before > df_after:
-            st.info(f"Removed {df_before - df_after} duplicate transactions.")
+            st.info(f"ℹ️ Removed {df_before - df_after} duplicate transactions.")
         
-        # Show category breakdown
+        # Show success message
         st.success(f"✅ Successfully extracted {len(df)} transactions from NCB PDF.")
         
-        credit_count = len(df[df['Category'] == 'Credit'])
-        debit_count = len(df[df['Category'] == 'Debit'])
-        st.info(f"📊 **Breakdown:** {credit_count} Credits (money in) | {debit_count} Debits (money out)")
+        if len(df) > 0:
+            credit_count = len(df[df['Category'] == 'Credit'])
+            debit_count = len(df[df['Category'] == 'Debit'])
+            total_credits = df[df['Category'] == 'Credit']['Amount'].sum()
+            total_debits = df[df['Category'] == 'Debit']['Amount'].sum()
+            
+            st.info(f"📊 **Breakdown:** {credit_count} Credits (J${total_credits:,.2f}) | {debit_count} Debits (J${total_debits:,.2f})")
         
         return df
         
     except Exception as e:
-        st.error(f"NCB PDF Processing Error: {str(e)}")
+        st.error(f"❌ NCB PDF Processing Error: {str(e)}")
         import traceback
-        st.error(f"Details: {traceback.format_exc()}")
+        with st.expander("🔍 Full Error Details"):
+            st.code(traceback.format_exc())
         return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
         
 def process_csv(file_bytes):
