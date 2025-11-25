@@ -1095,6 +1095,22 @@ def show_spending_analysis():
         st.markdown("</div>", unsafe_allow_html=True)
         return
     
+    # Debug: Show columns (you can remove this after testing)
+    with st.expander("🔍 Debug: Data Preview", expanded=False):
+        st.write("**Available Columns:**", list(data.columns))
+        st.write("**Sample Data:**")
+        st.dataframe(data.head(3))
+    
+    # Ensure required columns exist
+    required_columns = ['Date', 'Description', 'Amount', 'Category']
+    missing_columns = [col for col in required_columns if col not in data.columns]
+    
+    if missing_columns:
+        st.error(f"❌ Missing required columns: {', '.join(missing_columns)}")
+        st.info("Please ensure your CSV has columns for: Date, Description, Amount, and Category")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    
     # Load preferences
     user_prefs = get_user_preferences(st.session_state.user['id'])
     
