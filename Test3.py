@@ -608,7 +608,7 @@ def process_pdf_ncb(file, debug=False):
         #if df_before > df_after:
            # st.info(f"Removed {df_before - df_after} duplicate transactions.")
         
-        st.success(f"✅ Successfully extracted {len(df)} transactions from NCB PDF.")
+        #st.success(f"✅ Successfully extracted {len(df)} transactions from NCB PDF.")
         
         if len(df) > 0:
             credit_count = len(df[df['Category'] == 'Credit'])
