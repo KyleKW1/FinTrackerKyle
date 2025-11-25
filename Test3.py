@@ -523,6 +523,10 @@ def extract_from_pdf(pdf_file):
 
 def process_dataframe(df):
     """Process and standardize dataframe"""
+    # Standardize column names first
+    df = standardize_dataframe_columns(df)
+    
+    # Convert Date column
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
         df = df.dropna(subset=['Date'])
@@ -530,9 +534,14 @@ def process_dataframe(df):
         df['Month-Year'] = df['Date'].dt.strftime('%B %Y')
         df['YearMonth'] = df['Date'].dt.strftime('%Y-%m')
     
+    # Ensure Amount is numeric
     if 'Amount' in df.columns:
         df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce')
         df = df.dropna(subset=['Amount'])
+    
+    # Ensure Description exists and is string
+    if 'Description' in df.columns:
+        df['Description'] = df['Description'].astype(str).fillna('Unknown')
     
     return df
 
