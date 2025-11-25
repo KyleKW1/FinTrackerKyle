@@ -487,78 +487,38 @@ def load_all_user_data(user_id):
         st.error(f"Error loading data: {e}")
         return pd.DataFrame()
 
-def extract_from_pdf(file_bytes):
-    """Advanced PDF processing for National Commercial Bank (NCB) PDFs"""
-    transactions = []
-    
+def extract_from_pdf(pdf_file):
+    """Extract transaction data from PDF"""
     try:
-        with pdfplumber.open(BytesIO(file_bytes)) as pdf:
-            for page_num, page in enumerate(pdf.pages):
-                text = page.extract_text()
-                if not text:
-                    continue
-                
-                lines = text.split('\n')
-                
-                # Process each line looking for transaction patterns
-                for i, line in enumerate(lines):
-                    line = line.strip()
-                    if not line:
-                        continue
+        with pdfplumber.open(pdf_file) as pdf:
+            all_text = ""
+            for page in pdf.pages:
+                all_text += page.extract_text() + "\n"
+        
+        lines = all_text.split('\n')
+        data = []
+        
+        for line in lines:
+            parts = line.split()
+            if len(parts) >= 3:
+                try:
+                    date_str = parts[0]
+                    description = ' '.join(parts[1:-2])
+                    amount = float(parts[-1].replace(',', '').replace('$', ''))
+                    category = 'Debit' if amount < 0 else 'Credit'
                     
-                    # Look for date patterns (MM/DD/YYYY or DD/MM/YYYY)
-                    date_match = re.search(r'\b(\d{1,2}/\d{1,2}/\d{4})\b', line)
-                    if date_match:
-                        try:
-                            date_str = date_match.group(1)
-                            
-                            # Extract amount (look for patterns like $123.45 or 123.45-)
-                            amount_match = re.search(r'[\$]?([\d,]+\.?\d*)[CR\-\+]?', line)
-                            if amount_match:
-                                amount_str = amount_match.group(1).replace(',', '')
-                                amount = float(amount_str)
-                                
-                                # Determine if it's debit or credit
-                                if 'CR' in line.upper() or '+' in line:
-                                    transaction_type = 'Credit'
-                                else:
-                                    transaction_type = 'Debit'
-                                    amount = -amount  # Make debits negative
-                                
-                                # Extract description (remove date and amount)
-                                description = re.sub(r'\b\d{1,2}/\d{1,2}/\d{4}\b', '', line)
-                                description = re.sub(r'[\$]?[\d,]+\.?\d*[CR\-\+]?', '', description)
-                                description = ' '.join(description.split())  # Clean whitespace
-                                
-                                # Parse date
-                                try:
-                                    date_obj = datetime.strptime(date_str, '%m/%d/%Y')
-                                except ValueError:
-                                    try:
-                                        date_obj = datetime.strptime(date_str, '%d/%m/%Y')
-                                    except ValueError:
-                                        continue
-                                
-                                transactions.append({
-                                    'Date': date_obj.strftime('%Y-%m-%d'),
-                                    'Description': description.strip(),
-                                    'Amount': abs(amount),  # Store as positive, use Category for type
-                                    'Category': transaction_type
-                                })
-                                
-                        except (ValueError, AttributeError):
-                            continue
-    
-        if transactions:
-            df = pd.DataFrame(transactions)
-            df['Date'] = pd.to_datetime(df['Date'])
-            return df
-        else:
-            st.warning(f"No transactions found in PDF: {filename}")
-            return pd.DataFrame()
-            
+                    data.append({
+                        'Date': date_str,
+                        'Description': description,
+                        'Amount': abs(amount),
+                        'Category': category
+                    })
+                except:
+                    continue
+        
+        return pd.DataFrame(data)
     except Exception as e:
-        st.error(f"PDF processing error for {filename}: {e}")
+        st.error(f"PDF extraction error: {e}")
         return pd.DataFrame()
 
 def process_dataframe(df):
