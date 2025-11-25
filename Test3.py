@@ -857,36 +857,87 @@ def enhanced_main_app():
     """.format(st.session_state.user['username']), unsafe_allow_html=True)
     
     # Quick stats (placeholder - replace with real data)
+
+    # Calculate real stats from user data
+    user_data = load_all_user_data(st.session_state.user['id'])
+    
+    if not user_data.empty and all(col in user_data.columns for col in ['Date', 'Amount', 'Category', 'YearMonth']):
+        # Get current and previous month data
+        available_months = sorted(user_data['YearMonth'].unique())
+        
+        if len(available_months) >= 1:
+            current_month = available_months[-1]
+            current_data = user_data[user_data['YearMonth'] == current_month]
+            
+            current_income = current_data[current_data['Category'] == 'Credit']['Amount'].sum()
+            current_spending = current_data[current_data['Category'] == 'Debit']['Amount'].sum()
+            current_savings = current_income - current_spending
+            
+            # Calculate percentage changes if previous month exists
+            if len(available_months) >= 2:
+                prev_month = available_months[-2]
+                prev_data = user_data[user_data['YearMonth'] == prev_month]
+                
+                prev_income = prev_data[prev_data['Category'] == 'Credit']['Amount'].sum()
+                prev_spending = prev_data[prev_data['Category'] == 'Debit']['Amount'].sum()
+                prev_savings = prev_income - prev_spending
+                
+                income_change = ((current_income - prev_income) / prev_income * 100) if prev_income > 0 else 0
+                spending_change = ((current_spending - prev_spending) / prev_spending * 100) if prev_spending > 0 else 0
+                savings_change = ((current_savings - prev_savings) / prev_savings * 100) if prev_savings != 0 else 0
+                
+                income_arrow = "↑" if income_change > 0 else "↓"
+                spending_arrow = "↑" if spending_change > 0 else "↓"
+                savings_arrow = "↑" if savings_change > 0 else "↓"
+                
+                income_class = "positive" if income_change > 0 else "negative"
+                spending_class = "negative" if spending_change > 0 else "positive"
+                savings_class = "positive" if savings_change > 0 else "negative"
+            else:
+                income_change = spending_change = savings_change = 0
+                income_arrow = spending_arrow = savings_arrow = ""
+                income_class = spending_class = savings_class = "positive"
+        else:
+            current_income = current_spending = current_savings = 0
+            income_change = spending_change = savings_change = 0
+            income_arrow = spending_arrow = savings_arrow = ""
+            income_class = spending_class = savings_class = "positive"
+    else:
+        current_income = current_spending = current_savings = 0
+        income_change = spending_change = savings_change = 0
+        income_arrow = spending_arrow = savings_arrow = ""
+        income_class = spending_class = savings_class = "positive"
+    
+    # Display real stats
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.markdown("""
+        st.markdown(f"""
             <div class="stat-card income">
                 <div class="stat-title">💰 Total Income</div>
-                <div class="stat-value">J$45,000</div>
-                <div class="stat-change positive">↑ 12% from last month</div>
+                <div class="stat-value">J${current_income:,.0f}</div>
+                <div class="stat-change {income_class}">{income_arrow} {abs(income_change):.1f}% from last month</div>
             </div>
         """, unsafe_allow_html=True)
     
     with col2:
-        st.markdown("""
+        st.markdown(f"""
             <div class="stat-card spending">
                 <div class="stat-title">💸 Total Spending</div>
-                <div class="stat-value">J$32,500</div>
-                <div class="stat-change negative">↑ 5% from last month</div>
+                <div class="stat-value">J${current_spending:,.0f}</div>
+                <div class="stat-change {spending_class}">{spending_arrow} {abs(spending_change):.1f}% from last month</div>
             </div>
         """, unsafe_allow_html=True)
     
     with col3:
-        st.markdown("""
+        st.markdown(f"""
             <div class="stat-card savings">
                 <div class="stat-title">🎯 Net Savings</div>
-                <div class="stat-value">J$12,500</div>
-                <div class="stat-change positive">↑ 28% from last month</div>
+                <div class="stat-value">J${current_savings:,.0f}</div>
+                <div class="stat-change {savings_class}">{savings_arrow} {abs(savings_change):.1f}% from last month</div>
             </div>
         """, unsafe_allow_html=True)
-    
-    st.markdown("<h2 class='section-header'>Choose a Feature</h2>", unsafe_allow_html=True)
+
     
     # Feature selection
     col1, col2, col3 = st.columns(3)
