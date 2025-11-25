@@ -1196,11 +1196,8 @@ def logout():
 def enhanced_login_page():
     apply_custom_styles()
     
-    if "page" not in st.session_state:
-        st.session_state.page = "login"
-
     col1, col2, col3 = st.columns([1, 2, 1])
-
+    
     with col2:
         st.markdown("""
             <div class="auth-container">
@@ -1210,50 +1207,33 @@ def enhanced_login_page():
                 </div>
             </div>
         """, unsafe_allow_html=True)
-
-        # ----------------------
-        # LOGIN PAGE
-        # ----------------------
-        if st.session_state.page == "login":
-            username = st.text_input("Username", placeholder="Enter your username", key="login_username")
-            password = st.text_input("Password", type="password", placeholder="Enter your password", key="login_password")
-
-            col_btn1, col_btn2 = st.columns(2)
-            
-            with col_btn1:
-                if st.button("🚀 Login", use_container_width=True):
-                    if username and password:
-                        success, user = authenticate_user(username, password)
-                        if success:
-                            st.session_state.authenticated = True
-                            st.session_state.user = user
-                            st.success("✅ Login successful!")
-                            st.balloons()
-                            st.rerun()
-                        else:
-                            st.error("❌ Invalid username or password")
+        
+        username = st.text_input("Username", placeholder="Enter your username", key="login_username")
+        password = st.text_input("Password", type="password", placeholder="Enter your password", key="login_password")
+        
+        col_btn1, col_btn2 = st.columns(2)
+        
+        with col_btn1:
+            if st.button("🚀 Login", use_container_width=True):
+                if username and password:
+                    success, user = authenticate_user(username, password)
+                    if success:
+                        st.session_state.authenticated = True
+                        st.session_state.user = user
+                        st.success("✅ Login successful!")
+                        st.balloons()
+                        st.rerun()
                     else:
-                        st.warning("⚠️ Please enter both username and password")
-
-            with col_btn2:
-                if st.button("📝 Register", use_container_width=True):
-                    st.session_state.page = "register"
-                    st.rerun()
-
-            # ---- Recovery Links ----
-            st.write("")
-            col_re1, col_re2 = st.columns(2)
-            with col_re1:
-                if st.button("Forgot Password?", use_container_width=True):
-                    st.session_state.page = "forgot_password"
-                    st.rerun()
-
-            with col_re2:
-                if st.button("Forgot Username?", use_container_width=True):
-                    st.session_state.page = "forgot_username"
-                    st.rerun()
-
-            st.info("💡 **Demo:** Create a new account to get started!")
+                        st.error("❌ Invalid username or password")
+                else:
+                    st.warning("⚠️ Please enter both username and password")
+        
+        with col_btn2:
+            if st.button("📝 Register", use_container_width=True):
+                st.session_state.page = 'register'
+                st.rerun()
+        
+        st.info("💡 **Demo:** Create a new account to get started!")
 
 # ============================================
 # ENHANCED REGISTER PAGE
