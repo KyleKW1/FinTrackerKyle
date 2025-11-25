@@ -994,15 +994,8 @@ def enhanced_main_app():
 # ============================================
 
 def standardize_dataframe_columns(df):
-    """Standardize column names from different bank formats"""
-    import numpy as np
-    
-    # DEBUG: Log initial state
-    print(f"DEBUG: Input DataFrame shape: {df.shape}")
-    print(f"DEBUG: Input columns: {list(df.columns)}")
-    print(f"DEBUG: DataFrame type: {type(df)}")
-    
-    # Make a copy to avoid modifying the original dataframe
+    """Standardize column names from different bank formats - SIMPLE VERSION"""
+    # Make a copy
     df = df.copy()
     
     # Common column name mappings
@@ -1012,7 +1005,7 @@ def standardize_dataframe_columns(df):
         'transaction description': 'Description',
         'details': 'Description',
         'narrative': 'Description',
-        'particulars': 'Particulars',
+        'particulars': 'Description',
         
         'amount': 'Amount',
         'transaction amount': 'Amount',
@@ -1034,81 +1027,39 @@ def standardize_dataframe_columns(df):
     df.columns = df.columns.str.lower().str.strip()
     df = df.rename(columns=column_mappings)
     
-    print(f"DEBUG: After rename columns: {list(df.columns)}")
-    
-    # Ensure required columns exist
+    # Ensure Description exists
     if 'Description' not in df.columns:
         if len(df.columns) >= 2:
             df['Description'] = df.iloc[:, 1].astype(str)
         else:
             df['Description'] = 'Unknown'
     
-    # Handle Amount column - SIMPLIFIED APPROACH
-    if 'Amount' in df.columns:
-        print(f"DEBUG: Amount column exists")
-        print(f"DEBUG: Amount column type: {type(df['Amount'])}")
-        try:
-            print(f"DEBUG: Amount dtype: {df['Amount'].dtype}")
-            print(f"DEBUG: First 3 Amount values: {df['Amount'].iloc[:3].tolist()}")
-        except Exception as e:
-            print(f"DEBUG: Could not get Amount details: {e}")
-        
-        # Don't extract and reassign, just convert in place
-        try:
-            df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0)
-            print(f"DEBUG: Converted existing Amount column to numeric")
-        except Exception as e:
-            print(f"DEBUG: Error converting Amount: {e}")
-            # Emergency: convert via list
-            try:
-                df['Amount'] = pd.Series([float(x) if pd.notna(x) else 0.0 for x in df['Amount']], index=df.index)
-                print(f"DEBUG: Used list comprehension fallback")
-            except Exception as e2:
-                print(f"DEBUG: List comprehension also failed: {e2}")
-                # Last resort: zeros
-                df['Amount'] = 0.0
-                
-    else:
-        print(f"DEBUG: Amount column does NOT exist")
-        # Try to find a numeric column
-        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-        print(f"DEBUG: Numeric columns found: {numeric_cols}")
-        
-        if len(numeric_cols) > 0:
-            col_to_use = numeric_cols[0]
-            print(f"DEBUG: Using numeric column: {col_to_use}")
-            # Copy the column and convert
-            try:
-                df['Amount'] = pd.to_numeric(df[col_to_use], errors='coerce').fillna(0)
-            except Exception as e:
-                print(f"DEBUG: Error copying numeric column: {e}")
-                df['Amount'] = 0.0
-        else:
-            print(f"DEBUG: No numeric columns, creating zeros")
-            df['Amount'] = 0.0
-    
-    print(f"DEBUG: After Amount processing")
-    print(f"DEBUG: df['Amount'] type: {type(df['Amount'])}")
-    print(f"DEBUG: Amount shape: {df['Amount'].shape if hasattr(df['Amount'], 'shape') else 'N/A'}")
-    
-    # Handle Date column
+    # Ensure Date exists
     if 'Date' not in df.columns:
         if len(df.columns) >= 1:
             df['Date'] = pd.to_datetime(df.iloc[:, 0], errors='coerce')
         else:
             df['Date'] = pd.Timestamp.now()
     
-    # Handle Category column
-    if 'Category' not in df.columns:
-        df['Category'] = 'Debit'
-        df.loc[df['Amount'] >= 0, 'Category'] = 'Credit'
-        df.loc[df['Amount'] < 0, 'Category'] = 'Debit'
-        df['Amount'] = df['Amount'].abs()
-    else:
-        df['Amount'] = df['Amount'].abs()
+    # Handle Amount - SIMPLE APPROACH
+    if 'Amount' not in df.columns:
+        # Try to find a numeric column
+        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        if numeric_cols:
+            df['Amount'] = df[numeric_cols[0]]
+        else:
+            df['Amount'] = 0.0
     
-    print(f"DEBUG: Function completed successfully")
-    print(f"DEBUG: Output columns: {list(df.columns)}")
+    # Convert Amount to numeric, coercing errors to NaN, then fill NaN with 0
+    df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0).astype(float)
+    
+    # Handle Category
+    if 'Category' not in df.columns:
+        # Simple classification based on amount sign
+        df['Category'] = df['Amount'].apply(lambda x: 'Credit' if x >= 0 else 'Debit')
+    
+    # Make all amounts positive
+    df['Amount'] = df['Amount'].abs()
     
     return df
     
