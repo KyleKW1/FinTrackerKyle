@@ -367,6 +367,116 @@ def authenticate_user(username, password):
         connection.close()
         return False, None
 
+def get_username_by_email(email):
+    connection = create_connection()
+    if not connection:
+        return None
+
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT username FROM users WHERE email = %s", (email,))
+        result = cursor.fetchone()
+        cursor.close()
+        connection.close()
+        return result[0] if result else None
+    except Error as e:
+        st.error(f"Error retrieving username: {e}")
+        connection.close()
+        return None
+    
+def send_username_email(email, username):
+    # TODO: Replace with SMTP or SendGrid
+    print(f"[DEBUG] Sending username '{username}' to {email}")
+    return True
+
+
+
+import random
+import string
+from datetime import datetime, timedelta
+
+def generate_reset_code():
+    return ''.join(random.choices(string.digits, k=6))
+
+def send_password_reset_code(email):
+    connection = create_connection()
+    if not connection:
+        return False
+
+    try:
+        cursor = connection.cursor()
+
+        # Check if user exists
+        cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
+        user = cursor.fetchone()
+        if not user:
+            cursor.close()
+            connection.close()
+            return False  # email not found
+
+        code = generate_reset_code()
+        expires_at = datetime.now() + timedelta(minutes=15)
+
+        cursor.execute("""
+            INSERT INTO password_reset_codes (email, code, expires_at)
+            VALUES (%s, %s, %s)
+        """, (email, code, expires_at))
+
+        connection.commit()
+        cursor.close()
+        connection.close()
+
+        # Replace with real email
+        print(f"[DEBUG] Password reset code for {email}: {code}")
+
+        return True
+
+    except Error as e:
+        st.error(f"Error sending reset code: {e}")
+        connection.close()
+        return False
+        
+
+def reset_password_with_code(email, code, new_password):
+    connection = create_connection()
+    if not connection:
+        return False
+
+    try:
+        cursor = connection.cursor()
+
+        # Check code & expiration
+        cursor.execute("""
+            SELECT id FROM password_reset_codes
+            WHERE email = %s AND code = %s AND expires_at > NOW()
+        """, (email, code))
+
+        valid = cursor.fetchone()
+        if not valid:
+            cursor.close()
+            connection.close()
+            return False  # invalid/expired code
+
+        # Update the user's password
+        hashed = hash_password(new_password)
+        cursor.execute("""
+            UPDATE users SET password_hash = %s
+            WHERE email = %s
+        """, (hashed, email))
+
+        # Delete used codes
+        cursor.execute("DELETE FROM password_reset_codes WHERE email = %s", (email,))
+
+        connection.commit()
+        cursor.close()
+        connection.close()
+        return True
+
+    except Error as e:
+        st.error(f"Error resetting password: {e}")
+        connection.close()
+        return False
+
 
 # ============================================
 # FILE MANAGEMENT FUNCTIONS
@@ -1196,8 +1306,11 @@ def logout():
 def enhanced_login_page():
     apply_custom_styles()
     
+    if "page" not in st.session_state:
+        st.session_state.page = "login"
+
     col1, col2, col3 = st.columns([1, 2, 1])
-    
+
     with col2:
         st.markdown("""
             <div class="auth-container">
@@ -1207,33 +1320,110 @@ def enhanced_login_page():
                 </div>
             </div>
         """, unsafe_allow_html=True)
-        
-        username = st.text_input("Username", placeholder="Enter your username", key="login_username")
-        password = st.text_input("Password", type="password", placeholder="Enter your password", key="login_password")
-        
-        col_btn1, col_btn2 = st.columns(2)
-        
-        with col_btn1:
-            if st.button("🚀 Login", use_container_width=True):
-                if username and password:
-                    success, user = authenticate_user(username, password)
-                    if success:
-                        st.session_state.authenticated = True
-                        st.session_state.user = user
-                        st.success("✅ Login successful!")
-                        st.balloons()
-                        st.rerun()
+
+        # ----------------------
+        # LOGIN PAGE
+        # ----------------------
+        if st.session_state.page == "login":
+            username = st.text_input("Username", placeholder="Enter your username", key="login_username")
+            password = st.text_input("Password", type="password", placeholder="Enter your password", key="login_password")
+
+            col_btn1, col_btn2 = st.columns(2)
+            
+            with col_btn1:
+                if st.button("🚀 Login", use_container_width=True):
+                    if username and password:
+                        success, user = authenticate_user(username, password)
+                        if success:
+                            st.session_state.authenticated = True
+                            st.session_state.user = user
+                            st.success("✅ Login successful!")
+                            st.balloons()
+                            st.rerun()
+                        else:
+                            st.error("❌ Invalid username or password")
                     else:
-                        st.error("❌ Invalid username or password")
+                        st.warning("⚠️ Please enter both username and password")
+
+            with col_btn2:
+                if st.button("📝 Register", use_container_width=True):
+                    st.session_state.page = "register"
+                    st.rerun()
+
+            # ---- Recovery Links ----
+            st.write("")
+            col_re1, col_re2 = st.columns(2)
+            with col_re1:
+                if st.button("Forgot Password?", use_container_width=True):
+                    st.session_state.page = "forgot_password"
+                    st.rerun()
+
+            with col_re2:
+                if st.button("Forgot Username?", use_container_width=True):
+                    st.session_state.page = "forgot_username"
+                    st.rerun()
+
+            st.info("💡 **Demo:** Create a new account to get started!")
+
+        # ----------------------
+        # FORGOT USERNAME PAGE
+        # ----------------------
+        elif st.session_state.page == "forgot_username":
+            st.subheader("🔎 Recover Username")
+            email = st.text_input("Registered Email Address")
+
+            if st.button("Send Username"):
+                username = get_username_by_email(email)
+                if username:
+                    send_username_email(email, username)
+                    st.success("📩 Your username has been sent to your email!")
                 else:
-                    st.warning("⚠️ Please enter both username and password")
-        
-        with col_btn2:
-            if st.button("📝 Register", use_container_width=True):
-                st.session_state.page = 'register'
+                    st.error("❌ No account found with that email.")
+
+            if st.button("⬅ Back to Login"):
+                st.session_state.page = "login"
                 st.rerun()
-        
-        st.info("💡 **Demo:** Create a new account to get started!")
+
+        # ----------------------
+        # FORGOT PASSWORD PAGE
+        # ----------------------
+        elif st.session_state.page == "forgot_password":
+            st.subheader("🔐 Reset Password")
+
+            email = st.text_input("Registered Email Address")
+            code = st.text_input("Verification Code (if received)")
+            new_password = st.text_input("New Password", type="password")
+
+            col_fp1, col_fp2 = st.columns(2)
+
+            with col_fp1:
+                if st.button("Send Code"):
+                    if email:
+                        sent = send_password_reset_code(email)
+                        if sent:
+                            st.success("📬 A reset code has been sent to your email!")
+                        else:
+                            st.error("❌ Email not found.")
+                    else:
+                        st.warning("⚠️ Enter your email first.")
+
+            with col_fp2:
+                if st.button("Reset Password"):
+                    if not (email and code and new_password):
+                        st.warning("⚠️ Please fill out all fields.")
+                    else:
+                        ok = reset_password_with_code(email, code, new_password)
+                        if ok:
+                            st.success("🔑 Password reset successful! Please log in.")
+                            st.session_state.page = "login"
+                            st.rerun()
+                        else:
+                            st.error("❌ Invalid code or email.")
+
+            if st.button("⬅ Back to Login"):
+                st.session_state.page = "login"
+                st.rerun()
+
 
 # ============================================
 # ENHANCED REGISTER PAGE
