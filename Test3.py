@@ -907,9 +907,9 @@ def enhanced_main_app():
                 prev_spending = prev_data[prev_data['Category'] == 'Debit']['Amount'].sum()
                 prev_savings = prev_income - prev_spending
                 
-                income_change = ((current_income - prev_income) / prev_income * 100) if prev_income > 0 else 0
-                spending_change = ((current_spending - prev_spending) / prev_spending * 100) if prev_spending > 0 else 0
-                savings_change = ((current_savings - prev_savings) / prev_savings * 100) if prev_savings != 0 else 0
+                income_change = ((current_income - prev_income) / prev_income * 100) if float(prev_income) > 0 else 0
+                spending_change = ((current_spending - prev_spending) / prev_spending * 100) if float(prev_spending) > 0 else 0
+                savings_change = ((current_savings - prev_savings) / prev_savings * 100) if float(prev_savings) != 0 else 0
                 
                 income_arrow = "↑" if income_change > 0 else "↓"
                 spending_arrow = "↑" if spending_change > 0 else "↓"
