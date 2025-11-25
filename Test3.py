@@ -544,6 +544,65 @@ def process_dataframe(df):
     
     return df
 
+def standardize_dataframe_columns(df):
+    """Standardize column names from different bank formats"""
+    df = df.copy()
+    
+    column_mappings = {
+        'description': 'Description',
+        'desc': 'Description',
+        'transaction description': 'Description',
+        'details': 'Description',
+        'narrative': 'Description',
+        'particulars': 'Description',
+        
+        'amount': 'Amount',
+        'transaction amount': 'Amount',
+        'value': 'Amount',
+        'debit': 'Amount',
+        'credit': 'Amount',
+        
+        'date': 'Date',
+        'transaction date': 'Date',
+        'posting date': 'Date',
+        'value date': 'Date',
+        
+        'type': 'Category',
+        'transaction type': 'Category',
+        'dr/cr': 'Category',
+    }
+    
+    df.columns = df.columns.str.lower().str.strip()
+    df = df.rename(columns=column_mappings)
+    
+    if 'Description' not in df.columns:
+        if len(df.columns) >= 2:
+            df['Description'] = df.iloc[:, 1].astype(str)
+        else:
+            df['Description'] = 'Unknown'
+    
+    if 'Date' not in df.columns:
+        if len(df.columns) >= 1:
+            df['Date'] = pd.to_datetime(df.iloc[:, 0], errors='coerce')
+        else:
+            df['Date'] = pd.Timestamp.now()
+    
+    # THE KEY FIX - use list comprehension instead of pd.to_numeric
+    if 'Amount' not in df.columns:
+        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        if numeric_cols:
+            df['Amount'] = [float(x) if pd.notna(x) else 0.0 for x in df[numeric_cols[0]]]
+        else:
+            df['Amount'] = [0.0] * len(df)
+    else:
+        df['Amount'] = [float(x) if pd.notna(x) else 0.0 for x in df['Amount']]
+    
+    if 'Category' not in df.columns:
+        df['Category'] = ['Credit' if x >= 0 else 'Debit' for x in df['Amount']]
+    
+    df['Amount'] = df['Amount'].abs()
+    
+    return df
 
 def process_dataframe(df):
     """Process and standardize dataframe"""
@@ -894,9 +953,9 @@ def enhanced_main_app():
             current_month = available_months[-1]
             current_data = user_data[user_data['YearMonth'] == current_month]
             
-            current_income = float(current_data[current_data['Category'] == 'Credit']['Amount'].sum())
-            current_spending = float(current_data[current_data['Category'] == 'Debit']['Amount'].sum())
-            current_savings = float(current_income - current_spending)
+            current_income = current_data[current_data['Category'] == 'Credit']['Amount'].sum()
+            current_spending = current_data[current_data['Category'] == 'Debit']['Amount'].sum()
+            current_savings = current_income - current_spending
             
             # Calculate percentage changes if previous month exists
             if len(available_months) >= 2:
@@ -907,9 +966,9 @@ def enhanced_main_app():
                 prev_spending = prev_data[prev_data['Category'] == 'Debit']['Amount'].sum()
                 prev_savings = prev_income - prev_spending
                 
-                prev_income = float(prev_data[prev_data['Category'] == 'Credit']['Amount'].sum())
-                prev_spending = float(prev_data[prev_data['Category'] == 'Debit']['Amount'].sum())
-                prev_savings = float(prev_income - prev_spending)
+                income_change = ((current_income - prev_income) / prev_income * 100) if prev_income > 0 else 0
+                spending_change = ((current_spending - prev_spending) / prev_spending * 100) if prev_spending > 0 else 0
+                savings_change = ((current_savings - prev_savings) / prev_savings * 100) if prev_savings != 0 else 0
                 
                 income_arrow = "↑" if income_change > 0 else "↓"
                 spending_arrow = "↑" if spending_change > 0 else "↓"
@@ -1035,17 +1094,14 @@ def standardize_dataframe_columns(df):
         'value': 'Amount',
         'debit': 'Amount',
         'credit': 'Amount',
-        'total amount': 'Amount',
         
         'date': 'Date',
         'transaction date': 'Date',
         'posting date': 'Date',
         'value date': 'Date',
-        'trans date': 'Date',
         
         'type': 'Category',
         'transaction type': 'Category',
-        'trans type': 'Category',
         'dr/cr': 'Category',
     }
     
@@ -1067,27 +1123,33 @@ def standardize_dataframe_columns(df):
         else:
             df['Date'] = pd.Timestamp.now()
     
-    # Handle Amount
+    # THE KEY FIX - Handle Amount with proper error handling
     if 'Amount' not in df.columns:
+        # Find numeric columns
         numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
         if numeric_cols:
             df['Amount'] = df[numeric_cols[0]].apply(lambda x: float(x) if pd.notna(x) else 0.0)
         else:
+            # Try to find a column that might contain amounts
             for col in df.columns:
                 try:
+                    # Attempt conversion to see if it's numeric
                     test_series = pd.to_numeric(df[col].astype(str).str.replace(r'[^\d.-]', '', regex=True), errors='coerce')
-                    if test_series.notna().sum() > len(df) * 0.5:
+                    if test_series.notna().sum() > len(df) * 0.5:  # If more than 50% are valid numbers
                         df['Amount'] = test_series.fillna(0.0).abs()
                         break
                 except:
                     continue
             else:
+                # If no numeric column found, set to 0
                 df['Amount'] = 0.0
     else:
+        # Amount column exists but may need cleaning
         def safe_float_convert(x):
             try:
                 if pd.isna(x):
                     return 0.0
+                # Remove currency symbols and commas
                 if isinstance(x, str):
                     x = x.replace('$', '').replace(',', '').replace('J', '').strip()
                 return float(x)
@@ -1099,24 +1161,28 @@ def standardize_dataframe_columns(df):
     # Ensure Amount is positive
     df['Amount'] = df['Amount'].abs()
     
-    # Handle Category - use trans type if it exists
-    if 'Category' in df.columns:
-        # Map the values from trans type
-        def map_category(val):
-            if pd.isna(val):
-                return 'Debit'
-            val_str = str(val).upper().strip()
-            if val_str in ['CR', 'CREDIT', 'C', 'DEP', 'DEPOSIT']:
-                return 'Credit'
-            elif val_str in ['DR', 'DEBIT', 'D', 'WD', 'WITHDRAWAL']:
-                return 'Debit'
-            else:
-                return 'Debit'
-        
-        df['Category'] = df['Category'].apply(map_category)
-    else:
-        # No category column, use amount-based logic
-        df['Category'] = df['Amount'].apply(lambda x: 'Credit' if x >= 0 else 'Debit')
+    # Ensure Amount is a proper 1D Series
+    if 'Amount' in df.columns:
+        # Flatten if needed and ensure it's numeric
+        if isinstance(df['Amount'], pd.DataFrame):
+            df['Amount'] = df['Amount'].iloc[:, 0]
+        df['Amount'] = pd.Series(df['Amount'].values.flatten())
+    
+    # Handle Category
+    if 'Category' not in df.columns:
+        # Create Category column - simple approach using list of values
+        import numpy as np
+        amounts = df['Amount'].values
+        categories = []
+        for amt in amounts:
+            try:
+                if float(amt) >= 0:
+                    categories.append('Credit')
+                else:
+                    categories.append('Debit')
+            except (ValueError, TypeError):
+                categories.append('Debit')
+        df['Category'] = categories
     
     return df
     
