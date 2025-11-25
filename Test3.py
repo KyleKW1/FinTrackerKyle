@@ -994,7 +994,9 @@ def enhanced_main_app():
 # ============================================
 
 def standardize_dataframe_columns(df):
-    """Standardize column names from different bank formats - SIMPLE VERSION"""
+    """Standardize column names from different bank formats - BULLETPROOF VERSION"""
+    import numpy as np
+    
     # Make a copy
     df = df.copy()
     
@@ -1009,9 +1011,9 @@ def standardize_dataframe_columns(df):
         
         'amount': 'Amount',
         'transaction amount': 'Amount',
-        'value': 'Amount',
-        'debit': 'Amount',
-        'credit': 'Amount',
+        'value': 'Value',
+        'debit': 'Debit',
+        'credit': 'Credit',
         
         'date': 'Date',
         'transaction date': 'Date',
@@ -1041,22 +1043,30 @@ def standardize_dataframe_columns(df):
         else:
             df['Date'] = pd.Timestamp.now()
     
-    # Handle Amount - SIMPLE APPROACH
+    # Handle Amount - NUCLEAR OPTION: Build from scratch
     if 'Amount' not in df.columns:
         # Try to find a numeric column
         numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
         if numeric_cols:
-            df['Amount'] = df[numeric_cols[0]]
+            # Use the first numeric column
+            col = numeric_cols[0]
+            # Create new column with list comprehension to ensure it's a proper series
+            df['Amount'] = [float(x) if pd.notna(x) else 0.0 for x in df[col]]
         else:
-            df['Amount'] = 0.0
+            # No numeric columns - create zeros as a list
+            df['Amount'] = [0.0] * len(df)
+    else:
+        # Amount exists - convert it using list comprehension
+        df['Amount'] = [float(x) if pd.notna(x) else 0.0 for x in df['Amount']]
     
-    # Convert Amount to numeric, coercing errors to NaN, then fill NaN with 0
-    df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0).astype(float)
+    # At this point Amount is guaranteed to be a proper Series of floats
+    # But let's still be defensive
+    df['Amount'] = df['Amount'].astype(float)
     
     # Handle Category
     if 'Category' not in df.columns:
         # Simple classification based on amount sign
-        df['Category'] = df['Amount'].apply(lambda x: 'Credit' if x >= 0 else 'Debit')
+        df['Category'] = ['Credit' if x >= 0 else 'Debit' for x in df['Amount']]
     
     # Make all amounts positive
     df['Amount'] = df['Amount'].abs()
