@@ -1339,10 +1339,12 @@ def main_app():
         st.sidebar.markdown("---")
         st.sidebar.markdown("### 🌐 NCB PDF Upgrade")
         if st.sidebar.button("🚀 Finance Tracker Web 2.0", use_container_width=True):
-            st.sidebar.markdown('<a href="https://fintrackerkyle-7v7hh5zxbav938wtpv8a3p.streamlit.app/" target="_blank">Click here if not redirected</a>',
+            st.sidebar.markdown('<a href="https://fintrackerkyle-jtb7pfjusqm68ejxkx7lm4.streamlit.app/" target="_blank">Click here if not redirected</a>',
                                 unsafe_allow_html=True)
-            st.components.v1.html('<meta http-equiv="refresh" content="0; url=https://fintrackerkyle-7v7hh5zxbav938wtpv8a3p.streamlit.app/">',
+            st.components.v1.html('<meta http-equiv="refresh" content="0; url=https://fintrackerkyle-jtb7pfjusqm68ejxkx7lm4.streamlit.app/">',
                                   height=0)
+
+    
 
     elif option == "📅 Budget Planner":
         st.markdown("### 📅 Budget Planner")
