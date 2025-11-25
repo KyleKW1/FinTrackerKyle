@@ -1324,106 +1324,71 @@ def enhanced_login_page():
         # ----------------------
         # LOGIN PAGE
         # ----------------------
-        if st.session_state.page == "login":
-            username = st.text_input("Username", placeholder="Enter your username", key="login_username")
-            password = st.text_input("Password", type="password", placeholder="Enter your password", key="login_password")
+def enhanced_login_page():
+    apply_custom_styles()
 
-            col_btn1, col_btn2 = st.columns(2)
-            
-            with col_btn1:
-                if st.button("🚀 Login", use_container_width=True):
-                    if username and password:
-                        success, user = authenticate_user(username, password)
-                        if success:
-                            st.session_state.authenticated = True
-                            st.session_state.user = user
-                            st.success("✅ Login successful!")
-                            st.balloons()
-                            st.rerun()
-                        else:
-                            st.error("❌ Invalid username or password")
+    if "page" not in st.session_state:
+        st.session_state.page = "login"
+    if "show_recovery" not in st.session_state:
+        st.session_state.show_recovery = False
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+
+    with col2:
+        st.markdown("""
+            <div class="auth-container">
+                <div class="auth-header">
+                    <h1 class="auth-title">💼 Finance Hub</h1>
+                    <p class="auth-subtitle">Welcome back! Please login to your account</p>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        username = st.text_input("Username", placeholder="Enter your username", key="login_username")
+        password = st.text_input("Password", type="password", placeholder="Enter your password", key="login_password")
+
+        col_btn1, col_btn2 = st.columns(2)
+
+        with col_btn1:
+            if st.button("🚀 Login", use_container_width=True):
+                if username and password:
+                    success, user = authenticate_user(username, password)
+                    if success:
+                        st.session_state.authenticated = True
+                        st.session_state.user = user
+                        st.success("✅ Login successful!")
+                        st.session_state.show_recovery = False  # hide recovery if previously shown
+                        st.balloons()
+                        st.rerun()
                     else:
-                        st.warning("⚠️ Please enter both username and password")
+                        st.error("❌ Invalid username or password")
+                        st.session_state.show_recovery = True  # <-- SHOW RECOVERY OPTIONS
+                else:
+                    st.warning("⚠️ Please enter both username and password")
 
-            with col_btn2:
-                if st.button("📝 Register", use_container_width=True):
-                    st.session_state.page = "register"
-                    st.rerun()
+        with col_btn2:
+            if st.button("📝 Register", use_container_width=True):
+                st.session_state.page = "register"
+                st.rerun()
 
-            # ---- Recovery Links ----
-            st.write("")
-            col_re1, col_re2 = st.columns(2)
-            with col_re1:
+        # ----------------------------------------------------
+        # SHOW RECOVERY OPTIONS ONLY AFTER FAILED LOGIN
+        # ----------------------------------------------------
+        if st.session_state.show_recovery:
+            st.warning("Need help accessing your account?")
+            col_r1, col_r2 = st.columns(2)
+
+            with col_r1:
                 if st.button("Forgot Password?", use_container_width=True):
                     st.session_state.page = "forgot_password"
                     st.rerun()
 
-            with col_re2:
+            with col_r2:
                 if st.button("Forgot Username?", use_container_width=True):
                     st.session_state.page = "forgot_username"
                     st.rerun()
 
-            st.info("💡 **Demo:** Create a new account to get started!")
-
-        # ----------------------
-        # FORGOT USERNAME PAGE
-        # ----------------------
-        elif st.session_state.page == "forgot_username":
-            st.subheader("🔎 Recover Username")
-            email = st.text_input("Registered Email Address")
-
-            if st.button("Send Username"):
-                username = get_username_by_email(email)
-                if username:
-                    send_username_email(email, username)
-                    st.success("📩 Your username has been sent to your email!")
-                else:
-                    st.error("❌ No account found with that email.")
-
-            if st.button("⬅ Back to Login"):
-                st.session_state.page = "login"
-                st.rerun()
-
-        # ----------------------
-        # FORGOT PASSWORD PAGE
-        # ----------------------
-        elif st.session_state.page == "forgot_password":
-            st.subheader("🔐 Reset Password")
-
-            email = st.text_input("Registered Email Address")
-            code = st.text_input("Verification Code (if received)")
-            new_password = st.text_input("New Password", type="password")
-
-            col_fp1, col_fp2 = st.columns(2)
-
-            with col_fp1:
-                if st.button("Send Code"):
-                    if email:
-                        sent = send_password_reset_code(email)
-                        if sent:
-                            st.success("📬 A reset code has been sent to your email!")
-                        else:
-                            st.error("❌ Email not found.")
-                    else:
-                        st.warning("⚠️ Enter your email first.")
-
-            with col_fp2:
-                if st.button("Reset Password"):
-                    if not (email and code and new_password):
-                        st.warning("⚠️ Please fill out all fields.")
-                    else:
-                        ok = reset_password_with_code(email, code, new_password)
-                        if ok:
-                            st.success("🔑 Password reset successful! Please log in.")
-                            st.session_state.page = "login"
-                            st.rerun()
-                        else:
-                            st.error("❌ Invalid code or email.")
-
-            if st.button("⬅ Back to Login"):
-                st.session_state.page = "login"
-                st.rerun()
-
+ 
 
 # ============================================
 # ENHANCED REGISTER PAGE
