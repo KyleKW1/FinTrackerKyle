@@ -1043,9 +1043,7 @@ def standardize_dataframe_columns(df):
         else:
             df['Description'] = 'Unknown'
     
-    # Handle Amount column - WITH EXTENSIVE DEBUGGING
-    amount_values = None
-    
+    # Handle Amount column - SIMPLIFIED APPROACH
     if 'Amount' in df.columns:
         print(f"DEBUG: Amount column exists")
         print(f"DEBUG: Amount column type: {type(df['Amount'])}")
@@ -1055,22 +1053,21 @@ def standardize_dataframe_columns(df):
         except Exception as e:
             print(f"DEBUG: Could not get Amount details: {e}")
         
-        # Extract values safely
+        # Don't extract and reassign, just convert in place
         try:
-            amount_values = df['Amount'].values
-            print(f"DEBUG: Extracted amount_values type: {type(amount_values)}")
-            print(f"DEBUG: amount_values shape: {amount_values.shape if hasattr(amount_values, 'shape') else 'N/A'}")
-            # Flatten immediately if needed
-            if hasattr(amount_values, 'shape') and len(amount_values.shape) > 1:
-                amount_values = amount_values.flatten()
-                print(f"DEBUG: Flattened to shape: {amount_values.shape}")
+            df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0)
+            print(f"DEBUG: Converted existing Amount column to numeric")
         except Exception as e:
-            print(f"DEBUG: Error extracting values: {e}")
-            # Fallback: convert to list then to array
-            amount_values = np.array(df['Amount'].tolist()).flatten()
-        
-        # Drop the old column
-        df = df.drop(columns=['Amount'])
+            print(f"DEBUG: Error converting Amount: {e}")
+            # Emergency: convert via list
+            try:
+                df['Amount'] = pd.Series([float(x) if pd.notna(x) else 0.0 for x in df['Amount']], index=df.index)
+                print(f"DEBUG: Used list comprehension fallback")
+            except Exception as e2:
+                print(f"DEBUG: List comprehension also failed: {e2}")
+                # Last resort: zeros
+                df['Amount'] = 0.0
+                
     else:
         print(f"DEBUG: Amount column does NOT exist")
         # Try to find a numeric column
@@ -1078,39 +1075,21 @@ def standardize_dataframe_columns(df):
         print(f"DEBUG: Numeric columns found: {numeric_cols}")
         
         if len(numeric_cols) > 0:
-            amount_values = df[numeric_cols[0]].values
-            print(f"DEBUG: Using numeric column: {numeric_cols[0]}")
+            col_to_use = numeric_cols[0]
+            print(f"DEBUG: Using numeric column: {col_to_use}")
+            # Copy the column and convert
+            try:
+                df['Amount'] = pd.to_numeric(df[col_to_use], errors='coerce').fillna(0)
+            except Exception as e:
+                print(f"DEBUG: Error copying numeric column: {e}")
+                df['Amount'] = 0.0
         else:
             print(f"DEBUG: No numeric columns, creating zeros")
-            amount_values = np.zeros(len(df))
+            df['Amount'] = 0.0
     
-    print(f"DEBUG: Final amount_values type: {type(amount_values)}")
-    print(f"DEBUG: Final amount_values dtype: {amount_values.dtype if hasattr(amount_values, 'dtype') else 'N/A'}")
-    print(f"DEBUG: amount_values shape: {amount_values.shape if hasattr(amount_values, 'shape') else 'N/A'}")
-    
-    # Flatten the array if it's multi-dimensional
-    if hasattr(amount_values, 'shape') and len(amount_values.shape) > 1:
-        print(f"DEBUG: Flattening multi-dimensional array")
-        amount_values = amount_values.flatten()
-    
-    # Create fresh Amount column
-    df['Amount'] = amount_values
-    
-    print(f"DEBUG: After creating new Amount column")
+    print(f"DEBUG: After Amount processing")
     print(f"DEBUG: df['Amount'] type: {type(df['Amount'])}")
-    print(f"DEBUG: df['Amount'] dtype: {df['Amount'].dtype if hasattr(df['Amount'], 'dtype') else 'N/A'}")
-    
-    # Convert to numeric - with detailed error handling
-    try:
-        df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce')
-        print(f"DEBUG: pd.to_numeric succeeded")
-    except Exception as e:
-        print(f"DEBUG: pd.to_numeric FAILED with error: {type(e).__name__}: {e}")
-        # Emergency fallback: iterate and convert
-        df['Amount'] = df['Amount'].apply(lambda x: float(x) if pd.notna(x) else 0.0)
-        print(f"DEBUG: Used emergency fallback conversion")
-    
-    df['Amount'] = df['Amount'].fillna(0)
+    print(f"DEBUG: Amount shape: {df['Amount'].shape if hasattr(df['Amount'], 'shape') else 'N/A'}")
     
     # Handle Date column
     if 'Date' not in df.columns:
