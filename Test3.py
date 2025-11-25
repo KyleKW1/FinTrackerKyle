@@ -487,9 +487,174 @@ def load_all_user_data(user_id):
         st.error(f"Error loading data: {e}")
         return pd.DataFrame()
 
-def extract_from_pdf(pdf_file):
-    """Extract transaction data from PDF"""
+def parse_ncb_transaction_line(line, year):
+    """
+    Parse a single NCB transaction line.
+    Expected format: DD/Mon DESCRIPTION AMOUNT DR/CR
+    """
+    import re
+    
+    # Pattern to match NCB transaction lines
+    # Typical: "05/Nov POS JUICI BEEF PATTIES 350.00 DR"
+    pattern = r'(\d{2}/\w{3})\s+(.*?)\s+([\d,]+\.\d{2})\s+(DR|CR)'
+    
+    match = re.search(pattern, line)
+    if match:
+        date_str = match.group(1)
+        description = match.group(2).strip()
+        amount_str = match.group(3).replace(',', '')
+        trans_type = match.group(4)
+        
+        try:
+            # Convert date format: DD/Mon to DD/Mon/YYYY
+            full_date = f"{date_str}/{year}"
+            
+            # Convert amount to float
+            amount = float(amount_str)
+            
+            # Determine category
+            category = 'Credit' if trans_type == 'CR' else 'Debit'
+            
+            return {
+                'Date': full_date,
+                'Description': description,
+                'Amount': amount,
+                'Category': category
+            }
+        except Exception as e:
+            return None
+    
+    return None
+
+
+def process_pdf_ncb(file) -> pd.DataFrame:
+    """
+    Process NCB (National Commercial Bank) PDF statement file.
+    
+    Args:
+        file: Uploaded PDF file object or BytesIO object
+        
+    Returns:
+        DataFrame with columns: Date, Description, Amount, Category
+    """
     try:
+        transactions = []
+        year = "2024"  # Default year
+        
+        # Handle both file uploads and BytesIO objects
+        if isinstance(file, BytesIO):
+            pdf_file = file
+        else:
+            pdf_file = BytesIO(file.read()) if hasattr(file, 'read') else BytesIO(file)
+        
+        with pdfplumber.open(pdf_file) as pdf:
+            for page_num, page in enumerate(pdf.pages, 1):
+                text = page.extract_text()
+                
+                if not text:
+                    continue
+                
+                # Try to extract year from the statement date if on first page
+                if page_num == 1:
+                    year_match = re.search(r'(\d{2})-(\d{2})-(\d{4})', text)
+                    if year_match:
+                        year = year_match.group(3)
+                
+                # Process each line
+                for line in text.split('\n'):
+                    line = line.strip()
+                    
+                    # Skip empty lines and common footer text
+                    if not line or 'CONTINUED' in line or 'END OF STATEMENT' in line:
+                        continue
+                    
+                    # Skip lines that are clearly headers
+                    skip_patterns = [
+                        'JAMAICA',
+                        'REGULAR SAVINGS',
+                        'CURRENT ACCOUNT',
+                        'SAVINGS ACCOUNT',
+                        'JMD',
+                        'USD',
+                        r'MA \d{2}-\d{2}',
+                        r'^\d{9}$',
+                        r'^\d{2}-\d{2}-\d{4}$',
+                        'P.O.',
+                        'NATIONAL COMMERCIAL BANK',
+                        'NCB',
+                    ]
+                    
+                    should_skip = False
+                    for pattern in skip_patterns:
+                        if re.search(pattern, line, re.IGNORECASE):
+                            should_skip = True
+                            break
+                    
+                    # Skip location names (all caps, no numbers)
+                    if line.isupper() and not any(char.isdigit() for char in line) and len(line.split()) <= 3:
+                        should_skip = True
+                    
+                    # Skip customer names
+                    if re.match(r'^(MR|MRS|MS|DR|MISS)\s+[A-Z]', line):
+                        should_skip = True
+                    
+                    if should_skip:
+                        continue
+                    
+                    parsed = parse_ncb_transaction_line(line, year)
+                    if parsed:
+                        transactions.append(parsed)
+        
+        # Create DataFrame
+        if not transactions:
+            st.warning("No transactions found in NCB PDF file.")
+            return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
+        
+        df = pd.DataFrame(transactions)
+        
+        # Convert date to datetime
+        try:
+            df['Date'] = pd.to_datetime(df['Date'], format='%d/%b/%Y', errors='coerce')
+        except Exception as e:
+            st.error(f"Date conversion error: {e}")
+        
+        # Remove duplicates
+        df_before = len(df)
+        df = df.drop_duplicates()
+        df_after = len(df)
+        
+        if df_before > df_after:
+            st.info(f"Removed {df_before - df_after} duplicate transactions.")
+        
+        st.success(f"✅ Successfully extracted {len(df)} transactions from NCB PDF.")
+        return df
+        
+    except Exception as e:
+        st.error(f"NCB PDF Processing Error: {str(e)}")
+        import traceback
+        st.error(f"Details: {traceback.format_exc()}")
+        return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
+
+
+def extract_from_pdf(pdf_file):
+    """
+    Enhanced PDF extraction - routes to bank-specific processor
+    """
+    try:
+        # First, try to detect the bank type
+        with pdfplumber.open(pdf_file) as pdf:
+            first_page_text = pdf.pages[0].extract_text() if pdf.pages else ""
+            
+            # Check if it's an NCB statement
+            if any(keyword in first_page_text.upper() for keyword in ['NCB', 'NATIONAL COMMERCIAL BANK', 'JAMAICA']):
+                # Reset file pointer
+                pdf_file.seek(0)
+                return process_pdf_ncb(pdf_file)
+        
+        # Reset file pointer for generic processing
+        pdf_file.seek(0)
+        
+        # Fallback to generic processing (your original code)
         data = []
         with pdfplumber.open(pdf_file) as pdf:
             for page in pdf.pages:
@@ -499,27 +664,20 @@ def extract_from_pdf(pdf_file):
                 
                 lines = text.split('\n')
                 for line in lines:
-                    # Look for transaction patterns in NCB statements
-                    # Typical format: DATE DESCRIPTION AMOUNT TYPE
                     parts = line.split()
                     
                     if len(parts) >= 3:
                         try:
-                            # Try to find date (usually first element)
                             date_str = parts[0]
-                            
-                            # Try to find amount (usually has numbers and possibly J$, -, commas)
                             amount = None
                             trans_type = None
                             
                             for i in range(len(parts)-1, -1, -1):
                                 part = parts[i]
-                                # Check if this might be transaction type
                                 if part.upper() in ['CR', 'DR', 'CREDIT', 'DEBIT']:
                                     trans_type = part.upper()
                                     continue
                                 
-                                # Check if this might be amount
                                 cleaned = part.replace('J$', '').replace('$', '').replace(',', '').replace('-', '').strip()
                                 try:
                                     amount = float(cleaned)
@@ -529,14 +687,12 @@ def extract_from_pdf(pdf_file):
                                     continue
                             
                             if amount is not None:
-                                # Description is everything between date and amount
                                 description = ' '.join(parts[1:amount_index])
                                 
-                                # Determine category
                                 if trans_type:
                                     category = 'Credit' if trans_type in ['CR', 'CREDIT'] else 'Debit'
                                 else:
-                                    category = 'Debit'  # Default to Debit
+                                    category = 'Debit'
                                 
                                 data.append({
                                     'Date': date_str,
@@ -551,11 +707,15 @@ def extract_from_pdf(pdf_file):
             df = pd.DataFrame(data)
             return df
         else:
+            st.warning("Could not extract transactions from PDF. The format may not be supported.")
             return pd.DataFrame()
             
     except Exception as e:
         st.error(f"PDF extraction error: {e}")
+        import traceback
+        st.error(f"Traceback: {traceback.format_exc()}")
         return pd.DataFrame()
+
         
 def process_dataframe(df):
     """Process and standardize dataframe"""
