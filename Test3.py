@@ -997,6 +997,11 @@ def standardize_dataframe_columns(df):
     """Standardize column names from different bank formats"""
     import numpy as np
     
+    # DEBUG: Log initial state
+    print(f"DEBUG: Input DataFrame shape: {df.shape}")
+    print(f"DEBUG: Input columns: {list(df.columns)}")
+    print(f"DEBUG: DataFrame type: {type(df)}")
+    
     # Make a copy to avoid modifying the original dataframe
     df = df.copy()
     
@@ -1007,7 +1012,7 @@ def standardize_dataframe_columns(df):
         'transaction description': 'Description',
         'details': 'Description',
         'narrative': 'Description',
-        'particulars': 'Description',
+        'particulars': 'Particulars',
         
         'amount': 'Amount',
         'transaction amount': 'Amount',
@@ -1029,6 +1034,8 @@ def standardize_dataframe_columns(df):
     df.columns = df.columns.str.lower().str.strip()
     df = df.rename(columns=column_mappings)
     
+    print(f"DEBUG: After rename columns: {list(df.columns)}")
+    
     # Ensure required columns exist
     if 'Description' not in df.columns:
         if len(df.columns) >= 2:
@@ -1036,29 +1043,71 @@ def standardize_dataframe_columns(df):
         else:
             df['Description'] = 'Unknown'
     
-    # Handle Amount column - NUCLEAR OPTION - CREATE FROM SCRATCH
+    # Handle Amount column - WITH EXTENSIVE DEBUGGING
     amount_values = None
     
     if 'Amount' in df.columns:
-        # Amount column exists, extract its values
-        amount_values = df['Amount'].values
+        print(f"DEBUG: Amount column exists")
+        print(f"DEBUG: Amount column type: {type(df['Amount'])}")
+        print(f"DEBUG: Amount dtype: {df['Amount'].dtype if hasattr(df['Amount'], 'dtype') else 'N/A'}")
+        print(f"DEBUG: First 3 Amount values: {df['Amount'].head(3).tolist() if hasattr(df['Amount'], 'head') else df['Amount']}")
+        
+        # Extract values safely
+        try:
+            amount_values = df['Amount'].values
+            print(f"DEBUG: Extracted amount_values type: {type(amount_values)}")
+            print(f"DEBUG: amount_values shape: {amount_values.shape if hasattr(amount_values, 'shape') else 'N/A'}")
+            # Flatten immediately if needed
+            if hasattr(amount_values, 'shape') and len(amount_values.shape) > 1:
+                amount_values = amount_values.flatten()
+                print(f"DEBUG: Flattened to shape: {amount_values.shape}")
+        except Exception as e:
+            print(f"DEBUG: Error extracting values: {e}")
+            # Fallback: convert to list then to array
+            amount_values = np.array(df['Amount'].tolist()).flatten()
+        
         # Drop the old column
         df = df.drop(columns=['Amount'])
     else:
+        print(f"DEBUG: Amount column does NOT exist")
         # Try to find a numeric column
         numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        print(f"DEBUG: Numeric columns found: {numeric_cols}")
+        
         if len(numeric_cols) > 0:
-            # Get values from first numeric column
             amount_values = df[numeric_cols[0]].values
+            print(f"DEBUG: Using numeric column: {numeric_cols[0]}")
         else:
-            # No numeric columns, create zeros
+            print(f"DEBUG: No numeric columns, creating zeros")
             amount_values = np.zeros(len(df))
     
-    # Now create a fresh Amount column from the values
+    print(f"DEBUG: Final amount_values type: {type(amount_values)}")
+    print(f"DEBUG: Final amount_values dtype: {amount_values.dtype if hasattr(amount_values, 'dtype') else 'N/A'}")
+    print(f"DEBUG: amount_values shape: {amount_values.shape if hasattr(amount_values, 'shape') else 'N/A'}")
+    
+    # Flatten the array if it's multi-dimensional
+    if hasattr(amount_values, 'shape') and len(amount_values.shape) > 1:
+        print(f"DEBUG: Flattening multi-dimensional array")
+        amount_values = amount_values.flatten()
+    
+    # Create fresh Amount column
     df['Amount'] = amount_values
     
-    # Convert to numeric (now we're sure it's a proper Series)
-    df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0)
+    print(f"DEBUG: After creating new Amount column")
+    print(f"DEBUG: df['Amount'] type: {type(df['Amount'])}")
+    print(f"DEBUG: df['Amount'] dtype: {df['Amount'].dtype if hasattr(df['Amount'], 'dtype') else 'N/A'}")
+    
+    # Convert to numeric - with detailed error handling
+    try:
+        df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce')
+        print(f"DEBUG: pd.to_numeric succeeded")
+    except Exception as e:
+        print(f"DEBUG: pd.to_numeric FAILED with error: {type(e).__name__}: {e}")
+        # Emergency fallback: iterate and convert
+        df['Amount'] = df['Amount'].apply(lambda x: float(x) if pd.notna(x) else 0.0)
+        print(f"DEBUG: Used emergency fallback conversion")
+    
+    df['Amount'] = df['Amount'].fillna(0)
     
     # Handle Date column
     if 'Date' not in df.columns:
@@ -1069,17 +1118,15 @@ def standardize_dataframe_columns(df):
     
     # Handle Category column
     if 'Category' not in df.columns:
-        # Determine category based on amount sign
-        # Use vectorized operation for better performance
-        df['Category'] = 'Debit'  # Default value
+        df['Category'] = 'Debit'
         df.loc[df['Amount'] >= 0, 'Category'] = 'Credit'
         df.loc[df['Amount'] < 0, 'Category'] = 'Debit'
-        
-        # Make all amounts positive
         df['Amount'] = df['Amount'].abs()
     else:
-        # If Category exists, still ensure Amount is positive
         df['Amount'] = df['Amount'].abs()
+    
+    print(f"DEBUG: Function completed successfully")
+    print(f"DEBUG: Output columns: {list(df.columns)}")
     
     return df
     
