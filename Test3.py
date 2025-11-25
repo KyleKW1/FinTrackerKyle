@@ -851,20 +851,17 @@ def standardize_dataframe_columns(df):
 
 def process_dataframe(df):
     """Process and standardize dataframe - preserves Category from CSV/PDF parsers"""
-    print(f"\n📊 DEBUG: Before standardization")
-    print(f"   Columns: {list(df.columns)}")
-    if 'Category' in df.columns:
-        print(f"   Category counts: {df['Category'].value_counts().to_dict()}")
+    # This function is now mostly handled in load_all_user_data
+    # Keeping it for backwards compatibility
     
-    # Standardize column names - this will preserve valid Category columns
-    df = standardize_dataframe_columns(df)
+    if df.empty:
+        return df
     
-    print(f"\n📊 DEBUG: After standardization")
-    print(f"   Columns: {list(df.columns)}")
-    if 'Category' in df.columns:
-        print(f"   Category counts: {df['Category'].value_counts().to_dict()}")
+    # Standardize column names if not already done
+    if 'Date' not in df.columns or 'Amount' not in df.columns:
+        df = standardize_dataframe_columns(df)
     
-    # Convert Date column
+    # Add date-based columns
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
         df = df.dropna(subset=['Date'])
@@ -872,7 +869,7 @@ def process_dataframe(df):
         df['Month-Year'] = df['Date'].dt.strftime('%B %Y')
         df['YearMonth'] = df['Date'].dt.strftime('%Y-%m')
     
-    # Amount is already numeric and positive from standardize_dataframe_columns
+    # Ensure Amount is numeric
     if 'Amount' in df.columns:
         df = df.dropna(subset=['Amount'])
         df['Amount'] = df['Amount'].astype(float)
@@ -882,7 +879,6 @@ def process_dataframe(df):
         df['Description'] = df['Description'].astype(str).fillna('Unknown')
     
     return df
-
 
 def load_all_user_data(user_id):
     """Load all user data with caching and proper file type detection"""
