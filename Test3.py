@@ -1604,18 +1604,19 @@ def show_spending_analysis():
     
     # Load preferences
     user_prefs = get_user_preferences(st.session_state.user['id'])
-    
+
     default_mapping = {
-        "Food": ["juici", "kfc", "restaurant", "burger", "pizza", "subway", "mcdonald", "starbucks", "diner", "grill", "v.o.d.a. foods", "cafe blue", "tutti frutti", "popeyesohr", "ribbiz lounge", "beifang kitchen"],
-        "Grocery": ["hi-lo", "supermarket", "wholesale", "grocery", "market", "walmart", "costco", "shoppers fair"],
-        "Utilities": ["jps", "nwc", "flow", "internet", "light", "water", "electric", "cable", "wifi", "BPYMT"],
-        "Transport": ["uber", "taxi", "gas", "shell", "parking", "lyft", "bus"],
-        "Income": ["remitly", "deposit", "transfer", "payroll", "salary", "refund", "ELink TRF-FR"],
+        "Food": ["juici", "juici patties", "juici beef", "kfc", "restaurant", "burger", "pizza", "subway", "mcdonald", "starbucks", "diner", "grill", "v.o.d.a. foods", "cafe blue", "tutti frutti", "popeyesohr", "ribbiz lounge", "beifang kitchen", "japanese chopstick", "coffee traders", "tim hortons"],
+        "Grocery": ["hi-lo", "supermarket", "wholesale", "grocery", "market", "walmart", "costco", "shoppers fair", "progressive foods", "andrea's grocery"],
+        "Utilities": ["jps", "nwc", "flow", "internet", "light", "water", "electric", "cable", "wifi", "bpymt", "bill payment", "mobile service"],
+        "Transport": ["uber", "ubr", "taxi", "gas", "shell", "parking", "lyft", "bus", "knutsford express"],
+        "Income": ["remitly", "deposit", "transfer", "payroll", "salary", "refund", "elink trf-fr", "ach university sal", "interest", "int.pd", "ncbcm online", "rev bill payment", "failed visa debit", "visa debit txn fee", "visa debit txn gct"],
         "Home Improvement": ["lumber depot limited", "ping's fabric"],
-        "Retail & Entertainment": ["boss destinations", "n k wholesale liquor stor", "digicel ding"],
-        "Miscellaneous": ["atm", "fee", "charge", "GCT"],
-        "Other": ["ELink TRF-To"]
+        "Retail & Entertainment": ["boss destinations", "n k wholesale liquor stor", "digicel ding", "toronto duty free", "macys", "macys.com", "hm.com", "bumble", "japanese chopstick", "kingsim enterprises", "myperfectresume"],
+        "Miscellaneous": ["atm", "abm", "fee", "charge", "gct", "pos tx fee", "funds transfer fee", "rtgs service charge", "abm tx fee", "decline trxn fee", "decline fee", "pos card verification test", "nb txn fee", "nb gct fee"],
+        "Other": ["elink trf-to", "wtax", "rtgs", "community pha", "abm withdrawal", "cash deposit"]
     }
+
     
     default_budgets = {
         "Food": 15000,
