@@ -941,11 +941,21 @@ def load_all_user_data(user_id):
                     print(f"   ⚠️ Unsupported file type: {file_type}")
                     continue
                 
+                # **CRITICAL FIX: Validate and clean data BEFORE adding to list**
                 if not df.empty:
-                    print(f"   ✅ Loaded {len(df)} transactions")
-                    if 'Category' in df.columns:
-                        print(f"   Category breakdown: {df['Category'].value_counts().to_dict()}")
-                    all_data.append(df)
+                    # Remove rows with invalid data
+                    df = df[df['Amount'] > 0]  # Remove zero amounts
+                    df = df[df['Description'].notna()]  # Remove null descriptions
+                    df = df[df['Description'] != 'nan']  # Remove string 'nan'
+                    df = df[df['Description'].str.strip() != '']  # Remove empty descriptions
+                    
+                    if not df.empty:
+                        print(f"   ✅ Loaded {len(df)} valid transactions")
+                        if 'Category' in df.columns:
+                            print(f"   Category breakdown: {df['Category'].value_counts().to_dict()}")
+                        all_data.append(df)
+                    else:
+                        print(f"   ⚠️ No valid transactions after cleaning")
                 else:
                     print(f"   ⚠️ No data extracted")
                     
@@ -969,10 +979,15 @@ def load_all_user_data(user_id):
         # Process the combined dataframe
         result = process_dataframe(result)
         
-        # **FIX: Remove duplicate columns**
+        # **Remove duplicate columns**
         result = result.loc[:, ~result.columns.duplicated()]
         
+        # **Final cleanup: Remove any remaining invalid rows**
+        result = result[result['Amount'] > 0]
+        result = result[result['Description'].notna()]
+        
         print(f"📊 Final columns: {list(result.columns)}")
+        print(f"📊 Final row count: {len(result)}")
         
         return result
         
@@ -980,7 +995,6 @@ def load_all_user_data(user_id):
         st.error(f"Error loading data: {e}")
         connection.close()
         return pd.DataFrame()
-
 
 
 def get_user_preferences(user_id):
