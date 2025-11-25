@@ -1047,7 +1047,15 @@ def standardize_dataframe_columns(df):
     
     if 'Category' not in df.columns:
         # Determine category based on amount sign
-        df['Category'] = df['Amount'].apply(lambda x: 'Credit' if x >= 0 else 'Debit')
+        # Ensure Amount is numeric and handle NaN values
+        df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0)
+        
+        # Use vectorized operation instead of apply for better performance and avoid comparison issues
+        df['Category'] = 'Debit'  # Default
+        df.loc[df['Amount'] >= 0, 'Category'] = 'Credit'
+        df.loc[df['Amount'] < 0, 'Category'] = 'Debit'
+        
+        # Make all amounts positive
         df['Amount'] = df['Amount'].abs()
     
     return df
