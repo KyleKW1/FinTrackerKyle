@@ -1160,11 +1160,28 @@ def standardize_dataframe_columns(df):
     # Ensure Amount is positive
     df['Amount'] = df['Amount'].abs()
     
+    # Ensure Amount is a proper 1D Series
+    if 'Amount' in df.columns:
+        # Flatten if needed and ensure it's numeric
+        if isinstance(df['Amount'], pd.DataFrame):
+            df['Amount'] = df['Amount'].iloc[:, 0]
+        df['Amount'] = pd.Series(df['Amount'].values.flatten())
+    
     # Handle Category
     if 'Category' not in df.columns:
-        # Create Category column - use numpy where for vectorized operation
+        # Create Category column - simple approach using list of values
         import numpy as np
-        df['Category'] = np.where(df['Amount'] >= 0, 'Credit', 'Debit')
+        amounts = df['Amount'].values
+        categories = []
+        for amt in amounts:
+            try:
+                if float(amt) >= 0:
+                    categories.append('Credit')
+                else:
+                    categories.append('Debit')
+            except (ValueError, TypeError):
+                categories.append('Debit')
+        df['Category'] = categories
     
     return df
     
