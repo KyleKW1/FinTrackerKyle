@@ -605,7 +605,7 @@ def process_pdf_ncb(file, debug=False):
         df = df.drop_duplicates(subset=['Date', 'Description', 'Amount'], keep='first')
         df_after = len(df)
         
-        if df_before > df_after:
+        #if df_before > df_after:
            # st.info(f"Removed {df_before - df_after} duplicate transactions.")
         
         st.success(f"✅ Successfully extracted {len(df)} transactions from NCB PDF.")
