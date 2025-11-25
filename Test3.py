@@ -941,50 +941,73 @@ def load_all_user_data(user_id):
                     print(f"   ⚠️ Unsupported file type: {file_type}")
                     continue
                 
-                # **CRITICAL FIX: Validate and clean data BEFORE adding to list**
+                # **FIX: Process each file individually BEFORE validation**
                 if not df.empty:
-                    # Remove rows with invalid data
-                    df = df[df['Amount'] > 0]  # Remove zero amounts
-                    df = df[df['Description'].notna()]  # Remove null descriptions
-                    df = df[df['Description'] != 'nan']  # Remove string 'nan'
-                    df = df[df['Description'].str.strip() != '']  # Remove empty descriptions
+                    # Standardize columns first
+                    df = standardize_dataframe_columns(df)
                     
-                    if not df.empty:
-                        print(f"   ✅ Loaded {len(df)} valid transactions")
-                        if 'Category' in df.columns:
-                            print(f"   Category breakdown: {df['Category'].value_counts().to_dict()}")
-                        all_data.append(df)
+                    # Now we can safely validate
+                    if 'Amount' in df.columns and 'Description' in df.columns:
+                        initial_count = len(df)
+                        
+                        # Remove rows with invalid data
+                        df = df[df['Amount'] > 0]  # Remove zero amounts
+                        df = df[df['Description'].notna()]  # Remove null descriptions
+                        df = df[~df['Description'].isin(['nan', 'NaN', 'None'])]  # Remove string 'nan'
+                        df = df[df['Description'].astype(str).str.strip() != '']  # Remove empty descriptions
+                        
+                        removed = initial_count - len(df)
+                        if removed > 0:
+                            print(f"   🧹 Cleaned {removed} invalid rows")
+                        
+                        if not df.empty:
+                            print(f"   ✅ Loaded {len(df)} valid transactions")
+                            if 'Category' in df.columns:
+                                print(f"   Category breakdown: {df['Category'].value_counts().to_dict()}")
+                            all_data.append(df)
+                        else:
+                            print(f"   ⚠️ No valid transactions after cleaning")
                     else:
-                        print(f"   ⚠️ No valid transactions after cleaning")
+                        print(f"   ⚠️ Missing required columns after standardization")
                 else:
                     print(f"   ⚠️ No data extracted")
                     
             except Exception as e:
                 print(f"   ❌ Error: {str(e)}")
+                import traceback
+                print(traceback.format_exc())
                 st.warning(f"Error processing {filename}: {str(e)}")
                 continue
         
         if not all_data:
+            st.info("No valid data found in uploaded files.")
             return pd.DataFrame()
         
         print(f"\n🔗 Concatenating {len(all_data)} dataframes...")
         
-        # Concatenate all data
+        # Concatenate all data (already standardized)
         result = pd.concat(all_data, ignore_index=True)
         
         print(f"✅ Combined data: {len(result)} total transactions")
         if 'Category' in result.columns:
             print(f"   Final Category breakdown: {result['Category'].value_counts().to_dict()}")
         
-        # Process the combined dataframe
-        result = process_dataframe(result)
+        # Add date-based columns
+        if 'Date' in result.columns:
+            result['Date'] = pd.to_datetime(result['Date'], errors='coerce')
+            result = result.dropna(subset=['Date'])
+            result['Month-Name'] = result['Date'].dt.month_name()
+            result['Month-Year'] = result['Date'].dt.strftime('%B %Y')
+            result['YearMonth'] = result['Date'].dt.strftime('%Y-%m')
         
-        # **Remove duplicate columns**
+        # Remove duplicate columns
         result = result.loc[:, ~result.columns.duplicated()]
         
-        # **Final cleanup: Remove any remaining invalid rows**
-        result = result[result['Amount'] > 0]
-        result = result[result['Description'].notna()]
+        # Final cleanup
+        if 'Amount' in result.columns:
+            result = result[result['Amount'] > 0]
+        if 'Description' in result.columns:
+            result = result[result['Description'].notna()]
         
         print(f"📊 Final columns: {list(result.columns)}")
         print(f"📊 Final row count: {len(result)}")
@@ -995,7 +1018,6 @@ def load_all_user_data(user_id):
         st.error(f"Error loading data: {e}")
         connection.close()
         return pd.DataFrame()
-
 
 def get_user_preferences(user_id):
     """Get user preferences"""
