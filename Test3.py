@@ -606,14 +606,14 @@ def process_pdf_ncb(file, debug=False):
         df_after = len(df)
         
         if df_before > df_after:
-            st.info(f"Removed {df_before - df_after} duplicate transactions.")
+           # st.info(f"Removed {df_before - df_after} duplicate transactions.")
         
         st.success(f"✅ Successfully extracted {len(df)} transactions from NCB PDF.")
         
         if len(df) > 0:
             credit_count = len(df[df['Category'] == 'Credit'])
             debit_count = len(df[df['Category'] == 'Debit'])
-            st.info(f"📊 **Breakdown:** {credit_count} Credits | {debit_count} Debits")
+            #st.info(f"📊 **Breakdown:** {credit_count} Credits | {debit_count} Debits")
         
         return df
         
