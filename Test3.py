@@ -1162,9 +1162,8 @@ def standardize_dataframe_columns(df):
     
     # Handle Category
     if 'Category' not in df.columns:
-        # Use vectorized operation instead of apply
-        df['Category'] = 'Debit'
-        df.loc[df['Amount'] >= 0, 'Category'] = 'Credit'
+        # Create Category column based on Amount
+        df['Category'] = ['Credit' if amt >= 0 else 'Debit' for amt in df['Amount']]
     
     return df
     
