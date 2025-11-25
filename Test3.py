@@ -995,6 +995,9 @@ def enhanced_main_app():
 
 def standardize_dataframe_columns(df):
     """Standardize column names from different bank formats"""
+    # Make a copy to avoid modifying the original dataframe
+    df = df.copy()
+    
     # Common column name mappings
     column_mappings = {
         'description': 'Description',
@@ -1031,31 +1034,38 @@ def standardize_dataframe_columns(df):
         else:
             df['Description'] = 'Unknown'
     
+    # Handle Amount column - THIS IS THE KEY FIX
     if 'Amount' not in df.columns:
         # Try to find a numeric column
         numeric_cols = df.select_dtypes(include=['number']).columns
         if len(numeric_cols) > 0:
-            df['Amount'] = df[numeric_cols[0]]
+            df['Amount'] = df[numeric_cols[0]].copy()
         else:
-            df['Amount'] = 0
+            # Create a Series of zeros, not a scalar
+            df['Amount'] = pd.Series([0] * len(df), index=df.index)
     
+    # Now safely convert Amount to numeric (it's guaranteed to be a Series)
+    df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0)
+    
+    # Handle Date column
     if 'Date' not in df.columns:
         if len(df.columns) >= 1:
             df['Date'] = pd.to_datetime(df.iloc[:, 0], errors='coerce')
         else:
             df['Date'] = pd.Timestamp.now()
     
+    # Handle Category column
     if 'Category' not in df.columns:
         # Determine category based on amount sign
-        # Ensure Amount is numeric and handle NaN values
-        df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0)
-        
-        # Use vectorized operation instead of apply for better performance and avoid comparison issues
-        df['Category'] = 'Debit'  # Default
+        # Use vectorized operation for better performance
+        df['Category'] = 'Debit'  # Default value
         df.loc[df['Amount'] >= 0, 'Category'] = 'Credit'
         df.loc[df['Amount'] < 0, 'Category'] = 'Debit'
         
         # Make all amounts positive
+        df['Amount'] = df['Amount'].abs()
+    else:
+        # If Category exists, still ensure Amount is positive
         df['Amount'] = df['Amount'].abs()
     
     return df
