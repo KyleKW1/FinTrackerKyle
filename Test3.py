@@ -1049,8 +1049,11 @@ def standardize_dataframe_columns(df):
     if 'Amount' in df.columns:
         print(f"DEBUG: Amount column exists")
         print(f"DEBUG: Amount column type: {type(df['Amount'])}")
-        print(f"DEBUG: Amount dtype: {df['Amount'].dtype if hasattr(df['Amount'], 'dtype') else 'N/A'}")
-        print(f"DEBUG: First 3 Amount values: {df['Amount'].head(3).tolist() if hasattr(df['Amount'], 'head') else df['Amount']}")
+        try:
+            print(f"DEBUG: Amount dtype: {df['Amount'].dtype}")
+            print(f"DEBUG: First 3 Amount values: {df['Amount'].iloc[:3].tolist()}")
+        except Exception as e:
+            print(f"DEBUG: Could not get Amount details: {e}")
         
         # Extract values safely
         try:
