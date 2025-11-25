@@ -489,15 +489,14 @@ def load_all_user_data(user_id):
 
 def parse_ncb_transaction_line(line, year):
     """Parse NCB transaction line: DD/Mon DESCRIPTION AMOUNT BALANCE"""
-    # Updated pattern to better capture negative amounts
-    pattern = r'(\d{2}/\w{3})\s+(.*?)\s+(-?\s?[\d,]+\.\d{2})\s+([\d,]+\.\d{2})$'
+    pattern = r'(\d{2}/\w{3})\s+(.*?)\s+(-?[\d,]+\.\d{2})\s+([\d,]+\.\d{2})$'
     match = re.search(pattern, line)
     
     if match:
         try:
             date_str = match.group(1)
             description = match.group(2).strip()
-            amount_str = match.group(3).replace(',', '').replace(' ', '')  # Remove commas AND spaces
+            amount_str = match.group(3).replace(',', '')
             
             full_date = f"{date_str}/{year}"
             amount = float(amount_str)
@@ -511,7 +510,7 @@ def parse_ncb_transaction_line(line, year):
                 category = 'Credit'
             
             return {'Date': full_date, 'Description': description, 'Amount': amount, 'Category': category}
-        except Exception as e:
+        except:
             return None
     return None
 
@@ -563,7 +562,7 @@ def process_pdf_ncb(file, debug=True):
                     skip_words = ['JAMAICA', 'REGULAR SAVINGS', 'CURRENT ACCOUNT', 'SAVINGS ACCOUNT', 
                                   'JMD', 'USD', 'P.O.', 'NATIONAL COMMERCIAL BANK', 'STATEMENT', 
                                   'BALANCE', 'DATE', 'DESCRIPTION', 'WITHDRAWALS', 'DEPOSITS', 
-                                  'PAGE', 'MANDEVILLE', 'MANCHESTER', 'PARTICULARS', 'AMOUNT']
+                                  'PAGE', 'MANDEVILLE', 'MANCHESTER']
                     
                     if any(word in line.upper() for word in skip_words):
                         continue
@@ -585,28 +584,18 @@ def process_pdf_ncb(file, debug=True):
                         transactions.append(parsed)
         
         if debug and all_lines:
-            with st.expander("🔍 DEBUG: Sample PDF Lines & Categories", expanded=True):
+            with st.expander("🔍 DEBUG: Sample PDF Lines", expanded=True):
                 st.write(f"**Detected Year:** {year}")
                 st.write(f"**Total transactions found:** {len(transactions)}")
-                st.write("**Sample lines with parsing results:**")
-                for i, line in enumerate(all_lines[:40], 1):
+                st.write("**Sample lines:**")
+                for i, line in enumerate(all_lines[:30], 1):
                     if line.strip():
                         parsed = parse_ncb_transaction_line(line, year)
+                        prefix = "✅" if parsed else "  "
+                        status = ""
                         if parsed:
-                            prefix = "✅"
-                            # Show the raw amount string captured
-                            pattern = r'(\d{2}/\w{3})\s+(.*?)\s+(-?\s?[\d,]+\.\d{2})\s+([\d,]+\.\d{2})$'
-                            match = re.search(pattern, line)
-                            if match:
-                                raw_amount = match.group(3)
-                                cat_emoji = "💰" if parsed['Category'] == 'Credit' else "💸"
-                                status = f" → RAW:[{raw_amount}] → {cat_emoji} {parsed['Category']} J${parsed['Amount']:,.2f}"
-                            else:
-                                status = f" → {parsed['Category']} J${parsed['Amount']:,.2f}"
-                        else:
-                            prefix = "❌"
-                            status = " → NOT PARSED"
-                        st.code(f"{prefix} Line {i}: {line}{status}", language=None)
+                            status = f" → {parsed['Category']} J${parsed['Amount']:,.2f}"
+                        st.code(f"{prefix} {i}: {line}{status}", language=None)
         
         if not transactions:
             st.warning("No transactions found in NCB PDF file.")
@@ -614,10 +603,6 @@ def process_pdf_ncb(file, debug=True):
         
         df = pd.DataFrame(transactions)
         df['Date'] = pd.to_datetime(df['Date'], format='%d/%b/%Y', errors='coerce')
-        
-        # Remove any duplicate Category columns before deduplication
-        if 'category' in df.columns and 'Category' in df.columns:
-            df = df.drop(columns=['category'])
         
         df_before = len(df)
         df = df.drop_duplicates()
@@ -631,10 +616,7 @@ def process_pdf_ncb(file, debug=True):
         
         credit_count = len(df[df['Category'] == 'Credit'])
         debit_count = len(df[df['Category'] == 'Debit'])
-        credit_total = df[df['Category'] == 'Credit']['Amount'].sum()
-        debit_total = df[df['Category'] == 'Debit']['Amount'].sum()
-        
-        st.info(f"📊 **Breakdown:** {credit_count} Credits (💰 J${credit_total:,.2f}) | {debit_count} Debits (💸 J${debit_total:,.2f})")
+        st.info(f"📊 **Breakdown:** {credit_count} Credits (money in) | {debit_count} Debits (money out)")
         
         return df
         
@@ -643,7 +625,7 @@ def process_pdf_ncb(file, debug=True):
         import traceback
         st.error(f"Details: {traceback.format_exc()}")
         return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
-
+        
 def extract_from_pdf(pdf_file):
     """Main PDF extraction function - routes to correct processor"""
     try:
