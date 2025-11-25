@@ -609,63 +609,6 @@ def enhanced_main_app():
 # ============================================
 
 def show_spending_analysis():
-@lru_cache(maxsize=1000)
-def classify_expense_cached(description, category_json):
-    """Cached version of expense classification"""
-    category_keywords = json.loads(category_json)
-    desc_lower = description.lower()
-    for category, keywords in category_keywords.items():
-        for keyword in keywords:
-            if keyword in desc_lower:
-                return category
-    return "Other"
-
-def send_email_alert(to_email, subject, body, sender_email, sender_password, smtp_server, smtp_port):
-    """Send email alerts"""
-    try:
-        msg = EmailMessage()
-        msg['Subject'] = subject
-        msg['From'] = sender_email
-        msg['To'] = to_email
-        msg.set_content(body)
-        
-        if smtp_port == 465:
-            with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
-                server.login(sender_email, sender_password)
-                server.send_message(msg)
-        else:
-            with smtplib.SMTP(smtp_server, smtp_port) as server:
-                server.starttls()
-                server.login(sender_email, sender_password)
-                server.send_message(msg)
-        
-        st.success("✅ Email alert sent successfully!")
-        return True
-    except Exception as e:
-        st.error(f"❌ Failed to send email: {e}")
-        return False
-
-def export_to_excel(df):
-    """Export dataframe to Excel"""
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Transactions')
-    return output.getvalue()
-
-def export_to_pdf(text):
-    """Export text to PDF"""
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    for line in text.split('\n'):
-        pdf.cell(200, 10, txt=line.encode('latin-1', 'replace').decode('latin-1'), ln=True)
-    return bytes(pdf.output())
-
-# ============================================
-# ENHANCED SPENDING ANALYSIS FUNCTION
-# ============================================
-
-def show_spending_analysis():
     """Enhanced spending analysis with full functionality"""
     st.markdown("<div class='content-container'>", unsafe_allow_html=True)
     st.markdown("### 📊 Spending Analysis")
