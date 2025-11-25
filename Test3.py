@@ -626,6 +626,23 @@ def process_pdf_ncb(file, debug=True):
         st.error(f"Details: {traceback.format_exc()}")
         return pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Category'])
         
+def process_csv(file_bytes):
+    """Process CSV file"""
+    try:
+        df = pd.read_csv(file_bytes)
+        
+        if df.empty:
+            st.warning("CSV file is empty.")
+            return pd.DataFrame()
+        
+        # The standardize and process functions will handle the rest
+        return df
+        
+    except Exception as e:
+        st.error(f"CSV processing error: {e}")
+        return pd.DataFrame()
+
+
 def extract_from_pdf(pdf_file):
     """Main PDF extraction function - routes to correct processor"""
     try:
