@@ -490,37 +490,73 @@ def load_all_user_data(user_id):
 def extract_from_pdf(pdf_file):
     """Extract transaction data from PDF"""
     try:
-        with pdfplumber.open(pdf_file) as pdf:
-            all_text = ""
-            for page in pdf.pages:
-                all_text += page.extract_text() + "\n"
-        
-        lines = all_text.split('\n')
         data = []
-        
-        for line in lines:
-            parts = line.split()
-            if len(parts) >= 3:
-                try:
-                    date_str = parts[0]
-                    description = ' '.join(parts[1:-2])
-                    amount = float(parts[-1].replace(',', '').replace('$', ''))
-                    category = 'Debit' if amount < 0 else 'Credit'
-                    
-                    data.append({
-                        'Date': date_str,
-                        'Description': description,
-                        'Amount': abs(amount),
-                        'Category': category
-                    })
-                except:
+        with pdfplumber.open(pdf_file) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text()
+                if not text:
                     continue
+                
+                lines = text.split('\n')
+                for line in lines:
+                    # Look for transaction patterns in NCB statements
+                    # Typical format: DATE DESCRIPTION AMOUNT TYPE
+                    parts = line.split()
+                    
+                    if len(parts) >= 3:
+                        try:
+                            # Try to find date (usually first element)
+                            date_str = parts[0]
+                            
+                            # Try to find amount (usually has numbers and possibly J$, -, commas)
+                            amount = None
+                            trans_type = None
+                            
+                            for i in range(len(parts)-1, -1, -1):
+                                part = parts[i]
+                                # Check if this might be transaction type
+                                if part.upper() in ['CR', 'DR', 'CREDIT', 'DEBIT']:
+                                    trans_type = part.upper()
+                                    continue
+                                
+                                # Check if this might be amount
+                                cleaned = part.replace('J$', '').replace('$', '').replace(',', '').replace('-', '').strip()
+                                try:
+                                    amount = float(cleaned)
+                                    amount_index = i
+                                    break
+                                except:
+                                    continue
+                            
+                            if amount is not None:
+                                # Description is everything between date and amount
+                                description = ' '.join(parts[1:amount_index])
+                                
+                                # Determine category
+                                if trans_type:
+                                    category = 'Credit' if trans_type in ['CR', 'CREDIT'] else 'Debit'
+                                else:
+                                    category = 'Debit'  # Default to Debit
+                                
+                                data.append({
+                                    'Date': date_str,
+                                    'Description': description,
+                                    'Amount': abs(amount),
+                                    'Category': category
+                                })
+                        except Exception as e:
+                            continue
         
-        return pd.DataFrame(data)
+        if data:
+            df = pd.DataFrame(data)
+            return df
+        else:
+            return pd.DataFrame()
+            
     except Exception as e:
         st.error(f"PDF extraction error: {e}")
         return pd.DataFrame()
-
+        
 def process_dataframe(df):
     """Process and standardize dataframe"""
     # Standardize column names first
