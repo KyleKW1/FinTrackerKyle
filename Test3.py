@@ -723,6 +723,10 @@ def standardize_dataframe_columns(df):
     """Standardize column names from different bank formats"""
     df = df.copy()
     
+    # If Category column already exists (from NCB PDF parser), preserve it!
+    has_category = 'Category' in df.columns
+    original_category = df['Category'].copy() if has_category else None
+    
     column_mappings = {
         'description': 'Description',
         'desc': 'Description',
@@ -748,6 +752,11 @@ def standardize_dataframe_columns(df):
     }
     
     df.columns = df.columns.str.lower().str.strip()
+    
+    # Remove 'category' from mappings if Category already exists
+    if has_category:
+        column_mappings = {k: v for k, v in column_mappings.items() if v != 'Category'}
+    
     df = df.rename(columns=column_mappings)
     
     if 'Description' not in df.columns:
@@ -762,7 +771,7 @@ def standardize_dataframe_columns(df):
         else:
             df['Date'] = pd.Timestamp.now()
     
-    # THE KEY FIX - use list comprehension instead of pd.to_numeric
+    # Handle Amount column
     if 'Amount' not in df.columns:
         numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
         if numeric_cols:
@@ -772,17 +781,38 @@ def standardize_dataframe_columns(df):
     else:
         df['Amount'] = [float(x) if pd.notna(x) else 0.0 for x in df['Amount']]
     
-    if 'Category' not in df.columns:
+    # CRITICAL: Restore original Category if it existed
+    if has_category and original_category is not None:
+        df['Category'] = original_category
+        print(f"DEBUG: Preserved original Category column from NCB parser")
+    elif 'Category' not in df.columns:
+        # Only create Category if it doesn't exist
         df['Category'] = ['Credit' if x >= 0 else 'Debit' for x in df['Amount']]
+        print(f"DEBUG: Created new Category column based on Amount")
     
+    # Ensure Amount is always positive
     df['Amount'] = df['Amount'].abs()
+    
+    # Remove any duplicate 'category' column (lowercase)
+    if 'category' in df.columns:
+        df = df.drop(columns=['category'])
+        print(f"DEBUG: Removed duplicate lowercase 'category' column")
     
     return df
 
+
 def process_dataframe(df):
     """Process and standardize dataframe"""
+    print(f"DEBUG: Before standardization - Columns: {list(df.columns)}")
+    if 'Category' in df.columns:
+        print(f"DEBUG: Category value counts BEFORE: \n{df['Category'].value_counts()}")
+    
     # Standardize column names first
     df = standardize_dataframe_columns(df)
+    
+    print(f"DEBUG: After standardization - Columns: {list(df.columns)}")
+    if 'Category' in df.columns:
+        print(f"DEBUG: Category value counts AFTER: \n{df['Category'].value_counts()}")
     
     # Convert Date column
     if 'Date' in df.columns:
@@ -795,7 +825,6 @@ def process_dataframe(df):
     # Amount is already numeric from standardize_dataframe_columns
     if 'Amount' in df.columns:
         df = df.dropna(subset=['Amount'])
-        # Just ensure it's float type (it should already be)
         df['Amount'] = df['Amount'].astype(float)
     
     # Ensure Description exists and is string
