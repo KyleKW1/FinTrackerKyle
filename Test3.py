@@ -1085,38 +1085,84 @@ def standardize_dataframe_columns(df):
         'desc': 'Description',
         'transaction description': 'Description',
         'details': 'Description',
+        'narrative': 'Narrative',
+        'particulars': 'Particulars',
+        
         'amount': 'Amount',
         'transaction amount': 'Amount',
         'value': 'Amount',
+        'debit': 'Amount',
+        'credit': 'Amount',
+        
         'date': 'Date',
         'transaction date': 'Date',
+        'posting date': 'Date',
+        'value date': 'Date',
+        
         'type': 'Category',
         'transaction type': 'Category',
+        'dr/cr': 'Category',
     }
     
+    # Normalize column names
     df.columns = df.columns.str.lower().str.strip()
     df = df.rename(columns=column_mappings)
     
+    # Handle Description
     if 'Description' not in df.columns:
-        df['Description'] = 'Unknown'
+        if len(df.columns) >= 2:
+            df['Description'] = df.iloc[:, 1].astype(str)
+        else:
+            df['Description'] = 'Unknown'
     
+    # Handle Date
     if 'Date' not in df.columns:
-        df['Date'] = pd.Timestamp.now()
+        if len(df.columns) >= 1:
+            df['Date'] = pd.to_datetime(df.iloc[:, 0], errors='coerce')
+        else:
+            df['Date'] = pd.Timestamp.now()
     
-    # THE KEY FIX - use list comprehension instead of pd.to_numeric
+    # THE KEY FIX - Handle Amount with proper error handling
     if 'Amount' not in df.columns:
+        # Find numeric columns
         numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
         if numeric_cols:
-            df['Amount'] = [float(x) if pd.notna(x) else 0.0 for x in df[numeric_cols[0]]]
+            df['Amount'] = df[numeric_cols[0]].apply(lambda x: float(x) if pd.notna(x) else 0.0)
         else:
-            df['Amount'] = [0.0] * len(df)
+            # Try to find a column that might contain amounts
+            for col in df.columns:
+                try:
+                    # Attempt conversion to see if it's numeric
+                    test_series = pd.to_numeric(df[col].astype(str).str.replace(r'[^\d.-]', '', regex=True), errors='coerce')
+                    if test_series.notna().sum() > len(df) * 0.5:  # If more than 50% are valid numbers
+                        df['Amount'] = test_series.fillna(0.0).abs()
+                        break
+                except:
+                    continue
+            else:
+                # If no numeric column found, set to 0
+                df['Amount'] = 0.0
     else:
-        df['Amount'] = [float(x) if pd.notna(x) else 0.0 for x in df['Amount']]
+        # Amount column exists but may need cleaning
+        def safe_float_convert(x):
+            try:
+                if pd.isna(x):
+                    return 0.0
+                # Remove currency symbols and commas
+                if isinstance(x, str):
+                    x = x.replace('$', '').replace(',', '').replace('J', '').strip()
+                return float(x)
+            except (ValueError, TypeError):
+                return 0.0
+        
+        df['Amount'] = df['Amount'].apply(safe_float_convert)
     
-    if 'Category' not in df.columns:
-        df['Category'] = ['Credit' if x >= 0 else 'Debit' for x in df['Amount']]
-    
+    # Ensure Amount is positive
     df['Amount'] = df['Amount'].abs()
+    
+    # Handle Category
+    if 'Category' not in df.columns:
+        df['Category'] = df['Amount'].apply(lambda x: 'Credit' if x >= 0 else 'Debit')
     
     return df
     
