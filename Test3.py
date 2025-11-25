@@ -885,11 +885,11 @@ def load_all_user_data(user_id):
                                 else:
                                     print("   Processing as generic PDF")
                                     file_bytes.seek(0)
-                                    df = process_pdf(file_bytes)
+                                    df = extract_from_pdf(file_bytes)
                         except:
                             print("   Fallback to generic PDF processing")
                             file_bytes.seek(0)
-                            df = process_pdf(file_bytes)
+                            df = extract_from_pdf(file_bytes)
                             
                 elif file_type == 'csv':
                     print("   Processing as CSV")
