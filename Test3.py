@@ -1035,14 +1035,17 @@ def standardize_dataframe_columns(df):
         'value': 'Amount',
         'debit': 'Amount',
         'credit': 'Amount',
+        'total amount': 'Amount',
         
         'date': 'Date',
         'transaction date': 'Date',
         'posting date': 'Date',
         'value date': 'Date',
+        'trans date': 'Date',
         
         'type': 'Category',
         'transaction type': 'Category',
+        'trans type': 'Category',
         'dr/cr': 'Category',
     }
     
@@ -1064,33 +1067,27 @@ def standardize_dataframe_columns(df):
         else:
             df['Date'] = pd.Timestamp.now()
     
-    # THE KEY FIX - Handle Amount with proper error handling
+    # Handle Amount
     if 'Amount' not in df.columns:
-        # Find numeric columns
         numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
         if numeric_cols:
             df['Amount'] = df[numeric_cols[0]].apply(lambda x: float(x) if pd.notna(x) else 0.0)
         else:
-            # Try to find a column that might contain amounts
             for col in df.columns:
                 try:
-                    # Attempt conversion to see if it's numeric
                     test_series = pd.to_numeric(df[col].astype(str).str.replace(r'[^\d.-]', '', regex=True), errors='coerce')
-                    if test_series.notna().sum() > len(df) * 0.5:  # If more than 50% are valid numbers
+                    if test_series.notna().sum() > len(df) * 0.5:
                         df['Amount'] = test_series.fillna(0.0).abs()
                         break
                 except:
                     continue
             else:
-                # If no numeric column found, set to 0
                 df['Amount'] = 0.0
     else:
-        # Amount column exists but may need cleaning
         def safe_float_convert(x):
             try:
                 if pd.isna(x):
                     return 0.0
-                # Remove currency symbols and commas
                 if isinstance(x, str):
                     x = x.replace('$', '').replace(',', '').replace('J', '').strip()
                 return float(x)
@@ -1102,28 +1099,24 @@ def standardize_dataframe_columns(df):
     # Ensure Amount is positive
     df['Amount'] = df['Amount'].abs()
     
-    # Ensure Amount is a proper 1D Series
-    if 'Amount' in df.columns:
-        # Flatten if needed and ensure it's numeric
-        if isinstance(df['Amount'], pd.DataFrame):
-            df['Amount'] = df['Amount'].iloc[:, 0]
-        df['Amount'] = pd.Series(df['Amount'].values.flatten())
-    
-    # Handle Category
-    if 'Category' not in df.columns:
-        # Create Category column - simple approach using list of values
-        import numpy as np
-        amounts = df['Amount'].values
-        categories = []
-        for amt in amounts:
-            try:
-                if float(amt) >= 0:
-                    categories.append('Credit')
-                else:
-                    categories.append('Debit')
-            except (ValueError, TypeError):
-                categories.append('Debit')
-        df['Category'] = categories
+    # Handle Category - use trans type if it exists
+    if 'Category' in df.columns:
+        # Map the values from trans type
+        def map_category(val):
+            if pd.isna(val):
+                return 'Debit'
+            val_str = str(val).upper().strip()
+            if val_str in ['CR', 'CREDIT', 'C', 'DEP', 'DEPOSIT']:
+                return 'Credit'
+            elif val_str in ['DR', 'DEBIT', 'D', 'WD', 'WITHDRAWAL']:
+                return 'Debit'
+            else:
+                return 'Debit'
+        
+        df['Category'] = df['Category'].apply(map_category)
+    else:
+        # No category column, use amount-based logic
+        df['Category'] = df['Amount'].apply(lambda x: 'Credit' if x >= 0 else 'Debit')
     
     return df
     
