@@ -797,19 +797,51 @@ def standardize_dataframe_columns(df):
         else:
             df['Date'] = pd.Timestamp.now()
     
-    # Handle Amount column
+    # Handle Amount column - IMPROVED VERSION
     if 'Amount' not in df.columns:
         numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
         if numeric_cols:
-            df['Amount'] = [float(x) if pd.notna(x) else 0.0 for x in df[numeric_cols[0]]]
+            df['Amount'] = df[numeric_cols[0]]
         else:
-            df['Amount'] = [0.0] * len(df)
-    else:
-        df['Amount'] = [float(x) if pd.notna(x) else 0.0 for x in df['Amount']]
+            df['Amount'] = 0.0
+    
+    # Clean and convert Amount column to float
+    def clean_amount(value):
+        """Clean amount value and convert to float"""
+        try:
+            if pd.isna(value):
+                return 0.0
+            
+            # If already numeric, return as float
+            if isinstance(value, (int, float)):
+                return float(value)
+            
+            # Convert to string and clean
+            value_str = str(value).strip()
+            
+            # Remove currency symbols and spaces
+            value_str = value_str.replace('J$', '').replace('$', '').replace('JMD', '')
+            value_str = value_str.replace(' ', '').replace('\xa0', '')  # Remove spaces and non-breaking spaces
+            
+            # Remove commas
+            value_str = value_str.replace(',', '')
+            
+            # Handle parentheses (accounting format for negatives)
+            if '(' in value_str and ')' in value_str:
+                value_str = '-' + value_str.replace('(', '').replace(')', '')
+            
+            # Try to convert to float
+            return float(value_str) if value_str and value_str not in ['', '-', '+'] else 0.0
+            
+        except (ValueError, AttributeError):
+            return 0.0
+    
+    # Apply cleaning function to Amount column
+    df['Amount'] = df['Amount'].apply(clean_amount)
     
     # Only create Category if it doesn't exist with valid values
     if 'Category' not in df.columns or not has_valid_category:
-        df['Category'] = ['Credit' if x >= 0 else 'Debit' for x in df['Amount']]
+        df['Category'] = df['Amount'].apply(lambda x: 'Credit' if x >= 0 else 'Debit')
         print(f"⚠️ Created new Category column based on Amount sign")
     
     # Ensure Amount is always positive
@@ -821,7 +853,6 @@ def standardize_dataframe_columns(df):
         print(f"🗑️ Removed duplicate lowercase 'category' column")
     
     return df
-
 
 def process_dataframe(df):
     """Process and standardize dataframe - preserves Category from CSV/PDF parsers"""
