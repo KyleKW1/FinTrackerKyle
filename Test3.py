@@ -1034,18 +1034,29 @@ def standardize_dataframe_columns(df):
         else:
             df['Description'] = 'Unknown'
     
-    # Handle Amount column - THIS IS THE KEY FIX
+    # Handle Amount column - COMPLETELY REWRITTEN
     if 'Amount' not in df.columns:
         # Try to find a numeric column
-        numeric_cols = df.select_dtypes(include=['number']).columns
+        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
         if len(numeric_cols) > 0:
-            df['Amount'] = df[numeric_cols[0]].copy()
+            # Copy the first numeric column
+            df['Amount'] = df[numeric_cols[0]].values
         else:
-            # Create a Series of zeros, not a scalar
-            df['Amount'] = pd.Series([0] * len(df), index=df.index)
+            # No numeric columns, create zeros
+            import numpy as np
+            df['Amount'] = np.zeros(len(df))
     
-    # Now safely convert Amount to numeric (it's guaranteed to be a Series)
-    df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0)
+    # At this point, Amount column exists but may not be numeric
+    # Convert to numeric, handling any data type
+    try:
+        # Try direct conversion
+        df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce')
+    except (TypeError, ValueError):
+        # If that fails, convert to string first, then to numeric
+        df['Amount'] = pd.to_numeric(df['Amount'].astype(str), errors='coerce')
+    
+    # Fill any NaN values with 0
+    df['Amount'] = df['Amount'].fillna(0)
     
     # Handle Date column
     if 'Date' not in df.columns:
