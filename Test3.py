@@ -994,81 +994,45 @@ def enhanced_main_app():
 # ============================================
 
 def standardize_dataframe_columns(df):
-    """Standardize column names from different bank formats - BULLETPROOF VERSION"""
-    import numpy as np
-    
-    # Make a copy
+    """Standardize column names from different bank formats"""
     df = df.copy()
     
-    # Common column name mappings
     column_mappings = {
         'description': 'Description',
         'desc': 'Description',
         'transaction description': 'Description',
         'details': 'Description',
-        'narrative': 'Description',
-        'particulars': 'Description',
-        
         'amount': 'Amount',
         'transaction amount': 'Amount',
-        'value': 'Value',
-        'debit': 'Debit',
-        'credit': 'Credit',
-        
+        'value': 'Amount',
         'date': 'Date',
         'transaction date': 'Date',
-        'posting date': 'Date',
-        'value date': 'Date',
-        
         'type': 'Category',
         'transaction type': 'Category',
-        'dr/cr': 'Category',
     }
     
-    # Rename columns to standard names
     df.columns = df.columns.str.lower().str.strip()
     df = df.rename(columns=column_mappings)
     
-    # Ensure Description exists
     if 'Description' not in df.columns:
-        if len(df.columns) >= 2:
-            df['Description'] = df.iloc[:, 1].astype(str)
-        else:
-            df['Description'] = 'Unknown'
+        df['Description'] = 'Unknown'
     
-    # Ensure Date exists
     if 'Date' not in df.columns:
-        if len(df.columns) >= 1:
-            df['Date'] = pd.to_datetime(df.iloc[:, 0], errors='coerce')
-        else:
-            df['Date'] = pd.Timestamp.now()
+        df['Date'] = pd.Timestamp.now()
     
-    # Handle Amount - NUCLEAR OPTION: Build from scratch
+    # THE KEY FIX - use list comprehension instead of pd.to_numeric
     if 'Amount' not in df.columns:
-        # Try to find a numeric column
         numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
         if numeric_cols:
-            # Use the first numeric column
-            col = numeric_cols[0]
-            # Create new column with list comprehension to ensure it's a proper series
-            df['Amount'] = [float(x) if pd.notna(x) else 0.0 for x in df[col]]
+            df['Amount'] = [float(x) if pd.notna(x) else 0.0 for x in df[numeric_cols[0]]]
         else:
-            # No numeric columns - create zeros as a list
             df['Amount'] = [0.0] * len(df)
     else:
-        # Amount exists - convert it using list comprehension
         df['Amount'] = [float(x) if pd.notna(x) else 0.0 for x in df['Amount']]
     
-    # At this point Amount is guaranteed to be a proper Series of floats
-    # But let's still be defensive
-    df['Amount'] = df['Amount'].astype(float)
-    
-    # Handle Category
     if 'Category' not in df.columns:
-        # Simple classification based on amount sign
         df['Category'] = ['Credit' if x >= 0 else 'Debit' for x in df['Amount']]
     
-    # Make all amounts positive
     df['Amount'] = df['Amount'].abs()
     
     return df
