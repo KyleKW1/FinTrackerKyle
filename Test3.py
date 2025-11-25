@@ -1301,83 +1301,83 @@ def enhanced_main_app():
     
     # Quick stats (placeholder - replace with real data)
     # Calculate real stats from user data
-try:
-    user_data = load_all_user_data(st.session_state.user['id'])
-except Exception as e:
-    st.error(f"Error loading data: {e}")
-    user_data = pd.DataFrame()
-
-# Initialize default values
-current_income = 0.0
-current_spending = 0.0
-current_savings = 0.0
-income_change = 0.0
-spending_change = 0.0
-savings_change = 0.0
-income_arrow = "→"
-spending_arrow = "→"
-savings_arrow = "→"
-income_class = "positive"
-spending_class = "positive"
-savings_class = "positive"
-
-if not user_data.empty and all(col in user_data.columns for col in ['Date', 'Amount', 'Category', 'YearMonth']):
     try:
-        # Get current and previous month data
-        available_months = sorted(user_data['YearMonth'].unique())
-        
-        if len(available_months) >= 1:
-            current_month = available_months[-1]
-            current_data = user_data[user_data['YearMonth'] == current_month]
-            
-            # Calculate current month sums - use item() to get scalar value
-            credit_sum = current_data[current_data['Category'] == 'Credit']['Amount'].sum()
-            debit_sum = current_data[current_data['Category'] == 'Debit']['Amount'].sum()
-            
-            current_income = float(credit_sum)
-            current_spending = float(debit_sum)
-            current_savings = current_income - current_spending
-            
-            # Calculate percentage changes if previous month exists
-            if len(available_months) >= 2:
-                prev_month = available_months[-2]
-                prev_data = user_data[user_data['YearMonth'] == prev_month]
-                
-                # Calculate previous month sums
-                prev_credit_sum = prev_data[prev_data['Category'] == 'Credit']['Amount'].sum()
-                prev_debit_sum = prev_data[prev_data['Category'] == 'Debit']['Amount'].sum()
-                
-                prev_income = float(prev_credit_sum)
-                prev_spending = float(prev_debit_sum)
-                prev_savings = prev_income - prev_spending
-                
-                # Calculate changes
-                if prev_income > 0:
-                    income_change = ((current_income - prev_income) / prev_income * 100)
-                else:
-                    income_change = 0.0
-                    
-                if prev_spending > 0:
-                    spending_change = ((current_spending - prev_spending) / prev_spending * 100)
-                else:
-                    spending_change = 0.0
-                    
-                if prev_savings != 0:
-                    savings_change = ((current_savings - prev_savings) / abs(prev_savings) * 100)
-                else:
-                    savings_change = 0.0
-                
-                # Set arrows and classes
-                income_arrow = "↑" if income_change > 0 else ("↓" if income_change < 0 else "→")
-                spending_arrow = "↑" if spending_change > 0 else ("↓" if spending_change < 0 else "→")
-                savings_arrow = "↑" if savings_change > 0 else ("↓" if savings_change < 0 else "→")
-                
-                income_class = "positive" if income_change >= 0 else "negative"
-                spending_class = "negative" if spending_change > 0 else "positive"
-                savings_class = "positive" if savings_change >= 0 else "negative"
-                
+        user_data = load_all_user_data(st.session_state.user['id'])
     except Exception as e:
-        st.warning(f"Could not calculate statistics: {e}")
+        st.error(f"Error loading data: {e}")
+        user_data = pd.DataFrame()
+    
+    # Initialize default values
+    current_income = 0.0
+    current_spending = 0.0
+    current_savings = 0.0
+    income_change = 0.0
+    spending_change = 0.0
+    savings_change = 0.0
+    income_arrow = "→"
+    spending_arrow = "→"
+    savings_arrow = "→"
+    income_class = "positive"
+    spending_class = "positive"
+    savings_class = "positive"
+    
+    if not user_data.empty and all(col in user_data.columns for col in ['Date', 'Amount', 'Category', 'YearMonth']):
+        try:
+            # Get current and previous month data
+            available_months = sorted(user_data['YearMonth'].unique())
+            
+            if len(available_months) >= 1:
+                current_month = available_months[-1]
+                current_data = user_data[user_data['YearMonth'] == current_month]
+                
+                # Calculate current month sums - use item() to get scalar value
+                credit_sum = current_data[current_data['Category'] == 'Credit']['Amount'].sum()
+                debit_sum = current_data[current_data['Category'] == 'Debit']['Amount'].sum()
+                
+                current_income = float(credit_sum)
+                current_spending = float(debit_sum)
+                current_savings = current_income - current_spending
+                
+                # Calculate percentage changes if previous month exists
+                if len(available_months) >= 2:
+                    prev_month = available_months[-2]
+                    prev_data = user_data[user_data['YearMonth'] == prev_month]
+                    
+                    # Calculate previous month sums
+                    prev_credit_sum = prev_data[prev_data['Category'] == 'Credit']['Amount'].sum()
+                    prev_debit_sum = prev_data[prev_data['Category'] == 'Debit']['Amount'].sum()
+                    
+                    prev_income = float(prev_credit_sum)
+                    prev_spending = float(prev_debit_sum)
+                    prev_savings = prev_income - prev_spending
+                    
+                    # Calculate changes
+                    if prev_income > 0:
+                        income_change = ((current_income - prev_income) / prev_income * 100)
+                    else:
+                        income_change = 0.0
+                        
+                    if prev_spending > 0:
+                        spending_change = ((current_spending - prev_spending) / prev_spending * 100)
+                    else:
+                        spending_change = 0.0
+                        
+                    if prev_savings != 0:
+                        savings_change = ((current_savings - prev_savings) / abs(prev_savings) * 100)
+                    else:
+                        savings_change = 0.0
+                    
+                    # Set arrows and classes
+                    income_arrow = "↑" if income_change > 0 else ("↓" if income_change < 0 else "→")
+                    spending_arrow = "↑" if spending_change > 0 else ("↓" if spending_change < 0 else "→")
+                    savings_arrow = "↑" if savings_change > 0 else ("↓" if savings_change < 0 else "→")
+                    
+                    income_class = "positive" if income_change >= 0 else "negative"
+                    spending_class = "negative" if spending_change > 0 else "positive"
+                    savings_class = "positive" if savings_change >= 0 else "negative"
+                    
+        except Exception as e:
+            st.warning(f"Could not calculate statistics: {e}")
     
         
     # Display real stats
