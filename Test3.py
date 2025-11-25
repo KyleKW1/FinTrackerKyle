@@ -487,7 +487,7 @@ def load_all_user_data(user_id):
         st.error(f"Error loading data: {e}")
         return pd.DataFrame()
 
-def process_pdf_advanced(file_bytes, filename):
+def extract_from_pdf(file_bytes, filename):
     """Advanced PDF processing for National Commercial Bank (NCB) PDFs"""
     transactions = []
     
