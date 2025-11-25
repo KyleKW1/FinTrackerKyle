@@ -1587,10 +1587,10 @@ def show_spending_analysis():
         return
     
     # Debug: Show columns (you can remove this after testing)
-    with st.expander("🔍 Debug: Data Preview", expanded=False):
-        st.write("**Available Columns:**", list(data.columns))
-        st.write("**Sample Data:**")
-        st.dataframe(data.head(3))
+    #with st.expander("🔍 Debug: Data Preview", expanded=False):
+        #st.write("**Available Columns:**", list(data.columns))
+       # st.write("**Sample Data:**")
+       # st.dataframe(data.head(3))
     
     # Ensure required columns exist
     required_columns = ['Date', 'Description', 'Amount', 'Category']
