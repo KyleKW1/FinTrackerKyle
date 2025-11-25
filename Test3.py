@@ -1162,8 +1162,9 @@ def standardize_dataframe_columns(df):
     
     # Handle Category
     if 'Category' not in df.columns:
-        # Create Category column based on Amount
-        df['Category'] = ['Credit' if amt >= 0 else 'Debit' for amt in df['Amount']]
+        # Create Category column - use numpy where for vectorized operation
+        import numpy as np
+        df['Category'] = np.where(df['Amount'] >= 0, 'Credit', 'Debit')
     
     return df
     
