@@ -894,9 +894,9 @@ def enhanced_main_app():
             current_month = available_months[-1]
             current_data = user_data[user_data['YearMonth'] == current_month]
             
-            current_income = current_data[current_data['Category'] == 'Credit']['Amount'].sum()
-            current_spending = current_data[current_data['Category'] == 'Debit']['Amount'].sum()
-            current_savings = current_income - current_spending
+            current_income = float(current_data[current_data['Category'] == 'Credit']['Amount'].sum())
+            current_spending = float(current_data[current_data['Category'] == 'Debit']['Amount'].sum())
+            current_savings = float(current_income - current_spending)
             
             # Calculate percentage changes if previous month exists
             if len(available_months) >= 2:
@@ -907,9 +907,9 @@ def enhanced_main_app():
                 prev_spending = prev_data[prev_data['Category'] == 'Debit']['Amount'].sum()
                 prev_savings = prev_income - prev_spending
                 
-                income_change = ((current_income - prev_income) / prev_income * 100) if float(prev_income) > 0 else 0
-                spending_change = ((current_spending - prev_spending) / prev_spending * 100) if float(prev_spending) > 0 else 0
-                savings_change = ((current_savings - prev_savings) / prev_savings * 100) if float(prev_savings) != 0 else 0
+                prev_income = float(prev_data[prev_data['Category'] == 'Credit']['Amount'].sum())
+                prev_spending = float(prev_data[prev_data['Category'] == 'Debit']['Amount'].sum())
+                prev_savings = float(prev_income - prev_spending)
                 
                 income_arrow = "↑" if income_change > 0 else "↓"
                 spending_arrow = "↑" if spending_change > 0 else "↓"
