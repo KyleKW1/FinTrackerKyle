@@ -723,9 +723,15 @@ def standardize_dataframe_columns(df):
     """Standardize column names from different bank formats"""
     df = df.copy()
     
-    # If Category column already exists (from NCB PDF parser), preserve it!
-    has_category = 'Category' in df.columns
-    original_category = df['Category'].copy() if has_category else None
+    # CRITICAL: Check if Category column already exists and preserve it
+    has_valid_category = False
+    if 'Category' in df.columns:
+        # Check if it has proper Credit/Debit values
+        unique_cats = df['Category'].unique()
+        if any(cat in ['Credit', 'Debit'] for cat in unique_cats):
+            has_valid_category = True
+            original_category = df['Category'].copy()
+            print(f"✅ PRESERVING original Category column with values: {unique_cats}")
     
     column_mappings = {
         'description': 'Description',
@@ -745,19 +751,22 @@ def standardize_dataframe_columns(df):
         'transaction date': 'Date',
         'posting date': 'Date',
         'value date': 'Date',
-        
-        'type': 'Category',
-        'transaction type': 'Category',
-        'dr/cr': 'Category',
     }
     
+    # Only map 'type' and similar to Category if we don't already have a valid one
+    if not has_valid_category:
+        column_mappings.update({
+            'type': 'Category',
+            'transaction type': 'Category',
+            'dr/cr': 'Category',
+        })
+    
     df.columns = df.columns.str.lower().str.strip()
-    
-    # Remove 'category' from mappings if Category already exists
-    if has_category:
-        column_mappings = {k: v for k, v in column_mappings.items() if v != 'Category'}
-    
     df = df.rename(columns=column_mappings)
+    
+    # Restore valid Category if it existed
+    if has_valid_category:
+        df['Category'] = original_category
     
     if 'Description' not in df.columns:
         if len(df.columns) >= 2:
@@ -781,38 +790,36 @@ def standardize_dataframe_columns(df):
     else:
         df['Amount'] = [float(x) if pd.notna(x) else 0.0 for x in df['Amount']]
     
-    # CRITICAL: Restore original Category if it existed
-    if has_category and original_category is not None:
-        df['Category'] = original_category
-        print(f"DEBUG: Preserved original Category column from NCB parser")
-    elif 'Category' not in df.columns:
-        # Only create Category if it doesn't exist
+    # Only create Category if it doesn't exist with valid values
+    if 'Category' not in df.columns or not has_valid_category:
         df['Category'] = ['Credit' if x >= 0 else 'Debit' for x in df['Amount']]
-        print(f"DEBUG: Created new Category column based on Amount")
+        print(f"⚠️ Created new Category column based on Amount sign")
     
     # Ensure Amount is always positive
     df['Amount'] = df['Amount'].abs()
     
     # Remove any duplicate 'category' column (lowercase)
-    if 'category' in df.columns:
+    if 'category' in df.columns and 'Category' in df.columns:
         df = df.drop(columns=['category'])
-        print(f"DEBUG: Removed duplicate lowercase 'category' column")
+        print(f"🗑️ Removed duplicate lowercase 'category' column")
     
     return df
 
 
 def process_dataframe(df):
-    """Process and standardize dataframe"""
-    print(f"DEBUG: Before standardization - Columns: {list(df.columns)}")
+    """Process and standardize dataframe - preserves Category from CSV/PDF parsers"""
+    print(f"\n📊 DEBUG: Before standardization")
+    print(f"   Columns: {list(df.columns)}")
     if 'Category' in df.columns:
-        print(f"DEBUG: Category value counts BEFORE: \n{df['Category'].value_counts()}")
+        print(f"   Category counts: {df['Category'].value_counts().to_dict()}")
     
-    # Standardize column names first
+    # Standardize column names - this will preserve valid Category columns
     df = standardize_dataframe_columns(df)
     
-    print(f"DEBUG: After standardization - Columns: {list(df.columns)}")
+    print(f"\n📊 DEBUG: After standardization")
+    print(f"   Columns: {list(df.columns)}")
     if 'Category' in df.columns:
-        print(f"DEBUG: Category value counts AFTER: \n{df['Category'].value_counts()}")
+        print(f"   Category counts: {df['Category'].value_counts().to_dict()}")
     
     # Convert Date column
     if 'Date' in df.columns:
@@ -822,7 +829,7 @@ def process_dataframe(df):
         df['Month-Year'] = df['Date'].dt.strftime('%B %Y')
         df['YearMonth'] = df['Date'].dt.strftime('%Y-%m')
     
-    # Amount is already numeric from standardize_dataframe_columns
+    # Amount is already numeric and positive from standardize_dataframe_columns
     if 'Amount' in df.columns:
         df = df.dropna(subset=['Amount'])
         df['Amount'] = df['Amount'].astype(float)
@@ -832,6 +839,102 @@ def process_dataframe(df):
         df['Description'] = df['Description'].astype(str).fillna('Unknown')
     
     return df
+
+
+def load_all_user_data(user_id):
+    """Load all user data with caching and proper file type detection"""
+    connection = create_connection()
+    if not connection:
+        return pd.DataFrame()
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT id, file_data, file_type, filename FROM user_files WHERE user_id = %s",
+            (user_id,)
+        )
+        files = cursor.fetchall()
+        cursor.close()
+        connection.close()
+        
+        all_data = []
+        
+        for file_info in files:
+            try:
+                file_bytes = BytesIO(file_info['file_data'])
+                filename = file_info.get('filename', '')
+                file_type = file_info['file_type'].lower()
+                
+                print(f"\n📂 Processing file: {filename} (type: {file_type})")
+                
+                if file_type == 'pdf':
+                    # Check if it's an NCB PDF by filename or content
+                    if 'ncb' in filename.lower():
+                        print("   Detected NCB PDF by filename")
+                        df = process_pdf_ncb(file_bytes, debug=False)
+                    else:
+                        # Try to detect from content
+                        try:
+                            file_bytes.seek(0)
+                            with pdfplumber.open(file_bytes) as pdf:
+                                first_page_text = pdf.pages[0].extract_text().lower()
+                                if 'ncb' in first_page_text or 'national commercial bank' in first_page_text:
+                                    print("   Detected NCB PDF by content")
+                                    file_bytes.seek(0)
+                                    df = process_pdf_ncb(file_bytes, debug=False)
+                                else:
+                                    print("   Processing as generic PDF")
+                                    file_bytes.seek(0)
+                                    df = process_pdf(file_bytes)
+                        except:
+                            print("   Fallback to generic PDF processing")
+                            file_bytes.seek(0)
+                            df = process_pdf(file_bytes)
+                            
+                elif file_type == 'csv':
+                    print("   Processing as CSV")
+                    df = process_csv(file_bytes)
+                else:
+                    print(f"   ⚠️ Unsupported file type: {file_type}")
+                    continue
+                
+                if not df.empty:
+                    print(f"   ✅ Loaded {len(df)} transactions")
+                    if 'Category' in df.columns:
+                        print(f"   Category breakdown: {df['Category'].value_counts().to_dict()}")
+                    all_data.append(df)
+                else:
+                    print(f"   ⚠️ No data extracted")
+                    
+            except Exception as e:
+                print(f"   ❌ Error: {str(e)}")
+                st.warning(f"Error processing {filename}: {str(e)}")
+                continue
+        
+        if not all_data:
+            return pd.DataFrame()
+        
+        print(f"\n🔗 Concatenating {len(all_data)} dataframes...")
+        
+        # Concatenate all data
+        result = pd.concat(all_data, ignore_index=True)
+        
+        print(f"✅ Combined data: {len(result)} total transactions")
+        if 'Category' in result.columns:
+            print(f"   Final Category breakdown: {result['Category'].value_counts().to_dict()}")
+        
+        # Process the combined dataframe
+        result = process_dataframe(result)
+        
+        return result
+        
+    except Error as e:
+        st.error(f"Error loading data: {e}")
+        connection.close()
+        return pd.DataFrame()
+
+
+
 
 def get_user_preferences(user_id):
     """Get user preferences"""
