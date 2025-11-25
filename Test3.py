@@ -367,6 +367,331 @@ def authenticate_user(username, password):
         connection.close()
         return False, None
 
+
+# ============================================
+# FILE MANAGEMENT FUNCTIONS
+# ============================================
+
+def save_user_file(user_id, filename, file_data, file_type):
+    """Save uploaded file to database"""
+    connection = create_connection()
+    if not connection:
+        return False
+    
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            "INSERT INTO user_files (user_id, filename, file_data, file_type) VALUES (%s, %s, %s, %s)",
+            (user_id, filename, file_data, file_type)
+        )
+        connection.commit()
+        cursor.close()
+        connection.close()
+        return True
+    except Error as e:
+        st.error(f"Error saving file: {e}")
+        connection.close()
+        return False
+
+def delete_user_file(file_id, user_id):
+    """Delete a user's file"""
+    connection = create_connection()
+    if not connection:
+        return False
+    
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            "DELETE FROM user_files WHERE id = %s AND user_id = %s",
+            (file_id, user_id)
+        )
+        connection.commit()
+        cursor.close()
+        connection.close()
+        return True
+    except Error as e:
+        st.error(f"Error deleting file: {e}")
+        connection.close()
+        return False
+
+def get_user_files_paginated(user_id, page=0, page_size=9):
+    """Get user files with pagination"""
+    connection = create_connection()
+    if not connection:
+        return [], 0
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        
+        cursor.execute("SELECT COUNT(*) as total FROM user_files WHERE user_id = %s", (user_id,))
+        total_files = cursor.fetchone()['total']
+        
+        offset = page * page_size
+        cursor.execute(
+            "SELECT id, filename, file_type, upload_date FROM user_files WHERE user_id = %s ORDER BY upload_date DESC LIMIT %s OFFSET %s",
+            (user_id, page_size, offset)
+        )
+        files = cursor.fetchall()
+        
+        cursor.close()
+        connection.close()
+        return files, total_files
+    except Error as e:
+        st.error(f"Error retrieving files: {e}")
+        connection.close()
+        return [], 0
+
+def load_all_user_data(user_id):
+    """Load all user transaction data from files"""
+    connection = create_connection()
+    if not connection:
+        return pd.DataFrame()
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT file_data, file_type FROM user_files WHERE user_id = %s",
+            (user_id,)
+        )
+        files = cursor.fetchall()
+        cursor.close()
+        connection.close()
+        
+        all_data = []
+        for file_info in files:
+            file_data = file_info['file_data']
+            file_type = file_info['file_type']
+            
+            try:
+                if file_type == 'csv':
+                    df = pd.read_csv(BytesIO(file_data))
+                elif file_type == 'pdf':
+                    df = extract_from_pdf(BytesIO(file_data))
+                else:
+                    continue
+                
+                if not df.empty:
+                    all_data.append(df)
+            except Exception as e:
+                st.warning(f"Could not process file: {e}")
+                continue
+        
+        if all_data:
+            combined_df = pd.concat(all_data, ignore_index=True)
+            combined_df = process_dataframe(combined_df)
+            return combined_df
+        else:
+            return pd.DataFrame()
+            
+    except Error as e:
+        st.error(f"Error loading data: {e}")
+        return pd.DataFrame()
+
+def extract_from_pdf(pdf_file):
+    """Extract transaction data from PDF"""
+    try:
+        with pdfplumber.open(pdf_file) as pdf:
+            all_text = ""
+            for page in pdf.pages:
+                all_text += page.extract_text() + "\n"
+        
+        lines = all_text.split('\n')
+        data = []
+        
+        for line in lines:
+            parts = line.split()
+            if len(parts) >= 3:
+                try:
+                    date_str = parts[0]
+                    description = ' '.join(parts[1:-2])
+                    amount = float(parts[-1].replace(',', '').replace('$', ''))
+                    category = 'Debit' if amount < 0 else 'Credit'
+                    
+                    data.append({
+                        'Date': date_str,
+                        'Description': description,
+                        'Amount': abs(amount),
+                        'Category': category
+                    })
+                except:
+                    continue
+        
+        return pd.DataFrame(data)
+    except Exception as e:
+        st.error(f"PDF extraction error: {e}")
+        return pd.DataFrame()
+
+def process_dataframe(df):
+    """Process and standardize dataframe"""
+    if 'Date' in df.columns:
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        df = df.dropna(subset=['Date'])
+        df['Month-Name'] = df['Date'].dt.month_name()
+        df['Month-Year'] = df['Date'].dt.strftime('%B %Y')
+        df['YearMonth'] = df['Date'].dt.strftime('%Y-%m')
+    
+    if 'Amount' in df.columns:
+        df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce')
+        df = df.dropna(subset=['Amount'])
+    
+    return df
+
+def get_user_preferences(user_id):
+    """Get user preferences"""
+    connection = create_connection()
+    if not connection:
+        return None
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT * FROM user_preferences WHERE user_id = %s",
+            (user_id,)
+        )
+        prefs = cursor.fetchone()
+        cursor.close()
+        connection.close()
+        return prefs
+    except Error as e:
+        connection.close()
+        return None
+
+def save_user_preferences(user_id, category_keywords, monthly_budgets, savings_goal):
+    """Save user preferences"""
+    connection = create_connection()
+    if not connection:
+        return False
+    
+    try:
+        cursor = connection.cursor()
+        
+        cursor.execute("SELECT id FROM user_preferences WHERE user_id = %s", (user_id,))
+        exists = cursor.fetchone()
+        
+        category_json = json.dumps(category_keywords)
+        budgets_json = json.dumps(monthly_budgets)
+        
+        if exists:
+            cursor.execute(
+                "UPDATE user_preferences SET category_keywords = %s, monthly_budgets = %s, savings_goal = %s WHERE user_id = %s",
+                (category_json, budgets_json, savings_goal, user_id)
+            )
+        else:
+            cursor.execute(
+                "INSERT INTO user_preferences (user_id, category_keywords, monthly_budgets, savings_goal) VALUES (%s, %s, %s, %s)",
+                (user_id, category_json, budgets_json, savings_goal)
+            )
+        
+        connection.commit()
+        cursor.close()
+        connection.close()
+        return True
+    except Error as e:
+        st.error(f"Error saving preferences: {e}")
+        connection.close()
+        return False
+
+def get_monthly_summary(user_id, year_month):
+    """Get cached monthly summary"""
+    connection = create_connection()
+    if not connection:
+        return None
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT * FROM monthly_summaries WHERE user_id = %s AND year_month = %s",
+            (user_id, year_month)
+        )
+        summary = cursor.fetchone()
+        cursor.close()
+        connection.close()
+        return summary
+    except Error as e:
+        connection.close()
+        return None
+
+def compute_monthly_summary(user_id, year_month, data):
+    """Compute and store monthly summary"""
+    connection = create_connection()
+    if not connection:
+        return False
+    
+    try:
+        month_data = data[data['YearMonth'] == year_month]
+        
+        total_income = month_data[month_data['Category'] == 'Credit']['Amount'].sum()
+        total_spending = month_data[month_data['Category'] == 'Debit']['Amount'].sum()
+        net_savings = total_income - total_spending
+        
+        cursor = connection.cursor()
+        cursor.execute(
+            """INSERT INTO monthly_summaries (user_id, year_month, total_income, total_spending, net_savings)
+               VALUES (%s, %s, %s, %s, %s)
+               ON DUPLICATE KEY UPDATE total_income = %s, total_spending = %s, net_savings = %s""",
+            (user_id, year_month, total_income, total_spending, net_savings, total_income, total_spending, net_savings)
+        )
+        connection.commit()
+        cursor.close()
+        connection.close()
+        return True
+    except Error as e:
+        connection.close()
+        return False
+
+@lru_cache(maxsize=1000)
+def classify_expense_cached(description, category_json):
+    """Cached expense classification"""
+    category_keywords = json.loads(category_json)
+    desc_lower = description.lower()
+    for category, keywords in category_keywords.items():
+        for keyword in keywords:
+            if keyword in desc_lower:
+                return category
+    return "Other"
+
+def send_email_alert(to_email, subject, body, sender_email, sender_password, smtp_server, smtp_port):
+    """Send email alerts"""
+    try:
+        msg = EmailMessage()
+        msg['Subject'] = subject
+        msg['From'] = sender_email
+        msg['To'] = to_email
+        msg.set_content(body)
+        
+        if smtp_port == 465:
+            with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(smtp_server, smtp_port) as server:
+                server.starttls()
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+        
+        st.success("✅ Email alert sent successfully!")
+        return True
+    except Exception as e:
+        st.error(f"❌ Failed to send email: {e}")
+        return False
+
+def export_to_excel(df):
+    """Export dataframe to Excel"""
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Transactions')
+    return output.getvalue()
+
+def export_to_pdf(text):
+    """Export text to PDF"""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    for line in text.split('\n'):
+        pdf.cell(200, 10, txt=line.encode('latin-1', 'replace').decode('latin-1'), ln=True)
+    return bytes(pdf.output())
+
+
 # ============================================
 # SESSION STATE
 # ============================================
