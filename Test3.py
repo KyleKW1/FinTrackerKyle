@@ -1361,7 +1361,7 @@ def enhanced_login_page():
                         st.balloons()
                         st.rerun()
                     else:
-                        st.warning("❌ Invalid username or password")
+                        st.error("❌ Invalid username or password")
                         st.session_state.show_recovery = True  # <-- SHOW RECOVERY OPTIONS
                 else:
                     st.warning("⚠️ Please enter both username and password")
