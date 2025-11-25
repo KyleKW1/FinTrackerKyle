@@ -617,10 +617,11 @@ def process_dataframe(df):
         df['Month-Year'] = df['Date'].dt.strftime('%B %Y')
         df['YearMonth'] = df['Date'].dt.strftime('%Y-%m')
     
-    # Ensure Amount is numeric
+    # Amount is already numeric from standardize_dataframe_columns
     if 'Amount' in df.columns:
-        df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce')
         df = df.dropna(subset=['Amount'])
+        # Just ensure it's float type (it should already be)
+        df['Amount'] = df['Amount'].astype(float)
     
     # Ensure Description exists and is string
     if 'Description' in df.columns:
