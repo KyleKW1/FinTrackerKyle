@@ -3,8 +3,7 @@ pdf_generator.py
 PDF Report Generation Module for Finance Hub
 """
 
-from fpdf import FPDF
-from datetime import datetime
+from fpdf import FPDF  # This works for both fpdf and fpdf2from datetime import datetime
 import tempfile
 import os
 import pandas as pd
