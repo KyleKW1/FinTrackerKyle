@@ -282,6 +282,17 @@ def apply_custom_styles():
 # DATABASE CONFIGURATION (Your existing code)
 # ============================================
 
+# Configuration - Aiven Cloud MySQL
+DB_CONFIG = {
+    'host': 'mysql-11beff9b-kamarwatson36-874b.g.aivencloud.com',
+    'port': 11510,
+    'user': 'avnadmin',
+    'password': 'AVNS_Dxyg2mu3MEiRoVyasff',
+    'database': 'defaultdb',
+    'ssl_disabled': False,  # SSL REQUIRED for Aiven
+    'ssl_verify_cert': True,
+    'ssl_verify_identity': True
+}
 
 def create_connection():
     """Create database connection"""
