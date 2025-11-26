@@ -1926,18 +1926,14 @@ def show_spending_analysis():
             st.markdown("---")
             st.markdown("#### 📤 Export Reports")
             
-            report_text = f"Finance Report - {selected_month}\n\nTransactions:\n"
-            for idx, row in month_data.iterrows():
-                report_text += f"{row['Date'].date()} | {row['Description']} | J${row['Amount']:,.2f} | {row['Category']} | {row['Spending Category']}\n"
+            export_format = st.selectbox(
+                "Select export format", 
+                options=["Excel (Data Only)", "PDF (With Charts)"]
+            )
             
-            report_text += "\nSpending Summary:\n"
-            for idx, row in summary.iterrows():
-                report_text += f"{row['Spending Category']}: J${row['Amount']:,.2f} ({row['Percentage']:.2f}%)\n"
-            
-            export_format = st.selectbox("Select export format", options=["Excel", "PDF"])
-            
-            if st.button("Download Report", use_container_width=True):
-                if export_format == "Excel":
+            if st.button("📥 Download Report", use_container_width=True):
+                if export_format == "Excel (Data Only)":
+                    # Excel export
                     excel_bytes = export_to_excel(month_data)
                     st.download_button(
                         label="📥 Download Excel File",
@@ -1947,18 +1943,32 @@ def show_spending_analysis():
                         use_container_width=True
                     )
                 else:
-                    pdf_bytes = export_to_pdf(report_text)
-                    st.download_button(
-                        label="📥 Download PDF File",
-                        data=pdf_bytes,
-                        file_name=f"Finance_Report_{selected_month}.pdf",
-                        mime="application/pdf",
-                        use_container_width=True
-                    )
-        else:
-            st.info(f"No spending transactions found for {selected_month}")
-    
-    st.markdown("</div>", unsafe_allow_html=True)
+                    # PDF with charts - using imported function
+                    try:
+                        with st.spinner("Generating PDF with charts..."):
+                            pdf_bytes = create_pdf_with_charts(
+                                month_data=month_data,
+                                selected_month=selected_month,
+                                summary=summary,
+                                comparison=comparison,
+                                month_income=month_income,
+                                month_spending=month_spending,
+                                month_savings=month_savings,
+                                SAVINGS_GOAL=SAVINGS_GOAL
+                            )
+                            
+                            st.download_button(
+                                label="📥 Download PDF Report with Charts",
+                                data=pdf_bytes,
+                                file_name=f"Finance_Report_{selected_month}.pdf",
+                                mime="application/pdf",
+                                use_container_width=True
+                            )
+                            st.success("✅ PDF generated successfully!")
+                    except ImportError:
+                        st.error("❌ Matplotlib is not installed. Please run: pip install matplotlib")
+                    except Exception as e:
+                        st.error(f"❌ Error generating PDF: {e}")
 
 def show_budget_planner():
     st.markdown("<div class='content-container'>", unsafe_allow_html=True)
