@@ -3,10 +3,15 @@ pdf_generator.py
 PDF Report Generation Module for Finance Hub
 """
 
-from fpdf import FPDF  # This works for both fpdf and fpdf2from datetime import datetime
+from fpdf import FPDF
+from datetime import datetime
 import tempfile
 import os
 import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
+import shutil
 
 
 def create_pdf_with_charts(month_data, selected_month, summary, comparison, 
@@ -38,9 +43,6 @@ def create_pdf_with_charts(month_data, selected_month, summary, comparison,
     bytes
         PDF file as bytes
     """
-    import matplotlib.pyplot as plt
-    import matplotlib
-    matplotlib.use('Agg')  # Use non-interactive backend
     
     class PDF(FPDF):
         def header(self):
@@ -250,7 +252,6 @@ def create_pdf_with_charts(month_data, selected_month, summary, comparison,
         
     finally:
         # Clean up temporary files
-        import shutil
         shutil.rmtree(temp_dir, ignore_errors=True)
     
     # Handle different FPDF versions
