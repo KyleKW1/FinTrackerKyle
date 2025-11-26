@@ -21,6 +21,7 @@ except ImportError:
     PDFKIT_INSTALLED = False
 
 from fpdf import FPDF
+from pdf_generator import create_pdf_with_charts, create_simple_pdf  
 
 # ============================================
 # ENHANCED UI STYLING
