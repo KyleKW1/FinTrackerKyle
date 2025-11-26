@@ -254,7 +254,16 @@ def create_pdf_with_charts(month_data, selected_month, summary, comparison,
         import shutil
         shutil.rmtree(temp_dir, ignore_errors=True)
     
-    return pdf.output(dest='S').encode('latin-1')
+    # Handle different FPDF versions
+    output = pdf.output(dest='S')
+    if isinstance(output, bytes):
+        return output
+    elif isinstance(output, bytearray):
+        return bytes(output)
+    elif isinstance(output, str):
+        return output.encode('latin-1')
+    else:
+        return bytes(output)
 
 
 def create_simple_pdf(text_content, title="Finance Report"):
@@ -285,4 +294,13 @@ def create_simple_pdf(text_content, title="Finance Report"):
         safe_line = line.encode('latin-1', 'replace').decode('latin-1')
         pdf.cell(200, 10, txt=safe_line, ln=True)
     
-    return bytes(pdf.output())
+    # Handle different FPDF versions
+    output = pdf.output()
+    if isinstance(output, bytes):
+        return output
+    elif isinstance(output, bytearray):
+        return bytes(output)
+    elif isinstance(output, str):
+        return output.encode('latin-1')
+    else:
+        return bytes(output)
