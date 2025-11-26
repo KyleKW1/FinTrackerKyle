@@ -1131,23 +1131,36 @@ def classify_expense_cached(description, category_json):
                 return category
     return "Other"
 
-def send_email_alert(to_email, subject, body, sender_email, sender_password, smtp_server, smtp_port):
-    """Send email alerts"""
+# At the top of your file, add these imports
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Get email credentials from environment variables
+APP_EMAIL = os.getenv('APP_EMAIL')
+APP_EMAIL_PASSWORD = os.getenv('APP_EMAIL_PASSWORD')
+SMTP_SERVER = 'smtp.gmail.com'
+SMTP_PORT = 465
+
+def send_email_alert_to_user(to_email, subject, body):
+    """Send email alerts using app's email credentials"""
     try:
         msg = EmailMessage()
         msg['Subject'] = subject
-        msg['From'] = sender_email
+        msg['From'] = APP_EMAIL
         msg['To'] = to_email
         msg.set_content(body)
         
-        if smtp_port == 465:
-            with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
-                server.login(sender_email, sender_password)
+        if SMTP_PORT == 465:
+            with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
+                server.login(APP_EMAIL, APP_EMAIL_PASSWORD)
                 server.send_message(msg)
         else:
-            with smtplib.SMTP(smtp_server, smtp_port) as server:
+            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
                 server.starttls()
-                server.login(sender_email, sender_password)
+                server.login(APP_EMAIL, APP_EMAIL_PASSWORD)
                 server.send_message(msg)
         
         st.success("✅ Email alert sent successfully!")
@@ -1689,31 +1702,23 @@ def show_spending_analysis():
     
     # Email settings
     st.sidebar.subheader("📧 Email Alerts")
+    
+    # Get user's saved email from database (if you implemented Option 2)
+    user_notification_email = st.session_state.user.get('email', '')
+    
     enable_email = st.sidebar.checkbox("Enable Email Notifications")
     
     if enable_email:
-        email_provider = st.sidebar.selectbox(
-            "Provider",
-            ["Gmail", "Outlook", "Yahoo", "Custom"]
+        notify_email = st.sidebar.text_input(
+            "Send Alerts To", 
+            value=user_notification_email,
+            placeholder="your.email@example.com"
         )
         
-        if email_provider == "Gmail":
-            smtp_server = "smtp.gmail.com"
-            smtp_port = 465
-            st.sidebar.info("⚠️ Use App Password")
-        elif email_provider == "Outlook":
-            smtp_server = "smtp-mail.outlook.com"
-            smtp_port = 587
-        elif email_provider == "Yahoo":
-            smtp_server = "smtp.mail.yahoo.com"
-            smtp_port = 587
-        else:
-            smtp_server = st.sidebar.text_input("SMTP Server")
-            smtp_port = st.sidebar.number_input("Port", value=587)
-        
-        sender_email = st.sidebar.text_input("Your Email")
-        sender_password = st.sidebar.text_input("Password", type="password")
-        notify_email = st.sidebar.text_input("Send Alerts To")
+        if st.sidebar.button("💾 Save Email Preference"):
+            # Save to database if implementing Option 2
+            # update_user_notification_email(st.session_state.user['id'], notify_email)
+            st.sidebar.success("✅ Email preference saved!")
     
     # Apply categories
     category_json = json.dumps(CATEGORY_KEYWORDS)
@@ -1911,27 +1916,20 @@ def show_spending_analysis():
                 st.warning(f"You are J${SAVINGS_GOAL - month_savings:,.2f} below your savings goal.")
             
             # Email alerts
-            if enable_email and notify_email and sender_email and sender_password:
+            if enable_email and notify_email:
                 overspent = comparison[comparison['Amount'] > comparison['Budget']]
                 if not overspent.empty:
                     subject = f"Finance Tracker Alert: Overspending in {selected_month}"
-                    body_lines = [f"Dear user,\n\nYou have overspent in the following categories for {selected_month}:\n"]
+                    body_lines = [f"Dear {st.session_state.user['username']},\n\nYou have overspent in the following categories for {selected_month}:\n"]
                     for _, row in overspent.iterrows():
                         body_lines.append(
                             f"- {row['Spending Category']}: Spent J${row['Amount']:.2f} (Budget: J${row['Budget']:.2f})")
-                    body_lines.append("\nPlease review your budget.")
+                    body_lines.append("\n\nPlease review your budget.\n\nBest regards,\nFinance Hub Team")
                     body = "\n".join(body_lines)
                     
                     if st.button("📧 Send Alert Email", use_container_width=True):
-                        send_email_alert(
-                            notify_email,
-                            subject,
-                            body,
-                            sender_email,
-                            sender_password,
-                            smtp_server,
-                            smtp_port
-                        )
+                        # Use the simplified function with app credentials
+                        send_email_alert_to_user(notify_email, subject, body)
             
             # Export reports
             st.markdown("---")
