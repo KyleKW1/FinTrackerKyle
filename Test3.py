@@ -14,6 +14,9 @@ from functools import lru_cache
 from datetime import datetime
 import json
 import os
+from functools import lru_cache
+import hashlib
+from datetime import datetime, timedelta
 
 try:
     import pdfkit
@@ -419,6 +422,7 @@ def delete_user_file(file_id, user_id):
         connection.close()
         return False
 
+@st.cache_data(ttl=60, show_spinner=False)  # Cache for 1 minute
 def get_user_files_paginated(user_id, page=0, page_size=9):
     """Get user files with pagination"""
     connection = create_connection()
@@ -446,7 +450,9 @@ def get_user_files_paginated(user_id, page=0, page_size=9):
         connection.close()
         return [], 0
 
+@st.cache_data(ttl=300, show_spinner=False)  # Cache for 5 minutes
 def load_all_user_data(user_id):
+    
     """Load all user transaction data from files"""
     connection = create_connection()
     if not connection:
@@ -536,7 +542,21 @@ def parse_ncb_transaction_line(line, year):
 
 
 def process_pdf_ncb(file, debug=False):
-    """Process NCB PDF statement with improved parsing"""
+    date_pattern = re.compile(r'(\d{2}/\w{3})\s+(.*?)\s+(-?[\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$')
+    year_patterns = [
+        re.compile(r'P\.O\.,?\s*\d{2}-\d{2}-(\d{4})'),
+        re.compile(r'(\d{4})-\d{2}-\d{2}'),
+        re.compile(r'\b(20\d{2})\b')
+    ]
+    
+    # Skip keywords as set for O(1) lookup
+    skip_keywords = {
+        'CONTINUED', 'END OF STATEMENT', 'JAMAICA', 'NATIONAL COMMERCIAL BANK',
+        'REGULAR SAVINGS', 'CURRENT ACCOUNT', 'SAVINGS ACCOUNT', 'STATEMENT',
+        'PAGE', 'MANDEVILLE', 'MANCHESTER', 'JMD', 'USD', 'P.O.',
+        'BALANCE', 'DATE', 'DESCRIPTION', 'WITHDRAWALS', 'DEPOSITS'
+    }
+    
     try:
         transactions = []
         year = "2024"
@@ -552,79 +572,74 @@ def process_pdf_ncb(file, debug=False):
                 if not text:
                     continue
                 
-                # Extract year from first page
+                # Extract year from first page only
                 if page_num == 1:
-                    patterns = [
-                        r'P\.O\.,?\s*\d{2}-\d{2}-(\d{4})',
-                        r'(\d{4})-\d{2}-\d{2}',
-                        r'\b(20\d{2})\b'
-                    ]
-                    
-                    for pattern in patterns:
-                        year_match = re.search(pattern, text)
+                    for pattern in year_patterns:
+                        year_match = pattern.search(text)
                         if year_match:
                             year = year_match.group(1)
                             break
                 
+                # Process lines
                 for line in text.split('\n'):
                     line = line.strip()
                     
                     if not line:
                         continue
                     
-                    # Skip header/footer lines
-                    skip_keywords = ['CONTINUED', 'END OF STATEMENT', 'JAMAICA', 'NATIONAL COMMERCIAL BANK',
-                                   'REGULAR SAVINGS', 'CURRENT ACCOUNT', 'SAVINGS ACCOUNT', 'STATEMENT',
-                                   'PAGE', 'MANDEVILLE', 'MANCHESTER', 'JMD', 'USD', 'P.O.',
-                                   'BALANCE', 'DATE', 'DESCRIPTION', 'WITHDRAWALS', 'DEPOSITS']
-                    
-                    if any(keyword in line.upper() for keyword in skip_keywords):
+                    # Fast skip check using set
+                    line_upper = line.upper()
+                    if any(keyword in line_upper for keyword in skip_keywords):
                         continue
                     
-                    # Skip customer info and addresses
-                    if re.match(r'^(MR|MRS|MS|DR|MISS)\s+[A-Z]', line):
-                        continue
-                    if re.search(r'^MA \d{2}-\d{2}', line):
-                        continue
-                    if re.search(r'^\d{9,}$', line):
-                        continue
-                    if line.isupper() and not any(c.isdigit() for c in line) and len(line.split()) <= 3:
+                    # Skip customer info
+                    if line[0:2] in ('MR', 'MS', 'DR') or line.startswith('MA ') or line.isdigit():
                         continue
                     
-                    # Try to parse as transaction
-                    parsed = parse_ncb_transaction_line(line, year)
-                    if parsed and parsed['Amount'] > 0 and parsed['Description']:
-                        transactions.append(parsed)
+                    # Try to parse transaction
+                    match = date_pattern.search(line)
+                    if match:
+                        try:
+                            date_str = match.group(1)
+                            description = match.group(2).strip()
+                            amount_str = match.group(3).replace(',', '')
+                            
+                            if not description or description.isspace():
+                                continue
+                            
+                            full_date = f"{date_str}/{year}"
+                            amount = float(amount_str)
+                            
+                            if amount == 0:
+                                continue
+                            
+                            category = 'Debit' if amount < 0 else 'Credit'
+                            
+                            transactions.append({
+                                'Date': full_date,
+                                'Description': description,
+                                'Amount': abs(amount),
+                                'Category': category
+                            })
+                        except:
+                            continue
         
-        # **CRITICAL: Return empty DataFrame if no valid transactions**
         if not transactions:
-            st.warning(f"⚠️ Could not extract transactions from NCB PDF. Please check the file format.")
-            return pd.DataFrame()  # Return empty, not with columns
+            return pd.DataFrame()
         
         df = pd.DataFrame(transactions)
         df['Date'] = pd.to_datetime(df['Date'], format='%d/%b/%Y', errors='coerce')
         df = df.dropna(subset=['Date'])
-        
-        # Remove duplicates
-        df_before = len(df)
         df = df.drop_duplicates(subset=['Date', 'Description', 'Amount'], keep='first')
-        df_after = len(df)
-        
-        #if df_before > df_after:
-           # st.info(f"Removed {df_before - df_after} duplicate transactions.")
-        
-        #st.success(f"✅ Successfully extracted {len(df)} transactions from NCB PDF.")
-        
-        if len(df) > 0:
-            credit_count = len(df[df['Category'] == 'Credit'])
-            debit_count = len(df[df['Category'] == 'Debit'])
-            #st.info(f"📊 **Breakdown:** {credit_count} Credits | {debit_count} Debits")
         
         return df
         
     except Exception as e:
         st.error(f"NCB PDF Processing Error: {str(e)}")
-        return pd.DataFrame()  # Return empty on error
+        return pd.DataFrame()
+
+
+
         
 def process_csv(file_bytes):
     """Process CSV file"""
@@ -1020,6 +1035,7 @@ def load_all_user_data(user_id):
         connection.close()
         return pd.DataFrame()
 
+@st.cache_data(ttl=600, show_spinner=False)  # Cache for 10 minutes
 def get_user_preferences(user_id):
     """Get user preferences"""
     connection = create_connection()
