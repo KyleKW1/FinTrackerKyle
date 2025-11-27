@@ -2063,20 +2063,23 @@ def main():
     
     # Check for reset token in URL parameters (for email links)
     try:
-        query_params = st.query_params
-        if 'reset_token' in query_params and 'reset_token' not in st.session_state:
-            st.session_state.reset_token = query_params['reset_token']
-            st.session_state.page = 'reset'
-    except:
-        pass
+        # Handle query params for password reset
+        if hasattr(st, 'query_params'):
+            query_params = st.query_params
+            if 'reset_token' in query_params:
+                if 'reset_token' not in st.session_state:
+                    st.session_state.reset_token = query_params['reset_token']
+                    st.session_state.page = 'reset'
+    except Exception as e:
+        print(f"Query param error: {e}")
     
     if not st.session_state.authenticated:
         if st.session_state.page == 'register':
             enhanced_register_page()
         elif st.session_state.page == 'forgot':
-            forgot_password_page()
+            forgot_password_page()  # This comes from forgot_password.py
         elif st.session_state.page == 'reset':
-            reset_password_page()
+            reset_password_page()  # This comes from forgot_password.py
         else:
             enhanced_login_page()
     else:
