@@ -1,25 +1,28 @@
 """
-password_reset.py
-Forgot Password/Username Module for Finance Hub
+forgot_password.py - Password Reset and Username Recovery Module
+Place this file in the same directory as Test3.py
 """
 
 import streamlit as st
 import mysql.connector
 from mysql.connector import Error
+import hashlib
+import re
 import secrets
-import string
-from datetime import datetime, timedelta
 import smtplib
 from email.message import EmailMessage
-import hashlib
 
-# Email Configuration (imported from main app)
+# ============================================
+# EMAIL CONFIGURATION
+# ============================================
 APP_EMAIL = "fintrackeralerts@gmail.com"
 APP_EMAIL_PASSWORD = "myhdkbyrzmpvwjyb"
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 
-# Database Configuration (should match your main app)
+# ============================================
+# DATABASE CONFIGURATION (same as Test3.py)
+# ============================================
 DB_CONFIG = {
     'host': 'mysql-11beff9b-kamarwatson36-874b.g.aivencloud.com',
     'port': 11510,
@@ -32,7 +35,7 @@ DB_CONFIG = {
 }
 
 # ============================================
-# DATABASE CONNECTION
+# DATABASE FUNCTIONS
 # ============================================
 
 def create_connection():
@@ -57,95 +60,27 @@ def hash_password(password):
     """Hash password using SHA256"""
     return hashlib.sha256(password.encode()).hexdigest()
 
-# ============================================
-# TOKEN MANAGEMENT
-# ============================================
+def validate_email(email):
+    """Validate email format"""
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
 
-def generate_reset_token():
-    """Generate a secure random token for password reset"""
-    return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
-
-def save_reset_token(email, token):
-    """Save password reset token to database"""
+def check_email_exists(email):
+    """Check if email exists in database"""
     connection = create_connection()
     if not connection:
         return False
     
     try:
         cursor = connection.cursor()
-        # Token expires in 1 hour
-        expiry = datetime.now() + timedelta(hours=1)
-        
-        # Delete any existing tokens for this email
-        cursor.execute("DELETE FROM password_resets WHERE email = %s", (email,))
-        
-        # Insert new token
-        cursor.execute(
-            "INSERT INTO password_resets (email, token, expiry) VALUES (%s, %s, %s)",
-            (email, token, expiry)
-        )
-        connection.commit()
-        cursor.close()
-        connection.close()
-        return True
-    except Error as e:
-        st.error(f"Error saving reset token: {e}")
-        connection.close()
-        return False
-
-def verify_reset_token(token):
-    """Verify if reset token is valid and not expired"""
-    connection = create_connection()
-    if not connection:
-        return False, None
-    
-    try:
-        cursor = connection.cursor(dictionary=True)
-        cursor.execute(
-            "SELECT email, expiry FROM password_resets WHERE token = %s",
-            (token,)
-        )
+        cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
         result = cursor.fetchone()
         cursor.close()
         connection.close()
-        
-        if result and result['expiry'] > datetime.now():
-            return True, result['email']
-        return False, None
+        return result is not None
     except Error as e:
-        st.error(f"Error verifying token: {e}")
-        connection.close()
-        return False, None
-
-# ============================================
-# PASSWORD & USERNAME RECOVERY
-# ============================================
-
-def reset_password(email, new_password):
-    """Reset user password"""
-    connection = create_connection()
-    if not connection:
-        return False
-    
-    try:
-        cursor = connection.cursor()
-        password_hash = hash_password(new_password)
-        cursor.execute(
-            "UPDATE users SET password_hash = %s WHERE email = %s",
-            (password_hash, email)
-        )
-        connection.commit()
-        
-        # Delete used reset token
-        cursor.execute("DELETE FROM password_resets WHERE email = %s", (email,))
-        connection.commit()
-        
-        cursor.close()
-        connection.close()
-        return True
-    except Error as e:
-        st.error(f"Error resetting password: {e}")
-        connection.close()
+        if connection:
+            connection.close()
         return False
 
 def get_username_by_email(email):
@@ -160,94 +95,140 @@ def get_username_by_email(email):
         result = cursor.fetchone()
         cursor.close()
         connection.close()
-        return result['username'] if result else None
+        
+        if result:
+            return result['username']
+        return None
     except Error as e:
-        st.error(f"Error retrieving username: {e}")
-        connection.close()
+        if connection:
+            connection.close()
         return None
 
-def email_exists(email):
-    """Check if email exists in database"""
+# ============================================
+# PASSWORD RESET FUNCTIONS
+# ============================================
+
+def generate_reset_token():
+    """Generate a random reset token"""
+    return secrets.token_urlsafe(32)
+
+def save_reset_token(email, token):
+    """Save password reset token to database"""
     connection = create_connection()
     if not connection:
         return False
     
     try:
         cursor = connection.cursor()
-        cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
-        exists = cursor.fetchone() is not None
+        cursor.execute(
+            """INSERT INTO password_resets (email, token, expires_at) 
+               VALUES (%s, %s, DATE_ADD(NOW(), INTERVAL 1 HOUR))
+               ON DUPLICATE KEY UPDATE token = %s, expires_at = DATE_ADD(NOW(), INTERVAL 1 HOUR)""",
+            (email, token, token)
+        )
+        connection.commit()
         cursor.close()
         connection.close()
-        return exists
+        return True
     except Error as e:
-        st.error(f"Error checking email: {e}")
+        st.error(f"Error saving reset token: {e}")
+        if connection:
+            connection.close()
+        return False
+
+def verify_reset_token(token):
+    """Verify if reset token is valid and not expired"""
+    connection = create_connection()
+    if not connection:
+        return False, None
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT email FROM password_resets WHERE token = %s AND expires_at > NOW()",
+            (token,)
+        )
+        result = cursor.fetchone()
+        cursor.close()
         connection.close()
+        
+        if result:
+            return True, result['email']
+        return False, None
+    except Error as e:
+        if connection:
+            connection.close()
+        return False, None
+
+def reset_password(email, new_password):
+    """Reset user password"""
+    connection = create_connection()
+    if not connection:
+        return False
+    
+    try:
+        cursor = connection.cursor()
+        password_hash = hash_password(new_password)
+        cursor.execute(
+            "UPDATE users SET password_hash = %s WHERE email = %s",
+            (password_hash, email)
+        )
+        
+        # Delete used token
+        cursor.execute("DELETE FROM password_resets WHERE email = %s", (email,))
+        
+        connection.commit()
+        cursor.close()
+        connection.close()
+        return True
+    except Error as e:
+        st.error(f"Error resetting password: {e}")
+        if connection:
+            connection.close()
         return False
 
 # ============================================
 # EMAIL FUNCTIONS
 # ============================================
 
-def send_password_reset_email(email, token):
-    """Send password reset email"""
+def send_reset_email(to_email, reset_token=None, reset_type='password'):
+    """Send password reset or username recovery email"""
     try:
-        subject = "Finance Hub - Password Reset Request"
-        body = f"""
-Dear User,
+        msg = EmailMessage()
+        msg['From'] = APP_EMAIL
+        msg['To'] = to_email
+        
+        if reset_type == 'password':
+            msg['Subject'] = "Finance Hub - Password Reset Request"
+            # TODO: Change this to your deployed URL
+            reset_url = f"http://localhost:8501/?reset_token={reset_token}"
+            body = f"""Dear User,
 
-You have requested to reset your password for Finance Hub.
+You requested to reset your password for Finance Hub.
 
-Your password reset token is: {token}
+Click the link below to reset your password (valid for 1 hour):
+{reset_url}
 
-Please copy this token and use it on the password reset page.
-
-This token will expire in 1 hour.
-
-If you did not request this reset, please ignore this email.
+If you didn't request this, please ignore this email.
 
 Best regards,
-Finance Hub Team
-"""
-        
-        msg = EmailMessage()
-        msg['Subject'] = subject
-        msg['From'] = APP_EMAIL
-        msg['To'] = email
-        msg.set_content(body)
-        
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(APP_EMAIL, APP_EMAIL_PASSWORD)
-            server.send_message(msg)
-        
-        return True
-    except Exception as e:
-        st.error(f"Error sending email: {e}")
-        return False
+Finance Hub Team"""
+        else:  # username recovery
+            username = get_username_by_email(to_email)
+            if not username:
+                return False
+            msg['Subject'] = "Finance Hub - Username Recovery"
+            body = f"""Dear User,
 
-def send_username_reminder_email(email, username):
-    """Send username reminder email"""
-    try:
-        subject = "Finance Hub - Username Reminder"
-        body = f"""
-Dear User,
-
-You have requested your username for Finance Hub.
+You requested to recover your username for Finance Hub.
 
 Your username is: {username}
 
-If you did not request this, please ignore this email.
+If you didn't request this, please ignore this email.
 
 Best regards,
-Finance Hub Team
-"""
+Finance Hub Team"""
         
-        msg = EmailMessage()
-        msg['Subject'] = subject
-        msg['From'] = APP_EMAIL
-        msg['To'] = email
         msg.set_content(body)
         
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
@@ -259,15 +240,15 @@ Finance Hub Team
         
         return True
     except Exception as e:
-        st.error(f"Error sending email: {e}")
+        st.error(f"Failed to send email: {e}")
         return False
 
 # ============================================
-# STREAMLIT PAGES
+# STYLING FUNCTIONS
 # ============================================
 
 def apply_custom_styles():
-    """Apply custom CSS styles (imported from main app)"""
+    """Apply custom CSS styles"""
     st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -343,8 +324,12 @@ def apply_custom_styles():
     </style>
     """, unsafe_allow_html=True)
 
+# ============================================
+# PAGE FUNCTIONS
+# ============================================
+
 def forgot_password_page():
-    """Forgot password page"""
+    """Forgot password/username page"""
     apply_custom_styles()
     
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -353,41 +338,49 @@ def forgot_password_page():
         st.markdown("""
             <div class="auth-container">
                 <div class="auth-header">
-                    <h1 class="auth-title">🔐 Forgot Password</h1>
-                    <p class="auth-subtitle">Enter your email to receive a password reset token</p>
+                    <h1 class="auth-title">🔐 Account Recovery</h1>
+                    <p class="auth-subtitle">Recover your password or username</p>
                 </div>
             </div>
         """, unsafe_allow_html=True)
         
-        email = st.text_input("Email Address", placeholder="your.email@example.com", key="forgot_email")
+        recovery_type = st.radio(
+            "What do you need help with?",
+            ["Reset Password", "Recover Username"],
+            horizontal=True
+        )
+        
+        email = st.text_input("Email Address", placeholder="your.email@example.com", key="recovery_email")
         
         col_btn1, col_btn2 = st.columns(2)
         
         with col_btn1:
-            if st.button("📧 Send Reset Token", use_container_width=True):
+            if st.button("✉️ Send Recovery Email", use_container_width=True):
                 if not email:
                     st.error("❌ Please enter your email address")
-                elif '@' not in email or '.' not in email:
+                elif not validate_email(email):
                     st.error("❌ Invalid email format")
                 else:
                     # Check if email exists
-                    if email_exists(email):
-                        # Generate and save token
-                        token = generate_reset_token()
-                        if save_reset_token(email, token):
-                            if send_password_reset_email(email, token):
-                                st.success("✅ Reset token sent to your email!")
-                                st.info("💡 Check your email and copy the token")
-                                st.session_state.page = 'reset_password'
-                                st.session_state.reset_email = email
-                                st.rerun()
+                    if not check_email_exists(email):
+                        st.error("❌ No account found with this email address")
+                    else:
+                        if recovery_type == "Reset Password":
+                            # Generate and save reset token
+                            token = generate_reset_token()
+                            if save_reset_token(email, token):
+                                if send_reset_email(email, token, 'password'):
+                                    st.success("✅ Password reset email sent! Check your inbox.")
+                                    st.info("The reset link will expire in 1 hour.")
+                                else:
+                                    st.error("❌ Failed to send email. Please try again.")
+                            else:
+                                st.error("❌ Failed to generate reset token.")
+                        else:  # Recover Username
+                            if send_reset_email(email, None, 'username'):
+                                st.success("✅ Username recovery email sent! Check your inbox.")
                             else:
                                 st.error("❌ Failed to send email. Please try again.")
-                        else:
-                            st.error("❌ Failed to generate reset token")
-                    else:
-                        # Don't reveal if email exists for security
-                        st.success("✅ If that email exists, a reset token has been sent")
         
         with col_btn2:
             if st.button("← Back to Login", use_container_width=True):
@@ -395,7 +388,7 @@ def forgot_password_page():
                 st.rerun()
 
 def reset_password_page():
-    """Reset password page"""
+    """Reset password page (accessed via email link)"""
     apply_custom_styles()
     
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -405,49 +398,63 @@ def reset_password_page():
             <div class="auth-container">
                 <div class="auth-header">
                     <h1 class="auth-title">🔑 Reset Password</h1>
-                    <p class="auth-subtitle">Enter your reset token and new password</p>
+                    <p class="auth-subtitle">Enter your new password</p>
                 </div>
             </div>
         """, unsafe_allow_html=True)
         
-        token = st.text_input("Reset Token", placeholder="Enter the token from your email", key="reset_token")
-        new_password = st.text_input("New Password", type="password", placeholder="Enter new password (min 6 characters)", key="new_password")
-        confirm_password = st.text_input("Confirm Password", type="password", placeholder="Confirm new password", key="confirm_new_password")
+        # Get token from session state
+        if 'reset_token' not in st.session_state:
+            st.error("❌ Invalid or expired reset link")
+            if st.button("← Back to Login", use_container_width=True):
+                st.session_state.page = 'login'
+                st.rerun()
+            return
+        
+        token = st.session_state.reset_token
+        
+        # Verify token
+        valid, email = verify_reset_token(token)
+        
+        if not valid:
+            st.error("❌ This reset link is invalid or has expired")
+            if st.button("← Request New Link", use_container_width=True):
+                st.session_state.page = 'forgot'
+                if 'reset_token' in st.session_state:
+                    del st.session_state.reset_token
+                st.rerun()
+            return
+        
+        st.success(f"✅ Resetting password for: {email}")
+        
+        new_password = st.text_input("New Password", type="password", placeholder="Enter new password (min 6 characters)", key="new_pass")
+        confirm_password = st.text_input("Confirm Password", type="password", placeholder="Confirm new password", key="confirm_pass")
         
         col_btn1, col_btn2 = st.columns(2)
         
         with col_btn1:
-            if st.button("✅ Reset Password", use_container_width=True):
-                if not token or not new_password or not confirm_password:
-                    st.error("❌ All fields are required")
+            if st.button("🔐 Reset Password", use_container_width=True):
+                if not new_password or not confirm_password:
+                    st.error("❌ Please fill in all fields")
                 elif len(new_password) < 6:
                     st.error("❌ Password must be at least 6 characters")
                 elif new_password != confirm_password:
                     st.error("❌ Passwords do not match")
                 else:
-                    # Verify token
-                    valid, email = verify_reset_token(token)
-                    if valid:
-                        if reset_password(email, new_password):
-                            st.success("✅ Password reset successful!")
-                            st.info("Please login with your new password")
-                            st.balloons()
-                            st.session_state.page = 'login'
-                            if 'reset_email' in st.session_state:
-                                del st.session_state.reset_email
-                            st.rerun()
-                        else:
-                            st.error("❌ Failed to reset password")
+                    if reset_password(email, new_password):
+                        st.success("✅ Password reset successful!")
+                        st.balloons()
+                        st.info("You can now login with your new password")
+                        if 'reset_token' in st.session_state:
+                            del st.session_state.reset_token
+                        st.session_state.page = 'login'
+                        st.rerun()
                     else:
-                        st.error("❌ Invalid or expired token. Please request a new one.")
+                        st.error("❌ Failed to reset password. Please try again.")
         
         with col_btn2:
-            if st.button("← Back to Login", use_container_width=True):
+            if st.button("← Cancel", use_container_width=True):
+                if 'reset_token' in st.session_state:
+                    del st.session_state.reset_token
                 st.session_state.page = 'login'
-                if 'reset_email' in st.session_state:
-                    del st.session_state.reset_email
                 st.rerun()
-
-def forgot_username_page():
-    """Forgot username page"""
-    apply_custom_styles()
