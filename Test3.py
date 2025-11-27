@@ -1133,13 +1133,8 @@ def classify_expense_cached(description, category_json):
     return "Other"
 
 
-# Use Streamlit secrets if available, otherwise use environment variables
-try:
-    APP_EMAIL = st.secrets.get("APP_EMAIL", "")
-    APP_EMAIL_PASSWORD = st.secrets.get("APP_EMAIL_PASSWORD", "")
-except:
-    APP_EMAIL = os.getenv('APP_EMAIL', '')
-    APP_EMAIL_PASSWORD = os.getenv('APP_EMAIL_PASSWORD', '')
+APP_EMAIL = "fintrackeralerts@gmail.com"
+APP_EMAIL_PASSWORD = "myhdkbyrzmpvwjyb"
     
 
 def send_email_alert(to_email, subject, body, sender_email, sender_password, smtp_server, smtp_port):
