@@ -1935,7 +1935,7 @@ def show_spending_analysis():
                 st.warning(f"You are J${SAVINGS_GOAL - month_savings:,.2f} below your savings goal.")
             
             # Email alerts
-            if enable_email and notify_email:
+            if enable_email and notify_email and sender_email and sender_password:
                 overspent = comparison[comparison['Amount'] > comparison['Budget']]
                 if not overspent.empty:
                     subject = f"Finance Tracker Alert: Overspending in {selected_month}"
@@ -1947,8 +1947,15 @@ def show_spending_analysis():
                     body = "\n".join(body_lines)
                     
                     if st.button("📧 Send Alert Email", use_container_width=True):
-                        # Use the simplified function with app credentials
-                        send_email_alert(to_email, subject, body, sender_email, sender_password, smtp_server, smtp_port)
+                        send_email_alert(
+                            to_email=notify_email,
+                            subject=subject,
+                            body=body,
+                            sender_email=sender_email,
+                            sender_password=sender_password,
+                            smtp_server=smtp_server,
+                            smtp_port=smtp_port
+                        )
             
             # Export reports
             st.markdown("---")
