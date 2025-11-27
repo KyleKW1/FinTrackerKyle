@@ -1935,7 +1935,7 @@ def show_spending_analysis():
                 st.warning(f"You are J${SAVINGS_GOAL - month_savings:,.2f} below your savings goal.")
             
             # Email alerts
-             if enable_email and notify_email and APP_EMAIL and APP_EMAIL_PASSWORD:
+            if enable_email and notify_email and APP_EMAIL and APP_EMAIL_PASSWORD:
                 overspent = comparison[comparison['Amount'] > comparison['Budget']]
                 if not overspent.empty:
                     subject = f"Finance Tracker Alert: Overspending in {selected_month}"
