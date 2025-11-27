@@ -1935,7 +1935,7 @@ def show_spending_analysis():
                 st.warning(f"You are J${SAVINGS_GOAL - month_savings:,.2f} below your savings goal.")
             
             # Email alerts
-            if enable_email and notify_email and sender_email and sender_password:
+             if enable_email and notify_email and APP_EMAIL and APP_EMAIL_PASSWORD:
                 overspent = comparison[comparison['Amount'] > comparison['Budget']]
                 if not overspent.empty:
                     subject = f"Finance Tracker Alert: Overspending in {selected_month}"
@@ -1951,12 +1951,13 @@ def show_spending_analysis():
                             to_email=notify_email,
                             subject=subject,
                             body=body,
-                            sender_email=sender_email,
-                            sender_password=sender_password,
-                            smtp_server=smtp_server,
-                            smtp_port=smtp_port
+                            sender_email=APP_EMAIL,  # Changed from sender_email
+                            sender_password=APP_EMAIL_PASSWORD,  # Changed from sender_password
+                            smtp_server=SMTP_SERVER,  # Use the constant defined at module level
+                            smtp_port=SMTP_PORT  # Use the constant defined at module level
                         )
-            
+            elif enable_email and not (APP_EMAIL and APP_EMAIL_PASSWORD):
+                st.warning("⚠️ Email credentials not configured. Please set APP_EMAIL and APP_EMAIL_PASSWORD environment variables.")
             # Export reports
             st.markdown("---")
             st.markdown("#### 📤 Export Reports")
