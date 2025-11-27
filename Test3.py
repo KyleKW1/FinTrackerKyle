@@ -23,6 +23,8 @@ except ImportError:
 
 from fpdf import FPDF
 from pdf_generator import create_pdf_with_charts, create_simple_pdf  
+from forgot_password import forgot_password_page, reset_password_page
+
 
 # ============================================
 # ENHANCED UI STYLING
