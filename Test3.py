@@ -1948,7 +1948,7 @@ def show_spending_analysis():
                     
                     if st.button("📧 Send Alert Email", use_container_width=True):
                         # Use the simplified function with app credentials
-                        send_email_alert_to_user(notify_email, subject, body)
+                        send_email_alert(notify_email, subject, body)
             
             # Export reports
             st.markdown("---")
