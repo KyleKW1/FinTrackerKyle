@@ -17,6 +17,10 @@ import os
 from functools import lru_cache
 import hashlib
 from datetime import datetime, timedelta
+import threading
+from queue import Queue
+from functools import lru_cache
+import time
 
 try:
     import pdfkit
@@ -1157,49 +1161,117 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587  # Use 587 for TLS
     
 
-def send_email_alert(to_email, subject, body, sender_email, sender_password, smtp_server, smtp_port):
-    """Send email alerts with improved error handling"""
+# Email queue for background sending
+email_queue = Queue()
+
+def email_worker():
+    """Background worker to process email queue"""
+    while True:
+        try:
+            email_data = email_queue.get(timeout=1)
+            if email_data is None:
+                break
+            
+            to_email = email_data['to_email']
+            subject = email_data['subject']
+            body = email_data['body']
+            sender_email = email_data['sender_email']
+            sender_password = email_data['sender_password']
+            smtp_server = email_data['smtp_server']
+            smtp_port = email_data['smtp_port']
+            
+            try:
+                msg = EmailMessage()
+                msg['Subject'] = subject
+                msg['From'] = sender_email
+                msg['To'] = to_email
+                msg.set_content(body)
+                
+                if smtp_port == 465:
+                    with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=10) as server:
+                        server.login(sender_email, sender_password)
+                        server.send_message(msg)
+                else:
+                    with smtplib.SMTP(smtp_server, smtp_port, timeout=10) as server:
+                        server.ehlo()
+                        server.starttls()
+                        server.ehlo()
+                        server.login(sender_email, sender_password)
+                        server.send_message(msg)
+                
+                email_data['success'] = True
+            except Exception as e:
+                email_data['success'] = False
+                email_data['error'] = str(e)
+            
+            email_queue.task_done()
+        except:
+            continue
+
+# Start background email worker
+email_thread = threading.Thread(target=email_worker, daemon=True)
+email_thread.start()
+
+def send_email_async(to_email, subject, body, sender_email, sender_password, smtp_server, smtp_port):
+    """Send email asynchronously without blocking UI"""
+    email_data = {
+        'to_email': to_email,
+        'subject': subject,
+        'body': body,
+        'sender_email': sender_email,
+        'sender_password': sender_password,
+        'smtp_server': smtp_server,
+        'smtp_port': smtp_port,
+        'success': None
+    }
+    
+    email_queue.put(email_data)
+    return True
+
+@lru_cache(maxsize=100)
+def get_cached_user_email(user_id):
+    """Cache user email to avoid database calls"""
+    connection = create_connection()
+    if not connection:
+        return None
+    
     try:
-        # Validate inputs
-        if not all([to_email, sender_email, sender_password]):
-            st.error("❌ Missing email credentials")
-            return False
-        
-        # Create message
-        msg = EmailMessage()
-        msg['Subject'] = subject
-        msg['From'] = sender_email
-        msg['To'] = to_email
-        msg.set_content(body)
-        
-        # Send based on port
-        if smtp_port == 465:
-            # SSL connection
-            with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=10) as server:
-                server.login(sender_email, sender_password)
-                server.send_message(msg)
-        else:
-            # TLS connection (port 587)
-            with smtplib.SMTP(smtp_server, smtp_port, timeout=10) as server:
-                server.ehlo()
-                server.starttls()
-                server.ehlo()
-                server.login(sender_email, sender_password)
-                server.send_message(msg)
-        
-        st.success("✅ Email alert sent successfully!")
-        return True
-        
-    except smtplib.SMTPAuthenticationError as e:
-        st.error("❌ Authentication failed. For Gmail, use an App Password (not your regular password)")
-        st.info("Generate App Password: https://myaccount.google.com/apppasswords")
-        return False
-    except smtplib.SMTPException as e:
-        st.error(f"❌ SMTP error: {str(e)}")
-        return False
-    except Exception as e:
-        st.error(f"❌ Failed to send email: {str(e)}")
-        return False
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT email FROM users WHERE id = %s", (user_id,))
+        result = cursor.fetchone()
+        cursor.close()
+        connection.close()
+        return result['email'] if result else None
+    except:
+        if connection:
+            connection.close()
+        return None
+
+def save_user_email_preference(user_id, email, enabled):
+    """Save email preference to session state and optionally to database"""
+    if 'email_preferences' not in st.session_state:
+        st.session_state.email_preferences = {}
+    
+    st.session_state.email_preferences[user_id] = {
+        'email': email,
+        'enabled': enabled,
+        'last_updated': time.time()
+    }
+    
+    # Clear cache when preferences change
+    get_cached_user_email.cache_clear()
+
+def get_user_email_preference(user_id):
+    """Get email preference from session state"""
+    if 'email_preferences' not in st.session_state:
+        st.session_state.email_preferences = {}
+    
+    if user_id in st.session_state.email_preferences:
+        return st.session_state.email_preferences[user_id]
+    else:
+        # Initialize with default
+        user_email = get_cached_user_email(user_id)
+        return {'email': user_email or '', 'enabled': False}
 
 def export_to_excel(df):
     """Export dataframe to Excel"""
@@ -1741,13 +1813,8 @@ def show_spending_analysis():
         else:
             st.sidebar.error("❌ Failed to save preferences")
     
-    # Email settings
-    st.sidebar.subheader("📧 Email Alerts")
-    
-    # Get user's email from database
-    user_notification_email = st.session_state.user.get('email', '')
-    
-    enable_email = st.sidebar.checkbox("Enable Email Notifications")
+    # Email settings (OPTIMIZED)
+    enable_email, notify_email = render_email_preferences_sidebar()
     
     if enable_email:
         notify_email = st.sidebar.text_input(
@@ -1971,18 +2038,17 @@ def show_spending_analysis():
                     body_lines.append("\n\nPlease review your budget.\n\nBest regards,\nFinance Hub Team")
                     body = "\n".join(body_lines)
                     
-                    if st.button("📧 Send Alert Email", use_container_width=True):
-                        send_email_alert(
-                            to_email=notify_email,
-                            subject=subject,
-                            body=body,
-                            sender_email=APP_EMAIL,
-                            sender_password=APP_EMAIL_PASSWORD,
-                            smtp_server=SMTP_SERVER,
-                            smtp_port=SMTP_PORT
-                        )
-            elif enable_email and not notify_email:
-                st.warning("⚠️ Please enter your email address to receive alerts.")
+                    if st.button("📧 Send Alert Email", use_container_width=True, key="send_alert_btn"):
+                        with st.spinner("Queuing email..."):
+                            success = send_overspending_alert_async(
+                                user_name=st.session_state.user['username'],
+                                selected_month=selected_month,
+                                overspent_df=overspent,
+                                notify_email=notify_email
+                            )
+                            
+                            if success:
+                                st.success("✅ Email queued for sending! You'll receive it shortly.")
 
 
 
