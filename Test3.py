@@ -13,6 +13,7 @@ import pdfplumber
 from functools import lru_cache
 from datetime import datetime
 import json
+import os
 
 try:
     import pdfkit
@@ -1131,18 +1132,15 @@ def classify_expense_cached(description, category_json):
                 return category
     return "Other"
 
-# At the top of your file, add these imports
-import os
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
-
-# Get email credentials from environment variables
-APP_EMAIL = os.getenv('APP_EMAIL')
-APP_EMAIL_PASSWORD = os.getenv('APP_EMAIL_PASSWORD')
-SMTP_SERVER = 'smtp.gmail.com'
-SMTP_PORT = 465
+# Use Streamlit secrets if available, otherwise use environment variables
+try:
+    APP_EMAIL = st.secrets.get("APP_EMAIL", "")
+    APP_EMAIL_PASSWORD = st.secrets.get("APP_EMAIL_PASSWORD", "")
+except:
+    APP_EMAIL = os.getenv('APP_EMAIL', '')
+    APP_EMAIL_PASSWORD = os.getenv('APP_EMAIL_PASSWORD', '')
+    
 
 def send_email_alert(to_email, subject, body, sender_email, sender_password, smtp_server, smtp_port):
     """Send email alerts with improved error handling"""
