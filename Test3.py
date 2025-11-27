@@ -2066,9 +2066,22 @@ def main():
     
     init_session_state()
     
+    # Check for reset token in URL parameters (for email links)
+    try:
+        query_params = st.query_params
+        if 'reset_token' in query_params and 'reset_token' not in st.session_state:
+            st.session_state.reset_token = query_params['reset_token']
+            st.session_state.page = 'reset'
+    except:
+        pass
+    
     if not st.session_state.authenticated:
         if st.session_state.page == 'register':
             enhanced_register_page()
+        elif st.session_state.page == 'forgot':
+            forgot_password_page()
+        elif st.session_state.page == 'reset':
+            reset_password_page()
         else:
             enhanced_login_page()
     else:
