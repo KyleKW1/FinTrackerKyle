@@ -1262,23 +1262,16 @@ def enhanced_login_page():
                 st.session_state.page = 'register'
                 st.rerun()
         
-        st.markdown("---")
-        
-        # Forgot password/username links
-        col_link1, col_link2 = st.columns(2)
-        
-        with col_link1:
-            if st.button("🔐 Forgot Password?", use_container_width=True, type="secondary"):
-                st.session_state.page = 'forgot_password'
+        # Add forgot password link
+        st.markdown("<br>", unsafe_allow_html=True)
+        col_forgot1, col_forgot2, col_forgot3 = st.columns([1, 2, 1])
+        with col_forgot2:
+            if st.button("🔐 Forgot Password/Username?", use_container_width=True, type="secondary"):
+                st.session_state.page = 'forgot'
                 st.rerun()
         
-        with col_link2:
-            if st.button("👤 Forgot Username?", use_container_width=True, type="secondary"):
-                st.session_state.page = 'forgot_username'
-                st.rerun()
-        
-        st.markdown("---")
         st.info("💡 **Demo:** Create a new account to get started!")
+
 
 # ============================================
 # ENHANCED REGISTER PAGE
