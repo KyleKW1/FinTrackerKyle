@@ -1135,6 +1135,8 @@ def classify_expense_cached(description, category_json):
 
 APP_EMAIL = "fintrackeralerts@gmail.com"
 APP_EMAIL_PASSWORD = "myhdkbyrzmpvwjyb"
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587  # Use 587 for TLS
     
 
 def send_email_alert(to_email, subject, body, sender_email, sender_password, smtp_server, smtp_port):
@@ -1715,7 +1717,7 @@ def show_spending_analysis():
     # Email settings
     st.sidebar.subheader("📧 Email Alerts")
     
-    # Get user's saved email from database (if you implemented Option 2)
+    # Get user's email from database
     user_notification_email = st.session_state.user.get('email', '')
     
     enable_email = st.sidebar.checkbox("Enable Email Notifications")
@@ -1727,10 +1729,13 @@ def show_spending_analysis():
             placeholder="your.email@example.com"
         )
         
+        st.sidebar.info("✅ Email alerts will be sent from: fintrackeralerts@gmail.com")
+        
         if st.sidebar.button("💾 Save Email Preference"):
-            # Save to database if implementing Option 2
-            # update_user_notification_email(st.session_state.user['id'], notify_email)
             st.sidebar.success("✅ Email preference saved!")
+    else:
+        notify_email = None
+
     
     # Apply categories
     category_json = json.dumps(CATEGORY_KEYWORDS)
@@ -1928,7 +1933,7 @@ def show_spending_analysis():
                 st.warning(f"You are J${SAVINGS_GOAL - month_savings:,.2f} below your savings goal.")
             
             # Email alerts
-            if enable_email and notify_email and APP_EMAIL and APP_EMAIL_PASSWORD:
+            if enable_email and notify_email:
                 overspent = comparison[comparison['Amount'] > comparison['Budget']]
                 if not overspent.empty:
                     subject = f"Finance Tracker Alert: Overspending in {selected_month}"
@@ -1944,13 +1949,19 @@ def show_spending_analysis():
                             to_email=notify_email,
                             subject=subject,
                             body=body,
-                            sender_email=APP_EMAIL,  # Changed from sender_email
-                            sender_password=APP_EMAIL_PASSWORD,  # Changed from sender_password
-                            smtp_server=SMTP_SERVER,  # Use the constant defined at module level
-                            smtp_port=SMTP_PORT  # Use the constant defined at module level
+                            sender_email=APP_EMAIL,
+                            sender_password=APP_EMAIL_PASSWORD,
+                            smtp_server=SMTP_SERVER,
+                            smtp_port=SMTP_PORT
                         )
-            elif enable_email and not (APP_EMAIL and APP_EMAIL_PASSWORD):
-                st.warning("⚠️ Email credentials not configured. Please set APP_EMAIL and APP_EMAIL_PASSWORD environment variables.")
+            elif enable_email and not notify_email:
+                st.warning("⚠️ Please enter your email address to receive alerts.")
+
+
+
+
+
+            
             # Export reports
             st.markdown("---")
             st.markdown("#### 📤 Export Reports")
