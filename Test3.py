@@ -1144,29 +1144,48 @@ APP_EMAIL_PASSWORD = os.getenv('APP_EMAIL_PASSWORD')
 SMTP_SERVER = 'smtp.gmail.com'
 SMTP_PORT = 465
 
-def send_email_alert_to_user(to_email, subject, body):
-    """Send email alerts using app's email credentials"""
+def send_email_alert(to_email, subject, body, sender_email, sender_password, smtp_server, smtp_port):
+    """Send email alerts with improved error handling"""
     try:
+        # Validate inputs
+        if not all([to_email, sender_email, sender_password]):
+            st.error("❌ Missing email credentials")
+            return False
+        
+        # Create message
         msg = EmailMessage()
         msg['Subject'] = subject
-        msg['From'] = APP_EMAIL
+        msg['From'] = sender_email
         msg['To'] = to_email
         msg.set_content(body)
         
-        if SMTP_PORT == 465:
-            with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
-                server.login(APP_EMAIL, APP_EMAIL_PASSWORD)
+        # Send based on port
+        if smtp_port == 465:
+            # SSL connection
+            with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=10) as server:
+                server.login(sender_email, sender_password)
                 server.send_message(msg)
         else:
-            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            # TLS connection (port 587)
+            with smtplib.SMTP(smtp_server, smtp_port, timeout=10) as server:
+                server.ehlo()
                 server.starttls()
-                server.login(APP_EMAIL, APP_EMAIL_PASSWORD)
+                server.ehlo()
+                server.login(sender_email, sender_password)
                 server.send_message(msg)
         
         st.success("✅ Email alert sent successfully!")
         return True
+        
+    except smtplib.SMTPAuthenticationError as e:
+        st.error("❌ Authentication failed. For Gmail, use an App Password (not your regular password)")
+        st.info("Generate App Password: https://myaccount.google.com/apppasswords")
+        return False
+    except smtplib.SMTPException as e:
+        st.error(f"❌ SMTP error: {str(e)}")
+        return False
     except Exception as e:
-        st.error(f"❌ Failed to send email: {e}")
+        st.error(f"❌ Failed to send email: {str(e)}")
         return False
 
 def export_to_excel(df):
