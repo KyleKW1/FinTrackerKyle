@@ -8,7 +8,9 @@ Handles missing pages gracefully
 try:
     from .auth_pages import login_page, register_page
     from .dashboard import dashboard_page
+    print("✓ Successfully imported auth_pages and dashboard")
 except ImportError as e:
+    print(f"ERROR importing required pages: {e}")
     import streamlit as st
     st.error(f"Critical error: Cannot import required pages: {e}")
     st.stop()
@@ -17,7 +19,9 @@ except ImportError as e:
 try:
     from .spending_analysis import spending_analysis_page
     HAS_SPENDING_ANALYSIS = True
-except ImportError:
+    print("✓ Successfully imported spending_analysis")
+except ImportError as e:
+    print(f"WARNING: Could not import spending_analysis: {e}")
     HAS_SPENDING_ANALYSIS = False
     
     # Create a placeholder function
@@ -35,3 +39,5 @@ __all__ = [
     'dashboard_page',
     'spending_analysis_page',
 ]
+
+print(f"Pages module loaded. HAS_SPENDING_ANALYSIS: {HAS_SPENDING_ANALYSIS}")
