@@ -51,7 +51,8 @@ class FinancePDF(FPDF):
     def section_title(self, title, icon=''):
         self.set_font('Arial', 'B', 16)
         self.set_text_color(102, 126, 234)
-        self.cell(0, 10, f'{icon} {title}', 0, 1, 'L')
+        # Don't use emoji icons - Arial doesn't support them
+        self.cell(0, 10, title, 0, 1, 'L')
         self.set_text_color(0, 0, 0)
         self.ln(2)
     
@@ -115,7 +116,7 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
     # ==========================================
     # PERIOD OVERVIEW
     # ==========================================
-    pdf.section_title('Period Overview', 'X')
+    pdf.section_title('Period Overview')
     
     pdf.set_font('Arial', '', 11)
     pdf.cell(0, 8, f'Analysis Type: {analysis_type}', 0, 1)
@@ -139,7 +140,7 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
     # ==========================================
     # EXECUTIVE SUMMARY
     # ==========================================
-    pdf.section_title('Executive Summary', '📊')
+    pdf.section_title('Executive Summary')
     
     # Metric boxes
     start_x = 15
@@ -178,7 +179,7 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
         # ==========================================
         # MONTHLY TREND CHART
         # ==========================================
-        pdf.section_title('Monthly Trends', '📈')
+        pdf.section_title('Monthly Trends')
         
         fig, ax = plt.subplots(figsize=(12, 6), facecolor='white')
         
@@ -230,7 +231,7 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
         # AGGREGATE SPENDING DISTRIBUTION
         # ==========================================
         pdf.add_page()
-        pdf.section_title('Spending Distribution', '🥧')
+        pdf.section_title('Spending Distribution')
         
         # Aggregate spending across all months
         all_spending = []
@@ -289,7 +290,7 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
             # SPENDING BREAKDOWN TABLE
             # ==========================================
             pdf.add_page()
-            pdf.section_title('Spending Breakdown', '📋')
+            pdf.section_title('Spending Breakdown')
             
             pdf.set_font('Arial', 'B', 11)
             pdf.set_fill_color(102, 126, 234)
@@ -328,7 +329,7 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
         # TOP TRANSACTIONS
         # ==========================================
         pdf.add_page()
-        pdf.section_title('Top 20 Transactions', '💳')
+        pdf.section_title('Top 20 Transactions')
         
         top_transactions = period_data.nlargest(20, 'Amount')
         
