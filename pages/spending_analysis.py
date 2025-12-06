@@ -454,35 +454,44 @@ def render_analysis_section(data):
         st.markdown("---")
         render_aggregate_analysis(data, selected_year, selected_months)
     
-    # EXPORT OPTIONS
+    # EXPORT OPTIONS - CLEAN VERSION
     st.markdown("---")
     st.markdown("#### 📥 Export Data")
     
-    export_format = st.selectbox(
-        "Select export format", 
-        options=["Excel (Data Only)", "PDF (With Charts)"],
-        key="export_format_selector"
-    )
+    # Single row with format selector and download button side by side
+    col_format, col_download = st.columns([3, 1])
     
-    if st.button("📥 Download Report", use_container_width=True, type="primary"):
+    with col_format:
+        export_format = st.selectbox(
+            "Export format", 
+            options=["Excel (Data Only)", "PDF Report (With Charts)"],
+            key="export_format_selector",
+            label_visibility="collapsed"
+        )
+    
+    with col_download:
+        download_clicked = st.button("📥 Download", use_container_width=True, type="primary")
+    
+    # Handle download when button is clicked
+    if download_clicked:
         if export_format == "Excel (Data Only)":
             # Excel export
-            excel_data = export_to_excel(period_data)
-            st.download_button(
-                label="📊 Download Excel File",
-                data=excel_data,
-                file_name=f"transactions_{selected_year}_{analysis_type.replace(' ', '_')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                key="download_excel_btn"
-            )
+            with st.spinner("Generating Excel file..."):
+                excel_data = export_to_excel(period_data)
+                st.download_button(
+                    label="⬇️ Click to Save Excel",
+                    data=excel_data,
+                    file_name=f"transactions_{selected_year}_{analysis_type.replace(' ', '_')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="download_excel_btn"
+                )
         else:
             # PDF with charts
             try:
                 from pdf_generator import create_pdf_with_charts
                 
                 with st.spinner("Generating PDF with charts..."):
-                    # Get the data for the first selected month (or combined data)
                     if len(selected_months) > 0:
                         first_month_num = sorted(selected_months)[0]
                         year_month = f"{selected_year}-{first_month_num:02d}"
@@ -516,23 +525,20 @@ def render_analysis_section(data):
                         )
                         
                         st.download_button(
-                            label="📥 Download PDF Report with Charts",
+                            label="⬇️ Click to Save PDF",
                             data=pdf_bytes,
                             file_name=f"Finance_Report_{month_name}_{selected_year}.pdf",
                             mime="application/pdf",
                             use_container_width=True,
                             key="download_pdf_btn"
                         )
-                        st.success("✅ PDF generated successfully!")
                     else:
                         st.error("Please select at least one month to generate PDF")
                         
             except ImportError:
-                st.error("❌ PDF generation dependencies not installed. Please run: pip install matplotlib")
+                st.error("❌ PDF generation dependencies not installed.")
             except Exception as e:
                 st.error(f"❌ Error generating PDF: {e}")
-                import traceback
-                st.code(traceback.format_exc())
 
 
 def render_monthly_analysis(data, year_month, month_name):
