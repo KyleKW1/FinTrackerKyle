@@ -421,43 +421,52 @@ def possible_savings_page():
         st.plotly_chart(fig, use_container_width=True)
     
     # ==========================================
-    # EXAMPLE TRANSACTIONS
+    # TOP SAVINGS OPPORTUNITIES
     # ==========================================
     st.markdown("---")
-    st.markdown("#### 💳 Example Round-Ups")
-    st.caption(f"See how {selected_roundup} round-up works on your actual transactions")
+    st.markdown("#### 🏆 Top Savings Opportunities")
+    st.caption("Transactions that would have saved you the most with round-up")
     
-    # Show sample transactions
-    sample_transactions = spending_data.nlargest(10, 'Amount')[['Date', 'Description', 'Amount', 'Roundup_Savings']].copy()
-    sample_transactions['Rounded_Amount'] = sample_transactions['Amount'] + sample_transactions['Roundup_Savings']
+    top_savings = spending_data.nlargest(10, 'Roundup_Savings')[
+        ['Date', 'Description', 'Amount', 'Roundup_Savings']
+    ]
     
-    for idx, row in sample_transactions.iterrows():
-        col1, col2, col3, col4 = st.columns([2, 3, 2, 2])
+    # Add Spending Category if available
+    if 'Spending Category' in spending_data.columns:
+        top_savings = spending_data.nlargest(10, 'Roundup_Savings')[
+            ['Date', 'Description', 'Amount', 'Roundup_Savings', 'Spending Category']
+        ]
+    
+    for idx, row in top_savings.iterrows():
+        original = row['Amount']
+        rounded = original + row['Roundup_Savings']
         
-        with col1:
-            st.caption(f"📅 {row['Date'].strftime('%Y-%m-%d')}")
+        category_info = f" • {row['Spending Category']}" if 'Spending Category' in row else ""
         
-        with col2:
-            st.caption(f"🏪 {row['Description'][:30]}")
-        
-        with col3:
-            st.markdown(f"""
-                <div style='text-align: center;'>
-                    <div style='font-size: 0.75rem; color: #6b7280;'>Original</div>
-                    <div style='font-weight: 600;'>J${row['Amount']:,.2f}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        
-        with col4:
-            st.markdown(f"""
-                <div style='text-align: center;'>
-                    <div style='font-size: 0.75rem; color: #6b7280;'>Rounded + Saved</div>
-                    <div style='font-weight: 600; color: #10b981;'>
-                        J${row['Rounded_Amount']:,.2f}
-                        <span style='font-size: 0.8rem; color: #059669;'>(+J${row['Roundup_Savings']:,.2f})</span>
+        st.markdown(f"""
+            <div style='background: white; padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem; border-left: 4px solid #10b981;'>
+                <div style='display: flex; justify-content: space-between; align-items: start;'>
+                    <div style='flex: 1;'>
+                        <div style='font-weight: 600; color: #111827; margin-bottom: 0.25rem;'>
+                            {row['Description'][:50]}
+                        </div>
+                        <div style='font-size: 0.85rem; color: #6b7280;'>
+                            {row['Date'].strftime('%Y-%m-%d')}{category_info}
+                        </div>
+                    </div>
+                    <div style='text-align: right; margin-left: 1rem;'>
+                        <div style='font-size: 0.85rem; color: #6b7280; margin-bottom: 0.25rem;'>
+                            J${original:,.2f} → J${rounded:,.2f}
+                        </div>
+                        <div style='font-size: 1.1rem; font-weight: 700; color: #10b981;'>
+                            +J${row['Roundup_Savings']:,.2f}
+                        </div>
                     </div>
                 </div>
-            """, unsafe_allow_html=True)
+            </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("</div>", unsafe_allow_html=True)
         
         st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.2;'>", unsafe_allow_html=True)
     
