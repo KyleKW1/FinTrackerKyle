@@ -1,6 +1,6 @@
 # pages/spending_analysis.py
 """
-Spending Analysis page - file management, visualization, and reporting
+Spending Analysis page - unified flowing layout
 """
 
 import streamlit as st
@@ -11,30 +11,18 @@ from data_loader import load_all_user_data, clear_data_cache
 from database import (
     save_user_file, 
     delete_user_file, 
-    get_user_files_paginated,
-    get_user_preferences,
-    save_user_preferences
+    get_user_files_paginated
 )
 from utils import (
     calculate_monthly_stats,
     get_spending_by_category,
-    compare_budget_vs_actual,
-    generate_alert_email_body,
-    send_email_alert,
     export_to_excel
 )
-from config import (
-    DEFAULT_CATEGORY_MAPPING,
-    DEFAULT_BUDGETS,
-    DEFAULT_SAVINGS_GOAL,
-    FILES_PER_PAGE
-)
-from pdf_generator import create_pdf_with_charts
-import json
+from config import FILES_PER_PAGE
 
 
 def spending_analysis_page():
-    """Main spending analysis page"""
+    """Main spending analysis page with flowing layout"""
     st.markdown("<div class='content-container'>", unsafe_allow_html=True)
     
     # Header with back button
@@ -46,39 +34,12 @@ def spending_analysis_page():
             st.session_state.selected_feature = None
             st.rerun()
     
-    # Main tabs
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "📁 File Management", 
-        "📈 Visualizations", 
-        "⚙️ Settings",
-        "📧 Alerts"
-    ])
+    st.markdown("---")
     
-    with tab1:
-        file_management_tab()
-    
-    with tab2:
-        visualizations_tab()
-    
-    with tab3:
-        settings_tab()
-    
-    with tab4:
-        alerts_tab()
-    
-    st.markdown("</div>", unsafe_allow_html=True)
-
-
-# ============================================
-# FILE MANAGEMENT TAB
-# ============================================
-
-def file_management_tab():
-    """File upload and management"""
-    st.markdown("#### Upload Bank Statements")
+    # FILE UPLOAD SECTION
+    st.markdown("#### 📁 Upload Bank Statements")
     st.info("💡 Upload CSV or PDF bank statements to analyze your spending")
     
-    # File uploader
     uploaded_files = st.file_uploader(
         "Choose files",
         type=['csv', 'pdf'],
@@ -123,10 +84,10 @@ def file_management_tab():
             if error_count > 0:
                 st.error(f"❌ Failed to upload {error_count} file(s)")
     
+    # YOUR FILES SECTION
     st.markdown("---")
-    st.markdown("#### Your Files")
+    st.markdown("#### 📂 Your Uploaded Files")
     
-    # Get files with pagination
     if 'file_page' not in st.session_state:
         st.session_state.file_page = 0
     
@@ -151,6 +112,106 @@ def file_management_tab():
         # Pagination controls
         if total_files > FILES_PER_PAGE:
             display_pagination_controls(total_files, FILES_PER_PAGE)
+    
+    # DATA VISUALIZATION SECTION
+    st.markdown("---")
+    st.markdown("#### 📈 Spending Visualizations")
+    
+    # Load data without showing the cache message
+    with st.spinner("Loading your data..."):
+        data = load_all_user_data(st.session_state.user['id'])
+    
+    if data.empty:
+        st.warning("📊 No data available yet. Upload files above to see your spending analysis.")
+    else:
+        # Month selector
+        available_months = sorted(data['YearMonth'].unique(), reverse=True)
+        selected_month = st.selectbox("📅 Select Month", available_months)
+        
+        month_data = data[data['YearMonth'] == selected_month]
+        
+        if not month_data.empty:
+            # Calculate statistics
+            stats = calculate_monthly_stats(data, selected_month)
+            summary = get_spending_by_category(data, selected_month)
+            
+            # Display metrics
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("💰 Income", f"J${stats['income']:,.0f}")
+            
+            with col2:
+                st.metric("💸 Spending", f"J${stats['spending']:,.0f}")
+            
+            with col3:
+                st.metric("🎯 Savings", f"J${stats['savings']:,.0f}")
+            
+            # Visualizations
+            if not summary.empty:
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("##### 🥧 Spending Distribution")
+                    fig_pie = px.pie(
+                        summary,
+                        values='Amount',
+                        names='Spending Category',
+                        hole=0.4
+                    )
+                    fig_pie.update_layout(height=400)
+                    st.plotly_chart(fig_pie, use_container_width=True)
+                
+                with col2:
+                    st.markdown("##### 📊 Category Breakdown")
+                    fig_bar = px.bar(
+                        summary,
+                        x='Spending Category',
+                        y='Amount',
+                        color='Amount',
+                        color_continuous_scale='Blues'
+                    )
+                    fig_bar.update_layout(
+                        height=400,
+                        showlegend=False,
+                        xaxis_tickangle=-45
+                    )
+                    st.plotly_chart(fig_bar, use_container_width=True)
+                
+                # Spending table
+                st.markdown("##### 📋 Detailed Breakdown")
+                summary_display = summary.copy()
+                summary_display['Amount'] = summary_display['Amount'].apply(lambda x: f"J${x:,.2f}")
+                summary_display['Percentage'] = summary_display['Percentage'].apply(lambda x: f"{x:.1f}%")
+                st.dataframe(summary_display, use_container_width=True, hide_index=True)
+            
+            # Export options
+            st.markdown("---")
+            st.markdown("#### 📥 Export Data")
+            
+            col1, col2, col3 = st.columns([1, 1, 2])
+            
+            with col1:
+                excel_data = export_to_excel(month_data)
+                st.download_button(
+                    label="📊 Download Excel",
+                    data=excel_data,
+                    file_name=f"transactions_{selected_month}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+            
+            with col2:
+                csv_data = month_data.to_csv(index=False)
+                st.download_button(
+                    label="📄 Download CSV",
+                    data=csv_data,
+                    file_name=f"transactions_{selected_month}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+    
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def display_file_card(file):
@@ -205,260 +266,3 @@ def display_pagination_controls(total_files, page_size):
         if st.button("Last ⏭️", disabled=(current_page >= total_pages - 1)):
             st.session_state.file_page = total_pages - 1
             st.rerun()
-
-
-# ============================================
-# VISUALIZATIONS TAB
-# ============================================
-
-def visualizations_tab():
-    """Data visualization and analysis"""
-    data = load_all_user_data(st.session_state.user['id'])
-    
-    if data.empty:
-        st.warning("📊 No data available. Please upload files in the File Management tab.")
-        return
-    
-    # Month selector
-    available_months = sorted(data['YearMonth'].unique(), reverse=True)
-    selected_month = st.selectbox("Select Month", available_months)
-    
-    month_data = data[data['YearMonth'] == selected_month]
-    
-    if month_data.empty:
-        st.warning("No data for selected month")
-        return
-    
-    # Calculate statistics
-    stats = calculate_monthly_stats(data, selected_month)
-    summary = get_spending_by_category(data, selected_month)
-    
-    # Display metrics
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("💰 Income", f"J${stats['income']:,.0f}")
-    
-    with col2:
-        st.metric("💸 Spending", f"J${stats['spending']:,.0f}")
-    
-    with col3:
-        st.metric("🎯 Savings", f"J${stats['savings']:,.0f}")
-    
-    st.markdown("---")
-    
-    # Visualizations
-    if not summary.empty:
-        # Pie chart
-        st.markdown("#### 🥧 Spending by Category")
-        fig_pie = px.pie(
-            summary,
-            values='Amount',
-            names='Spending Category',
-            title=f"Spending Distribution - {selected_month}"
-        )
-        st.plotly_chart(fig_pie, use_container_width=True)
-        
-        # Bar chart
-        st.markdown("#### 📊 Category Breakdown")
-        fig_bar = px.bar(
-            summary,
-            x='Spending Category',
-            y='Amount',
-            title=f"Spending by Category - {selected_month}",
-            color='Amount',
-            color_continuous_scale='Blues'
-        )
-        st.plotly_chart(fig_bar, use_container_width=True)
-    
-    # Budget comparison
-    prefs = get_user_preferences(st.session_state.user['id'])
-    if prefs and prefs.get('monthly_budgets'):
-        budgets = json.loads(prefs['monthly_budgets'])
-        comparison = compare_budget_vs_actual(budgets, summary)
-        
-        st.markdown("#### 📋 Budget vs Actual")
-        st.dataframe(comparison, use_container_width=True, hide_index=True)
-    
-    # Export options
-    st.markdown("---")
-    st.markdown("#### 📥 Export Data")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        excel_data = export_to_excel(month_data)
-        st.download_button(
-            label="📊 Download Excel",
-            data=excel_data,
-            file_name=f"transactions_{selected_month}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    
-    with col2:
-        if not summary.empty and prefs:
-            try:
-                budgets = json.loads(prefs['monthly_budgets'])
-                savings_goal = prefs.get('savings_goal', DEFAULT_SAVINGS_GOAL)
-                
-                pdf_data = create_pdf_with_charts(
-                    month_data,
-                    selected_month,
-                    summary,
-                    comparison if prefs else None,
-                    stats['income'],
-                    stats['spending'],
-                    stats['savings'],
-                    savings_goal
-                )
-                
-                st.download_button(
-                    label="📄 Download PDF Report",
-                    data=pdf_data,
-                    file_name=f"report_{selected_month}.pdf",
-                    mime="application/pdf"
-                )
-            except Exception as e:
-                st.error(f"Error generating PDF: {e}")
-
-
-# ============================================
-# SETTINGS TAB
-# ============================================
-
-def settings_tab():
-    """User preferences and settings"""
-    st.markdown("#### ⚙️ Spending Categories & Budgets")
-    
-    # Load existing preferences or use defaults
-    prefs = get_user_preferences(st.session_state.user['id'])
-    
-    if prefs and prefs.get('category_keywords'):
-        category_keywords = json.loads(prefs['category_keywords'])
-    else:
-        category_keywords = DEFAULT_CATEGORY_MAPPING.copy()
-    
-    if prefs and prefs.get('monthly_budgets'):
-        monthly_budgets = json.loads(prefs['monthly_budgets'])
-    else:
-        monthly_budgets = DEFAULT_BUDGETS.copy()
-    
-    savings_goal = prefs.get('savings_goal', DEFAULT_SAVINGS_GOAL) if prefs else DEFAULT_SAVINGS_GOAL
-    
-    # Category keyword editor
-    st.markdown("##### 🏷️ Category Keywords")
-    st.info("Add keywords to help categorize your transactions automatically")
-    
-    for category in category_keywords.keys():
-        with st.expander(f"{category}"):
-            keywords = st.text_area(
-                "Keywords (comma-separated)",
-                value=", ".join(category_keywords[category]),
-                key=f"cat_{category}",
-                height=100
-            )
-            category_keywords[category] = [k.strip() for k in keywords.split(",") if k.strip()]
-    
-    # Budget editor
-    st.markdown("---")
-    st.markdown("##### 💰 Monthly Budgets")
-    
-    cols = st.columns(2)
-    for idx, category in enumerate(monthly_budgets.keys()):
-        col = cols[idx % 2]
-        with col:
-            monthly_budgets[category] = st.number_input(
-                f"{category}",
-                min_value=0,
-                value=int(monthly_budgets[category]),
-                step=500,
-                key=f"budget_{category}"
-            )
-    
-    # Savings goal
-    st.markdown("---")
-    savings_goal = st.number_input(
-        "🎯 Monthly Savings Goal (J$)",
-        min_value=0,
-        value=int(savings_goal),
-        step=500
-    )
-    
-    # Save button
-    if st.button("💾 Save Settings", type="primary", use_container_width=True):
-        if save_user_preferences(
-            st.session_state.user['id'],
-            category_keywords,
-            monthly_budgets,
-            savings_goal
-        ):
-            st.success("✅ Settings saved successfully!")
-            clear_data_cache()
-            st.rerun()
-        else:
-            st.error("❌ Failed to save settings")
-
-
-# ============================================
-# ALERTS TAB
-# ============================================
-
-def alerts_tab():
-    """Email alerts for budget violations"""
-    st.markdown("#### 📧 Budget Alerts")
-    st.info("Get email notifications when you exceed your budget in any category")
-    
-    data = load_all_user_data(st.session_state.user['id'])
-    
-    if data.empty:
-        st.warning("📊 No data available. Upload files to enable alerts.")
-        return
-    
-    prefs = get_user_preferences(st.session_state.user['id'])
-    if not prefs or not prefs.get('monthly_budgets'):
-        st.warning("⚙️ Please configure your budgets in the Settings tab first.")
-        return
-    
-    # Month selector
-    available_months = sorted(data['YearMonth'].unique(), reverse=True)
-    selected_month = st.selectbox("Select Month to Check", available_months, key="alert_month")
-    
-    # Check for overspending
-    budgets = json.loads(prefs['monthly_budgets'])
-    summary = get_spending_by_category(data, selected_month)
-    comparison = compare_budget_vs_actual(budgets, summary)
-    
-    overspent = comparison[comparison['Amount'] > comparison['Budget']]
-    
-    if overspent.empty:
-        st.success("✅ You're within budget for all categories!")
-    else:
-        st.warning(f"⚠️ You've exceeded your budget in {len(overspent)} categor{'y' if len(overspent) == 1 else 'ies'}")
-        st.dataframe(overspent, use_container_width=True, hide_index=True)
-        
-        # Email alert
-        st.markdown("---")
-        recipient_email = st.text_input(
-            "Email Address",
-            value=st.session_state.user['email'],
-            placeholder="your.email@example.com"
-        )
-        
-        if st.button("📧 Send Alert Email", type="primary", use_container_width=True):
-            if recipient_email:
-                email_body = generate_alert_email_body(
-                    st.session_state.user['username'],
-                    selected_month,
-                    overspent
-                )
-                
-                if send_email_alert(
-                    recipient_email,
-                    f"Budget Alert - {selected_month}",
-                    email_body
-                ):
-                    st.success("✅ Alert email sent!")
-                else:
-                    st.error("❌ Failed to send email")
-            else:
-                st.error("Please enter an email address")
