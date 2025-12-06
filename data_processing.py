@@ -11,6 +11,7 @@ from config import DEFAULT_CATEGORY_MAPPING
 from database import get_user_preferences
 import streamlit as st
 import json
+from io import BytesIO
 
 
 def process_csv(file_bytes):
