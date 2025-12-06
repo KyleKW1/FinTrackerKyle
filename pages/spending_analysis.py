@@ -137,6 +137,38 @@ def spending_analysis_page():
         render_analysis_section(data)
     
     st.markdown("</div>", unsafe_allow_html=True)
+    # TEMPORARY DEBUG - Remove after fixing
+    if not data.empty:
+        st.markdown("---")
+        st.markdown("### 🔍 DEBUG INFO")
+        
+        with st.expander("Click to see what's wrong", expanded=True):
+            st.write("**Columns in data:**", list(data.columns))
+            
+            if 'Spending Category' in data.columns:
+                st.write("✅ 'Spending Category' column EXISTS")
+                categories = data['Spending Category'].value_counts()
+                st.write("**Categories found:**")
+                st.write(categories)
+                
+                st.write("**Sample transactions:**")
+                sample = data[['Description', 'Spending Category', 'Amount']].head(10)
+                st.dataframe(sample)
+            else:
+                st.error("❌ 'Spending Category' column is MISSING!")
+            
+            if 'Description' in data.columns:
+                st.write("**Sample descriptions (first 10):**")
+                st.write(list(data['Description'].head(10)))
+            
+            # Check if categorize_transactions was called
+            st.write("**Checking categorization function...**")
+            from config import DEFAULT_CATEGORY_MAPPING
+            st.write("**Keywords from config:**")
+            for cat, keywords in list(DEFAULT_CATEGORY_MAPPING.items())[:3]:
+                st.write(f"- {cat}: {keywords[:3]}...")
+        
+        st.markdown("---")
 
 
 def render_category_editor():
