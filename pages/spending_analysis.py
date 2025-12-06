@@ -22,6 +22,16 @@ from utils import (
 )
 from config import FILES_PER_PAGE
 import json
+from datetime import datetime
+
+
+def format_month_display(year_month):
+    """Convert YYYY-MM to 'Month Year' format"""
+    try:
+        date_obj = datetime.strptime(year_month, '%Y-%m')
+        return date_obj.strftime('%B %Y')  # e.g., "January 2024"
+    except:
+        return year_month
 
 
 def spending_analysis_page():
@@ -139,28 +149,39 @@ def spending_analysis_page():
                 key="analysis_type"
             )
         
-        # Get available months
-        available_months = sorted(data['YearMonth'].unique(), reverse=True)
+        # Get available months (YYYY-MM format for internal use)
+        available_months_raw = sorted(data['YearMonth'].unique(), reverse=True)
+        
+        # Create display mapping
+        month_display_map = {month: format_month_display(month) for month in available_months_raw}
+        month_options = [month_display_map[m] for m in available_months_raw]
         
         # Determine selected months based on analysis type
         if analysis_type == "Specific Months":
             with col2:
-                selected_months = st.multiselect(
+                selected_display = st.multiselect(
                     "Select Months",
-                    available_months,
-                    default=[available_months[0]] if available_months else [],
+                    month_options,
+                    default=[month_options[0]] if month_options else [],
                     key="selected_months"
                 )
-            if not selected_months:
+            if not selected_display:
                 st.warning("Please select at least one month")
                 st.markdown("</div>", unsafe_allow_html=True)
                 return
+            
+            # Convert back to YYYY-MM format for filtering
+            reverse_map = {v: k for k, v in month_display_map.items()}
+            selected_months = [reverse_map[d] for d in selected_display]
         elif analysis_type == "Last 3 Months":
-            selected_months = available_months[:3]
+            selected_months = available_months_raw[:3]
+            selected_display = [month_display_map[m] for m in selected_months]
         elif analysis_type == "Last 6 Months":
-            selected_months = available_months[:6]
+            selected_months = available_months_raw[:6]
+            selected_display = [month_display_map[m] for m in selected_months]
         else:  # All Time
-            selected_months = available_months
+            selected_months = available_months_raw
+            selected_display = [month_display_map[m] for m in selected_months]
         
         # Filter data for selected period
         period_data = data[data['YearMonth'].isin(selected_months)]
@@ -170,7 +191,7 @@ def spending_analysis_page():
             st.markdown("</div>", unsafe_allow_html=True)
             return
         
-        st.info(f"📊 Analyzing {len(selected_months)} month(s): {', '.join(selected_months)}")
+        st.info(f"📊 Analyzing {len(selected_months)} month(s): {', '.join(selected_display)}")
         
         # MONTHLY CASH FLOW CHART
         st.markdown("---")
@@ -180,7 +201,8 @@ def spending_analysis_page():
         for month in sorted(selected_months):
             stats = calculate_monthly_stats(data, month)
             cash_flow_data.append({
-                'Month': month,
+                'Month': format_month_display(month),
+                'MonthRaw': month,
                 'Income': stats['income'],
                 'Spending': stats['spending'],
                 'Savings': stats['savings']
@@ -229,11 +251,13 @@ def spending_analysis_page():
         st.markdown("---")
         st.markdown("##### 📅 Monthly Analysis")
         
-        # Create tabs for each selected month
+        # Create tabs for each selected month with formatted names
         if len(selected_months) > 0:
-            tabs = st.tabs([f"📊 {month}" for month in sorted(selected_months, reverse=True)])
+            sorted_months = sorted(selected_months, reverse=True)
+            tab_labels = [f"📊 {format_month_display(month)}" for month in sorted_months]
+            tabs = st.tabs(tab_labels)
             
-            for idx, month in enumerate(sorted(selected_months, reverse=True)):
+            for idx, month in enumerate(sorted_months):
                 with tabs[idx]:
                     render_monthly_analysis(data, month)
         
@@ -326,6 +350,7 @@ def spending_analysis_page():
 def render_monthly_analysis(data, selected_month):
     """Render detailed analysis for a specific month"""
     month_data = data[data['YearMonth'] == selected_month]
+    month_display = format_month_display(selected_month)
     
     if month_data.empty:
         st.warning("No data for this month")
@@ -349,7 +374,7 @@ def render_monthly_analysis(data, selected_month):
     
     # Visualizations
     if not summary.empty:
-        st.markdown(f"##### 📈 Spending Breakdown for {selected_month}")
+        st.markdown(f"##### 📈 Spending Breakdown for {month_display}")
         
         col1, col2 = st.columns(2)
         
@@ -387,7 +412,7 @@ def render_monthly_analysis(data, selected_month):
             comparison = compare_budget_vs_actual(budgets, summary)
             
             if not comparison.empty:
-                st.markdown(f"##### 📏 Budget vs. Actual - {selected_month}")
+                st.markdown(f"##### 📏 Budget vs. Actual - {month_display}")
                 
                 fig_comparison = go.Figure()
                 
