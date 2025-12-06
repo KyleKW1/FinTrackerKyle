@@ -286,6 +286,10 @@ def standardize_dataframe_columns(df):
     if df.empty:
         return df
     
+    # Print original columns for debugging
+    print(f"Original columns: {list(df.columns)}")
+    print(f"First row sample: {df.iloc[0].to_dict() if len(df) > 0 else 'Empty'}")
+    
     # Common column name mappings
     column_mappings = {
         'date': 'Date',
@@ -293,6 +297,7 @@ def standardize_dataframe_columns(df):
         'posting date': 'Date',
         'trans date': 'Date',
         'trans. date': 'Date',
+        'value date': 'Date',
         
         'description': 'Description',
         'details': 'Description',
@@ -300,11 +305,13 @@ def standardize_dataframe_columns(df):
         'merchant': 'Description',
         'narrative': 'Description',
         'particulars': 'Description',
+        'transaction details': 'Description',
         
         'amount': 'Amount',
         'value': 'Amount',
         'debit': 'Amount',
         'credit': 'Amount',
+        'transaction amount': 'Amount',
         
         'type': 'Category',
         'transaction type': 'Category',
@@ -318,26 +325,70 @@ def standardize_dataframe_columns(df):
     # Create new column names
     new_columns = {}
     for col in df.columns:
-        if col in column_mappings:
-            new_columns[col] = column_mappings[col]
+        for old_name, new_name in column_mappings.items():
+            if old_name in col:
+                new_columns[col] = new_name
+                break
     
     df = df.rename(columns=new_columns)
     
-    # Ensure required columns exist
+    # Smart column detection - look at actual data
+    if 'Description' not in df.columns:
+        # Find the column with the most text (likely description)
+        text_lengths = {}
+        for col in df.columns:
+            if col in ['Date', 'Amount', 'Category']:
+                continue
+            try:
+                # Calculate average length of text in column
+                avg_len = df[col].astype(str).str.len().mean()
+                if avg_len > 5:  # Descriptions are usually longer than 5 chars
+                    text_lengths[col] = avg_len
+            except:
+                continue
+        
+        if text_lengths:
+            # Use column with longest average text as description
+            desc_col = max(text_lengths, key=text_lengths.get)
+            print(f"Using '{desc_col}' as Description column (avg length: {text_lengths[desc_col]:.1f})")
+            df['Description'] = df[desc_col]
+    
+    # Ensure Date column
     if 'Date' not in df.columns:
-        date_candidates = [c for c in df.columns if 'date' in c.lower()]
+        date_candidates = [c for c in df.columns if 'date' in str(c).lower()]
         if date_candidates:
             df['Date'] = df[date_candidates[0]]
+        else:
+            # Try to find column with date-like values
+            for col in df.columns:
+                try:
+                    test_date = pd.to_datetime(df[col].iloc[0])
+                    if 2000 <= test_date.year <= 2100:
+                        df['Date'] = df[col]
+                        print(f"Using '{col}' as Date column")
+                        break
+                except:
+                    continue
     
-    if 'Description' not in df.columns:
-        desc_candidates = [c for c in df.columns if any(word in c.lower() for word in ['desc', 'detail', 'particular'])]
-        if desc_candidates:
-            df['Description'] = df[desc_candidates[0]]
-    
+    # Ensure Amount column
     if 'Amount' not in df.columns:
-        amount_candidates = [c for c in df.columns if any(word in c.lower() for word in ['amount', 'value', 'debit', 'credit'])]
+        amount_candidates = [c for c in df.columns if any(word in str(c).lower() for word in ['amount', 'value', 'debit', 'credit'])]
         if amount_candidates:
             df['Amount'] = df[amount_candidates[0]]
+        else:
+            # Find column with numeric values
+            for col in df.columns:
+                if col in ['Date', 'Description', 'Category']:
+                    continue
+                try:
+                    # Check if column is mostly numeric
+                    numeric_count = pd.to_numeric(df[col], errors='coerce').notna().sum()
+                    if numeric_count > len(df) * 0.5:  # More than 50% numeric
+                        df['Amount'] = df[col]
+                        print(f"Using '{col}' as Amount column")
+                        break
+                except:
+                    continue
     
     # Add Category if missing
     if 'Category' not in df.columns:
@@ -348,22 +399,30 @@ def standardize_dataframe_columns(df):
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
         df = df.dropna(subset=['Date'])
     
-    # Convert Amount to numeric
+    # Convert Amount to numeric and clean
     if 'Amount' in df.columns:
         df['Amount'] = df['Amount'].astype(str).str.replace('$', '').str.replace(',', '').str.replace('J', '').str.strip()
         df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce')
         df['Amount'] = df['Amount'].abs()
         df = df[df['Amount'] > 0]
     
-    # Clean up description
+    # Clean up description - CRITICAL FIX
     if 'Description' in df.columns:
         df['Description'] = df['Description'].astype(str).str.strip()
         df = df[df['Description'].notna()]
         df = df[df['Description'] != 'nan']
+        # Remove rows where description is just a number or date
+        df = df[~df['Description'].str.match(r'^-?\d+\.?\d*$', na=False)]  # Not just numbers
+        df = df[df['Description'].str.len() > 3]  # At least 4 characters
+    
+    # Drop any rows with missing critical data
+    df = df.dropna(subset=['Date', 'Description', 'Amount'])
+    
+    print(f"Final columns: {list(df.columns)}")
+    print(f"Rows after cleaning: {len(df)}")
     
     return df
-
-
+    
 def categorize_transactions(df):
     """
     Categorize transactions based on keywords
