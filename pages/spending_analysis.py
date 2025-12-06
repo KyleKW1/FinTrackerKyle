@@ -1,6 +1,6 @@
 # pages/spending_analysis.py
 """
-Spending Analysis page - unified flowing layout
+Spending Analysis page - enhanced with multiple analysis periods and cash flow
 """
 
 import streamlit as st
@@ -11,14 +11,17 @@ from data_loader import load_all_user_data, clear_data_cache
 from database import (
     save_user_file, 
     delete_user_file, 
-    get_user_files_paginated
+    get_user_files_paginated,
+    get_user_preferences
 )
 from utils import (
     calculate_monthly_stats,
     get_spending_by_category,
-    export_to_excel
+    export_to_excel,
+    compare_budget_vs_actual
 )
 from config import FILES_PER_PAGE
+import json
 
 
 def spending_analysis_page():
@@ -114,146 +117,320 @@ def spending_analysis_page():
             display_pagination_controls(total_files, FILES_PER_PAGE)
     
     # DATA VISUALIZATION SECTION
-    # Add this section to your spending_analysis.py after line 95 (after the "DATA VISUALIZATION SECTION" comment)
-    # This is for debugging - remove once working
-    
-    # DEBUG SECTION - TEMPORARY
-    st.markdown("---")
-    st.markdown("#### 🔍 Debug Information")
-    
-    with st.expander("Click to see debug info"):
-        st.write("**User ID:**", st.session_state.user['id'])
-        
-        # Check database connection
-        from database import get_all_user_files
-        files_in_db = get_all_user_files(st.session_state.user['id'])
-        st.write(f"**Files in database:** {len(files_in_db)}")
-        
-        if files_in_db:
-            for i, file in enumerate(files_in_db[:3]):  # Show first 3
-                st.write(f"File {i+1}:")
-                st.write(f"  - Filename: {file.get('filename', 'N/A')}")
-                st.write(f"  - Type: {file.get('file_type', 'N/A')}")
-                st.write(f"  - Data size: {len(file.get('file_data', b''))} bytes")
-        
-        # Try to load data
-        st.write("**Attempting to load data...**")
-        try:
-            from data_loader import load_all_user_data
-            test_data = load_all_user_data(st.session_state.user['id'])
-            st.write(f"**Data loaded:** {len(test_data)} rows")
-            
-            if not test_data.empty:
-                st.write("**Columns:**", list(test_data.columns))
-                st.write("**First few rows:**")
-                st.dataframe(test_data.head())
-            else:
-                st.error("Data is empty after processing")
-        except Exception as e:
-            st.error(f"Error loading data: {e}")
-            import traceback
-            st.code(traceback.format_exc())
-    
-    st.markdown("---")
-    # END DEBUG SECTION
     st.markdown("---")
     st.markdown("#### 📈 Spending Visualizations")
     
-    # Load data without showing the cache message
+    # Load data
     with st.spinner("Loading your data..."):
         data = load_all_user_data(st.session_state.user['id'])
     
     if data.empty:
         st.warning("📊 No data available yet. Upload files above to see your spending analysis.")
     else:
-        # Month selector
+        # ANALYSIS PERIOD SELECTOR
+        st.markdown("##### 📅 Select Analysis Period")
+        
+        col1, col2 = st.columns([1, 3])
+        
+        with col1:
+            analysis_type = st.selectbox(
+                "Period Type",
+                ["Specific Months", "Last 3 Months", "Last 6 Months", "All Time"],
+                key="analysis_type"
+            )
+        
+        # Get available months
         available_months = sorted(data['YearMonth'].unique(), reverse=True)
-        selected_month = st.selectbox("📅 Select Month", available_months)
         
-        month_data = data[data['YearMonth'] == selected_month]
+        # Determine selected months based on analysis type
+        if analysis_type == "Specific Months":
+            with col2:
+                selected_months = st.multiselect(
+                    "Select Months",
+                    available_months,
+                    default=[available_months[0]] if available_months else [],
+                    key="selected_months"
+                )
+            if not selected_months:
+                st.warning("Please select at least one month")
+                st.markdown("</div>", unsafe_allow_html=True)
+                return
+        elif analysis_type == "Last 3 Months":
+            selected_months = available_months[:3]
+        elif analysis_type == "Last 6 Months":
+            selected_months = available_months[:6]
+        else:  # All Time
+            selected_months = available_months
         
-        if not month_data.empty:
-            # Calculate statistics
-            stats = calculate_monthly_stats(data, selected_month)
-            summary = get_spending_by_category(data, selected_month)
+        # Filter data for selected period
+        period_data = data[data['YearMonth'].isin(selected_months)]
+        
+        if period_data.empty:
+            st.warning("No data available for selected period")
+            st.markdown("</div>", unsafe_allow_html=True)
+            return
+        
+        st.info(f"📊 Analyzing {len(selected_months)} month(s): {', '.join(selected_months)}")
+        
+        # MONTHLY CASH FLOW CHART
+        st.markdown("---")
+        st.markdown("##### 💰 Monthly Cash Flow")
+        
+        cash_flow_data = []
+        for month in sorted(selected_months):
+            stats = calculate_monthly_stats(data, month)
+            cash_flow_data.append({
+                'Month': month,
+                'Income': stats['income'],
+                'Spending': stats['spending'],
+                'Savings': stats['savings']
+            })
+        
+        cash_flow_df = pd.DataFrame(cash_flow_data)
+        
+        if not cash_flow_df.empty:
+            fig_cashflow = go.Figure()
             
-            # Display metrics
+            fig_cashflow.add_trace(go.Bar(
+                x=cash_flow_df['Month'],
+                y=cash_flow_df['Income'],
+                name='Income',
+                marker_color='#10b981'
+            ))
+            
+            fig_cashflow.add_trace(go.Bar(
+                x=cash_flow_df['Month'],
+                y=cash_flow_df['Spending'],
+                name='Spending',
+                marker_color='#ef4444'
+            ))
+            
+            fig_cashflow.add_trace(go.Scatter(
+                x=cash_flow_df['Month'],
+                y=cash_flow_df['Savings'],
+                name='Net Savings',
+                mode='lines+markers',
+                line=dict(color='#3b82f6', width=3),
+                marker=dict(size=8)
+            ))
+            
+            fig_cashflow.update_layout(
+                title='Monthly Cash Flow Trend',
+                xaxis_title='Month',
+                yaxis_title='Amount (J$)',
+                barmode='group',
+                height=400,
+                hovermode='x unified'
+            )
+            
+            st.plotly_chart(fig_cashflow, use_container_width=True)
+        
+        # MONTHLY ANALYSIS TABS
+        st.markdown("---")
+        st.markdown("##### 📅 Monthly Analysis")
+        
+        # Create tabs for each selected month
+        if len(selected_months) > 0:
+            tabs = st.tabs([f"📊 {month}" for month in sorted(selected_months, reverse=True)])
+            
+            for idx, month in enumerate(sorted(selected_months, reverse=True)):
+                with tabs[idx]:
+                    render_monthly_analysis(data, month)
+        
+        # AGGREGATE ANALYSIS FOR PERIOD
+        if len(selected_months) > 1:
+            st.markdown("---")
+            st.markdown("##### 📊 Aggregate Analysis")
+            
+            # Calculate totals
+            total_income = sum([calculate_monthly_stats(data, m)['income'] for m in selected_months])
+            total_spending = sum([calculate_monthly_stats(data, m)['spending'] for m in selected_months])
+            total_savings = total_income - total_spending
+            
             col1, col2, col3 = st.columns(3)
             
             with col1:
-                st.metric("💰 Income", f"J${stats['income']:,.0f}")
-            
+                st.metric("💰 Total Income", f"J${total_income:,.0f}")
             with col2:
-                st.metric("💸 Spending", f"J${stats['spending']:,.0f}")
-            
+                st.metric("💸 Total Spending", f"J${total_spending:,.0f}")
             with col3:
-                st.metric("🎯 Savings", f"J${stats['savings']:,.0f}")
+                st.metric("🎯 Total Savings", f"J${total_savings:,.0f}")
             
-            # Visualizations
-            if not summary.empty:
+            # Aggregate category spending
+            st.markdown("##### 🥧 Aggregate Spending by Category")
+            
+            all_spending = []
+            for month in selected_months:
+                month_summary = get_spending_by_category(data, month)
+                if not month_summary.empty:
+                    all_spending.append(month_summary)
+            
+            if all_spending:
+                aggregate_spending = pd.concat(all_spending).groupby('Spending Category')['Amount'].sum().reset_index()
+                aggregate_spending['Percentage'] = 100 * aggregate_spending['Amount'] / aggregate_spending['Amount'].sum()
+                aggregate_spending = aggregate_spending.sort_values('Amount', ascending=False)
+                
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    st.markdown("##### 🥧 Spending Distribution")
-                    fig_pie = px.pie(
-                        summary,
+                    fig_agg_pie = px.pie(
+                        aggregate_spending,
                         values='Amount',
                         names='Spending Category',
-                        hole=0.4
+                        hole=0.4,
+                        title='Total Spending Distribution'
                     )
-                    fig_pie.update_layout(height=400)
-                    st.plotly_chart(fig_pie, use_container_width=True)
+                    st.plotly_chart(fig_agg_pie, use_container_width=True)
                 
                 with col2:
-                    st.markdown("##### 📊 Category Breakdown")
-                    fig_bar = px.bar(
-                        summary,
+                    fig_agg_bar = px.bar(
+                        aggregate_spending,
                         x='Spending Category',
                         y='Amount',
                         color='Amount',
-                        color_continuous_scale='Blues'
+                        color_continuous_scale='Reds',
+                        title='Category Breakdown'
                     )
-                    fig_bar.update_layout(
-                        height=400,
-                        showlegend=False,
-                        xaxis_tickangle=-45
-                    )
-                    st.plotly_chart(fig_bar, use_container_width=True)
-                
-                # Spending table
-                st.markdown("##### 📋 Detailed Breakdown")
-                summary_display = summary.copy()
-                summary_display['Amount'] = summary_display['Amount'].apply(lambda x: f"J${x:,.2f}")
-                summary_display['Percentage'] = summary_display['Percentage'].apply(lambda x: f"{x:.1f}%")
-                st.dataframe(summary_display, use_container_width=True, hide_index=True)
-            
-            # Export options
-            st.markdown("---")
-            st.markdown("#### 📥 Export Data")
-            
-            col1, col2, col3 = st.columns([1, 1, 2])
-            
-            with col1:
-                excel_data = export_to_excel(month_data)
-                st.download_button(
-                    label="📊 Download Excel",
-                    data=excel_data,
-                    file_name=f"transactions_{selected_month}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
-            
-            with col2:
-                csv_data = month_data.to_csv(index=False)
-                st.download_button(
-                    label="📄 Download CSV",
-                    data=csv_data,
-                    file_name=f"transactions_{selected_month}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
+                    fig_agg_bar.update_layout(showlegend=False, xaxis_tickangle=-45)
+                    st.plotly_chart(fig_agg_bar, use_container_width=True)
+        
+        # EXPORT OPTIONS
+        st.markdown("---")
+        st.markdown("#### 📥 Export Data")
+        
+        col1, col2, col3 = st.columns([1, 1, 2])
+        
+        with col1:
+            excel_data = export_to_excel(period_data)
+            st.download_button(
+                label="📊 Download Excel",
+                data=excel_data,
+                file_name=f"transactions_{analysis_type.replace(' ', '_')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+        
+        with col2:
+            csv_data = period_data.to_csv(index=False)
+            st.download_button(
+                label="📄 Download CSV",
+                data=csv_data,
+                file_name=f"transactions_{analysis_type.replace(' ', '_')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
     
     st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_monthly_analysis(data, selected_month):
+    """Render detailed analysis for a specific month"""
+    month_data = data[data['YearMonth'] == selected_month]
+    
+    if month_data.empty:
+        st.warning("No data for this month")
+        return
+    
+    # Calculate statistics
+    stats = calculate_monthly_stats(data, selected_month)
+    summary = get_spending_by_category(data, selected_month)
+    
+    # Display metrics
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("💰 Income", f"J${stats['income']:,.0f}")
+    
+    with col2:
+        st.metric("💸 Spending", f"J${stats['spending']:,.0f}")
+    
+    with col3:
+        st.metric("🎯 Savings", f"J${stats['savings']:,.0f}")
+    
+    # Visualizations
+    if not summary.empty:
+        st.markdown(f"##### 📈 Spending Breakdown for {selected_month}")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            fig_pie = px.pie(
+                summary,
+                values='Amount',
+                names='Spending Category',
+                hole=0.4,
+                title='Distribution'
+            )
+            fig_pie.update_layout(height=350)
+            st.plotly_chart(fig_pie, use_container_width=True)
+        
+        with col2:
+            fig_bar = px.bar(
+                summary,
+                x='Spending Category',
+                y='Amount',
+                color='Amount',
+                color_continuous_scale='Blues',
+                title='Category Amounts'
+            )
+            fig_bar.update_layout(
+                height=350,
+                showlegend=False,
+                xaxis_tickangle=-45
+            )
+            st.plotly_chart(fig_bar, use_container_width=True)
+        
+        # Budget comparison
+        prefs = get_user_preferences(st.session_state.user['id'])
+        if prefs and prefs.get('monthly_budgets'):
+            budgets = json.loads(prefs['monthly_budgets'])
+            comparison = compare_budget_vs_actual(budgets, summary)
+            
+            if not comparison.empty:
+                st.markdown(f"##### 📏 Budget vs. Actual - {selected_month}")
+                
+                fig_comparison = go.Figure()
+                
+                fig_comparison.add_trace(go.Bar(
+                    name='Budget',
+                    x=comparison['Spending Category'],
+                    y=comparison['Budget'],
+                    marker_color='#3b82f6'
+                ))
+                
+                fig_comparison.add_trace(go.Bar(
+                    name='Actual',
+                    x=comparison['Spending Category'],
+                    y=comparison['Amount'],
+                    marker_color='#ef4444'
+                ))
+                
+                fig_comparison.update_layout(
+                    barmode='group',
+                    height=400,
+                    xaxis_tickangle=-45,
+                    yaxis_title='Amount (J$)'
+                )
+                
+                st.plotly_chart(fig_comparison, use_container_width=True)
+                
+                # Show over-budget categories
+                over_budget = comparison[comparison['Amount'] > comparison['Budget']]
+                if not over_budget.empty:
+                    st.warning(f"⚠️ Over budget in {len(over_budget)} categories")
+                    for _, row in over_budget.iterrows():
+                        st.caption(
+                            f"**{row['Spending Category']}**: "
+                            f"J${row['Amount']:,.0f} / J${row['Budget']:,.0f} "
+                            f"(+J${row['Amount'] - row['Budget']:,.0f})"
+                        )
+        
+        # Spending table
+        st.markdown("##### 📋 Detailed Breakdown")
+        summary_display = summary.copy()
+        summary_display['Amount'] = summary_display['Amount'].apply(lambda x: f"J${x:,.2f}")
+        summary_display['Percentage'] = summary_display['Percentage'].apply(lambda x: f"{x:.1f}%")
+        st.dataframe(summary_display, use_container_width=True, hide_index=True)
 
 
 def display_file_card(file):
