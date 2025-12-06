@@ -139,7 +139,7 @@ def spending_analysis_page():
                 data['Year'] = pd.to_datetime(data['Date']).dt.year
                 if 'Month' not in data.columns and 'Date' in data.columns:
                     data['Month'] = pd.to_datetime(data['Date']).dt.month
-                    st.success(f"✅ Loaded {len(data)} transactions from {len(data['YearMonth'].unique())} months")
+                    #st.success(f"✅ Loaded {len(data)} transactions from {len(data['YearMonth'].unique())} months")
                     render_analysis_section(data)
     
     st.markdown("</div>", unsafe_allow_html=True)
@@ -324,8 +324,8 @@ def render_analysis_section(data):
         st.warning("No data available for selected period")
         return
     
-    st.success(f"📊 Analyzing {len(selected_months)} month(s): {', '.join(selected_month_names)} in {selected_year}")
-    st.info(f"Total transactions: {len(period_data)}")
+    #st.success(f"📊 Analyzing {len(selected_months)} month(s): {', '.join(selected_month_names)} in {selected_year}")
+    #st.info(f"Total transactions: {len(period_data)}")
     
     # CASH FLOW CHARTS
     st.markdown("---")
