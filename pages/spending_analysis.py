@@ -346,7 +346,37 @@ def spending_analysis_page():
     
     st.markdown("</div>", unsafe_allow_html=True)
 
+# Add this temporarily to your spending_analysis.py to debug categories
+# Place this right after the data is loaded
 
+def show_category_debug(data):
+    """Debug function to check categories"""
+    with st.expander("🔍 Category Debug Info"):
+        st.write("**Columns in data:**", list(data.columns))
+        
+        if 'Spending Category' in data.columns:
+            st.write("**Unique categories found:**")
+            categories = data['Spending Category'].value_counts()
+            st.write(categories)
+            
+            st.write("**Sample transactions by category:**")
+            for cat in categories.index[:5]:  # Show top 5 categories
+                st.write(f"\n**{cat}:**")
+                samples = data[data['Spending Category'] == cat][['Description', 'Amount']].head(3)
+                st.dataframe(samples)
+        else:
+            st.error("'Spending Category' column is MISSING!")
+        
+        # Show category mapping being used
+        from config import DEFAULT_CATEGORY_MAPPING
+        st.write("**Category Keywords (from config):**")
+        for cat, keywords in DEFAULT_CATEGORY_MAPPING.items():
+            if keywords:
+                st.write(f"- **{cat}:** {', '.join(keywords[:5])}...")
+
+# Use it like this in spending_analysis_page():
+# if not data.empty:
+#     show_category_debug(data)
 def render_monthly_analysis(data, selected_month):
     """Render detailed analysis for a specific month"""
     month_data = data[data['YearMonth'] == selected_month]
