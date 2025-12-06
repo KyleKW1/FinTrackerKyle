@@ -1,5 +1,49 @@
-# Enhanced PDF processing functions
-# Replace the PDF processing functions in data_processing.py with these
+# data_processing.py
+"""
+Data processing module - handles CSV and PDF parsing with enhanced extraction
+"""
+
+import pandas as pd
+import pdfplumber
+from io import BytesIO
+import re
+from config import DEFAULT_CATEGORY_MAPPING
+from database import get_user_preferences
+import streamlit as st
+import json
+
+
+def process_csv(file_bytes):
+    """Process CSV file and return DataFrame"""
+    try:
+        file_bytes.seek(0)
+        
+        # Try different encodings
+        encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
+        df = None
+        
+        for encoding in encodings:
+            try:
+                file_bytes.seek(0)
+                df = pd.read_csv(file_bytes, encoding=encoding)
+                break
+            except:
+                continue
+        
+        if df is None:
+            return pd.DataFrame()
+        
+        # Standardize columns
+        df = standardize_dataframe_columns(df)
+        
+        # Categorize transactions
+        df = categorize_transactions(df)
+        
+        return df
+    except Exception as e:
+        print(f"Error processing CSV: {e}")
+        return pd.DataFrame()
+
 
 def extract_from_pdf(file_bytes):
     """Enhanced PDF extraction with multiple strategies"""
@@ -74,6 +118,8 @@ def extract_from_tables(tables):
                 
                 if not date_str or not description or not amount_str:
                     continue
+                if date_str in ['None', 'nan', '']:
+                    continue
                 
                 # Parse date
                 date = parse_date(date_str)
@@ -111,21 +157,20 @@ def extract_from_text(text):
         if not line or len(line) < 10:
             continue
         
-        # Pattern 1: Date Description Amount (most common)
-        # Examples: 
-        # "01/15/2024 PURCHASE AT KFC 1,500.00"
-        # "15-Jan-2024 KFC PURCHASE 1500.00"
-        # "2024-01-15 Restaurant 1,500.00"
+        # Skip header lines
+        if any(word in line.lower() for word in ['statement', 'account', 'balance', 'page']):
+            continue
         
+        # Pattern matching with multiple formats
         patterns = [
             # MM/DD/YYYY or DD/MM/YYYY with description and amount
-            r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})\s+(.+?)\s+([\d,]+\.\d{2})',
+            r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})\s+(.+?)\s+([\d,]+\.\d{2})(?:\s|$)',
             # YYYY-MM-DD with description and amount
-            r'(\d{4}-\d{2}-\d{2})\s+(.+?)\s+([\d,]+\.\d{2})',
+            r'(\d{4}-\d{2}-\d{2})\s+(.+?)\s+([\d,]+\.\d{2})(?:\s|$)',
             # DD-MMM-YYYY (15-Jan-2024)
-            r'(\d{1,2}-[A-Za-z]{3}-\d{4})\s+(.+?)\s+([\d,]+\.\d{2})',
+            r'(\d{1,2}-[A-Za-z]{3}-\d{4})\s+(.+?)\s+([\d,]+\.\d{2})(?:\s|$)',
             # MMM DD, YYYY (Jan 15, 2024)
-            r'([A-Za-z]{3}\s+\d{1,2},\s+\d{4})\s+(.+?)\s+([\d,]+\.\d{2})',
+            r'([A-Za-z]{3}\s+\d{1,2},\s+\d{4})\s+(.+?)\s+([\d,]+\.\d{2})(?:\s|$)',
         ]
         
         for pattern in patterns:
@@ -178,6 +223,9 @@ def parse_date(date_str):
     """Parse date string with multiple formats"""
     date_str = str(date_str).strip()
     
+    if not date_str or date_str in ['None', 'nan', '']:
+        return None
+    
     formats = [
         '%m/%d/%Y', '%d/%m/%Y',  # 01/15/2024 or 15/01/2024
         '%Y-%m-%d',              # 2024-01-15
@@ -194,9 +242,14 @@ def parse_date(date_str):
     
     # Try pandas auto-detection as last resort
     try:
-        return pd.to_datetime(date_str)
+        date = pd.to_datetime(date_str)
+        # Validate year is reasonable (between 2000 and 2100)
+        if 2000 <= date.year <= 2100:
+            return date
     except:
-        return None
+        pass
+    
+    return None
 
 
 def parse_amount(amount_str):
@@ -204,6 +257,9 @@ def parse_amount(amount_str):
     try:
         # Remove currency symbols, commas, and spaces
         cleaned = str(amount_str).replace('$', '').replace(',', '').replace('J', '').replace(' ', '').strip()
+        
+        if not cleaned or cleaned in ['None', 'nan', '']:
+            return 0.0
         
         # Handle parentheses (negative)
         if '(' in cleaned or ')' in cleaned:
@@ -218,8 +274,128 @@ def parse_amount(amount_str):
         return 0.0
 
 
-# Keep the process_pdf_ncb function as is, but update it to use the new helper functions
 def process_pdf_ncb(file_bytes):
-    """Process NCB PDF bank statement"""
-    # Use the enhanced extract_from_pdf function
+    """Process NCB PDF bank statement - uses enhanced extraction"""
     return extract_from_pdf(file_bytes)
+
+
+def standardize_dataframe_columns(df):
+    """Standardize column names across different formats"""
+    if df.empty:
+        return df
+    
+    # Common column name mappings
+    column_mappings = {
+        'date': 'Date',
+        'transaction date': 'Date',
+        'posting date': 'Date',
+        'trans date': 'Date',
+        'trans. date': 'Date',
+        
+        'description': 'Description',
+        'details': 'Description',
+        'transaction': 'Description',
+        'merchant': 'Description',
+        'narrative': 'Description',
+        'particulars': 'Description',
+        
+        'amount': 'Amount',
+        'value': 'Amount',
+        'debit': 'Amount',
+        'credit': 'Amount',
+        
+        'type': 'Category',
+        'transaction type': 'Category',
+        'category': 'Category',
+        'trans type': 'Category'
+    }
+    
+    # Rename columns (case-insensitive)
+    df.columns = df.columns.str.lower().str.strip()
+    
+    # Create new column names
+    new_columns = {}
+    for col in df.columns:
+        if col in column_mappings:
+            new_columns[col] = column_mappings[col]
+    
+    df = df.rename(columns=new_columns)
+    
+    # Ensure required columns exist
+    if 'Date' not in df.columns:
+        date_candidates = [c for c in df.columns if 'date' in c.lower()]
+        if date_candidates:
+            df['Date'] = df[date_candidates[0]]
+    
+    if 'Description' not in df.columns:
+        desc_candidates = [c for c in df.columns if any(word in c.lower() for word in ['desc', 'detail', 'particular'])]
+        if desc_candidates:
+            df['Description'] = df[desc_candidates[0]]
+    
+    if 'Amount' not in df.columns:
+        amount_candidates = [c for c in df.columns if any(word in c.lower() for word in ['amount', 'value', 'debit', 'credit'])]
+        if amount_candidates:
+            df['Amount'] = df[amount_candidates[0]]
+    
+    # Add Category if missing
+    if 'Category' not in df.columns:
+        df['Category'] = 'Debit'
+    
+    # Convert Date column
+    if 'Date' in df.columns:
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        df = df.dropna(subset=['Date'])
+    
+    # Convert Amount to numeric
+    if 'Amount' in df.columns:
+        df['Amount'] = df['Amount'].astype(str).str.replace('$', '').str.replace(',', '').str.replace('J', '').str.strip()
+        df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce')
+        df['Amount'] = df['Amount'].abs()
+        df = df[df['Amount'] > 0]
+    
+    # Clean up description
+    if 'Description' in df.columns:
+        df['Description'] = df['Description'].astype(str).str.strip()
+        df = df[df['Description'].notna()]
+        df = df[df['Description'] != 'nan']
+    
+    return df
+
+
+def categorize_transactions(df):
+    """Categorize transactions based on keywords"""
+    if df.empty or 'Description' not in df.columns:
+        return df
+    
+    # Get user preferences or use defaults
+    try:
+        if 'user' in st.session_state and st.session_state.user:
+            prefs = get_user_preferences(st.session_state.user['id'])
+            if prefs and prefs.get('category_keywords'):
+                category_keywords = json.loads(prefs['category_keywords'])
+            else:
+                category_keywords = DEFAULT_CATEGORY_MAPPING
+        else:
+            category_keywords = DEFAULT_CATEGORY_MAPPING
+    except:
+        category_keywords = DEFAULT_CATEGORY_MAPPING
+    
+    # Initialize spending category
+    df['Spending Category'] = 'Other'
+    
+    # Categorize each transaction
+    for idx, row in df.iterrows():
+        description = str(row['Description']).lower()
+        
+        # Skip income transactions
+        if row.get('Category') == 'Credit':
+            df.at[idx, 'Spending Category'] = 'Income'
+            continue
+        
+        # Check each category's keywords
+        for category, keywords in category_keywords.items():
+            if any(keyword.lower() in description for keyword in keywords):
+                df.at[idx, 'Spending Category'] = category
+                break
+    
+    return df
