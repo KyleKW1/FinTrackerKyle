@@ -1,0 +1,357 @@
+# database.py
+"""
+Database connection and operations module
+Handles all database interactions including user management and file storage
+"""
+
+import mysql.connector
+from mysql.connector import Error
+import streamlit as st
+import json
+
+# Import config - with fallback
+try:
+    from config import DB_CONFIG
+except ImportError:
+    st.error("config.py not found! Please create it with your database credentials.")
+    st.stop()
+
+
+def create_connection():
+    """Create database connection with error handling"""
+    try:
+        connection = mysql.connector.connect(**DB_CONFIG)
+        return connection
+    except Error as e:
+        st.error(f"Database connection error: {e}")
+        return None
+
+
+# ============================================
+# USER OPERATIONS
+# ============================================
+
+def get_user_by_username(username):
+    """Get user by username"""
+    connection = create_connection()
+    if not connection:
+        return None
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+        user = cursor.fetchone()
+        cursor.close()
+        connection.close()
+        return user
+    except Error as e:
+        st.error(f"Error fetching user: {e}")
+        if connection:
+            connection.close()
+        return None
+
+
+def get_user_by_email(email):
+    """Get user by email"""
+    connection = create_connection()
+    if not connection:
+        return None
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
+        user = cursor.fetchone()
+        cursor.close()
+        connection.close()
+        return user
+    except Error as e:
+        st.error(f"Error fetching user: {e}")
+        if connection:
+            connection.close()
+        return None
+
+
+def create_user(username, email, password_hash):
+    """Create new user"""
+    connection = create_connection()
+    if not connection:
+        return False, "Database connection failed"
+    
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            "INSERT INTO users (username, email, password_hash) VALUES (%s, %s, %s)",
+            (username, email, password_hash)
+        )
+        connection.commit()
+        cursor.close()
+        connection.close()
+        return True, "Registration successful!"
+    except mysql.connector.IntegrityError:
+        if connection:
+            connection.close()
+        return False, "Username or email already exists"
+    except Error as e:
+        if connection:
+            connection.close()
+        return False, f"Registration error: {e}"
+
+
+def update_last_login(user_id):
+    """Update user's last login timestamp"""
+    connection = create_connection()
+    if not connection:
+        return False
+    
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = %s",
+            (user_id,)
+        )
+        connection.commit()
+        cursor.close()
+        connection.close()
+        return True
+    except Error as e:
+        if connection:
+            connection.close()
+        return False
+
+
+def update_user_password(user_id, new_password_hash):
+    """Update user password"""
+    connection = create_connection()
+    if not connection:
+        return False
+    
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            "UPDATE users SET password_hash = %s WHERE id = %s",
+            (new_password_hash, user_id)
+        )
+        connection.commit()
+        cursor.close()
+        connection.close()
+        return True
+    except Error as e:
+        if connection:
+            connection.close()
+        return False
+
+
+# ============================================
+# FILE OPERATIONS
+# ============================================
+
+def save_user_file(user_id, filename, file_data, file_type):
+    """Save uploaded file to database"""
+    connection = create_connection()
+    if not connection:
+        return False
+    
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            "INSERT INTO user_files (user_id, filename, file_data, file_type) VALUES (%s, %s, %s, %s)",
+            (user_id, filename, file_data, file_type)
+        )
+        connection.commit()
+        cursor.close()
+        connection.close()
+        return True
+    except Error as e:
+        st.error(f"Error saving file: {e}")
+        if connection:
+            connection.close()
+        return False
+
+
+def delete_user_file(file_id, user_id):
+    """Delete a user's file"""
+    connection = create_connection()
+    if not connection:
+        return False
+    
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            "DELETE FROM user_files WHERE id = %s AND user_id = %s",
+            (file_id, user_id)
+        )
+        connection.commit()
+        cursor.close()
+        connection.close()
+        return True
+    except Error as e:
+        st.error(f"Error deleting file: {e}")
+        if connection:
+            connection.close()
+        return False
+
+
+def get_user_files_paginated(user_id, page=0, page_size=9):
+    """Get user files with pagination"""
+    connection = create_connection()
+    if not connection:
+        return [], 0
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        
+        cursor.execute("SELECT COUNT(*) as total FROM user_files WHERE user_id = %s", (user_id,))
+        total_files = cursor.fetchone()['total']
+        
+        offset = page * page_size
+        cursor.execute(
+            "SELECT id, filename, file_type, upload_date FROM user_files WHERE user_id = %s ORDER BY upload_date DESC LIMIT %s OFFSET %s",
+            (user_id, page_size, offset)
+        )
+        files = cursor.fetchall()
+        
+        cursor.close()
+        connection.close()
+        return files, total_files
+    except Error as e:
+        st.error(f"Error retrieving files: {e}")
+        if connection:
+            connection.close()
+        return [], 0
+
+
+def get_all_user_files(user_id):
+    """Get all user files (for data loading)"""
+    connection = create_connection()
+    if not connection:
+        return []
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT id, file_data, file_type, filename FROM user_files WHERE user_id = %s",
+            (user_id,)
+        )
+        files = cursor.fetchall()
+        cursor.close()
+        connection.close()
+        return files
+    except Error as e:
+        st.error(f"Error loading data: {e}")
+        if connection:
+            connection.close()
+        return []
+
+
+# ============================================
+# PREFERENCES OPERATIONS
+# ============================================
+
+def get_user_preferences(user_id):
+    """Get user preferences"""
+    connection = create_connection()
+    if not connection:
+        return None
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT * FROM user_preferences WHERE user_id = %s",
+            (user_id,)
+        )
+        prefs = cursor.fetchone()
+        cursor.close()
+        connection.close()
+        return prefs
+    except Error as e:
+        if connection:
+            connection.close()
+        return None
+
+
+def save_user_preferences(user_id, category_keywords, monthly_budgets, savings_goal):
+    """Save user preferences"""
+    connection = create_connection()
+    if not connection:
+        return False
+    
+    try:
+        cursor = connection.cursor()
+        
+        cursor.execute("SELECT id FROM user_preferences WHERE user_id = %s", (user_id,))
+        exists = cursor.fetchone()
+        
+        category_json = json.dumps(category_keywords)
+        budgets_json = json.dumps(monthly_budgets)
+        
+        if exists:
+            cursor.execute(
+                "UPDATE user_preferences SET category_keywords = %s, monthly_budgets = %s, savings_goal = %s WHERE user_id = %s",
+                (category_json, budgets_json, savings_goal, user_id)
+            )
+        else:
+            cursor.execute(
+                "INSERT INTO user_preferences (user_id, category_keywords, monthly_budgets, savings_goal) VALUES (%s, %s, %s, %s)",
+                (user_id, category_json, budgets_json, savings_goal)
+            )
+        
+        connection.commit()
+        cursor.close()
+        connection.close()
+        return True
+    except Error as e:
+        st.error(f"Error saving preferences: {e}")
+        if connection:
+            connection.close()
+        return False
+
+
+# ============================================
+# MONTHLY SUMMARIES
+# ============================================
+
+def get_monthly_summary(user_id, year_month):
+    """Get cached monthly summary"""
+    connection = create_connection()
+    if not connection:
+        return None
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT * FROM monthly_summaries WHERE user_id = %s AND year_month = %s",
+            (user_id, year_month)
+        )
+        summary = cursor.fetchone()
+        cursor.close()
+        connection.close()
+        return summary
+    except Error as e:
+        if connection:
+            connection.close()
+        return None
+
+
+def save_monthly_summary(user_id, year_month, total_income, total_spending, net_savings):
+    """Compute and store monthly summary"""
+    connection = create_connection()
+    if not connection:
+        return False
+    
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            """INSERT INTO monthly_summaries (user_id, year_month, total_income, total_spending, net_savings)
+               VALUES (%s, %s, %s, %s, %s)
+               ON DUPLICATE KEY UPDATE total_income = %s, total_spending = %s, net_savings = %s""",
+            (user_id, year_month, total_income, total_spending, net_savings, 
+             total_income, total_spending, net_savings)
+        )
+        connection.commit()
+        cursor.close()
+        connection.close()
+        return True
+    except Error as e:
+        if connection:
+            connection.close()
+        return False
