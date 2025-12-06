@@ -79,6 +79,8 @@ def init_session_state():
         st.session_state.page = 'login'
     if 'selected_feature' not in st.session_state:
         st.session_state.selected_feature = None
+    if 'selected_sub_feature' not in st.session_state:
+        st.session_state.selected_sub_feature = None  # ADD THIS LINE
     if 'file_page' not in st.session_state:
         st.session_state.file_page = 0
 
