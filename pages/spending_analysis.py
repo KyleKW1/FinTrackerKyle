@@ -96,6 +96,48 @@ def spending_analysis_page():
         st.session_state.file_page,
         FILES_PER_PAGE
     )
+    # Add this section to your spending_analysis.py after line 95 (after the "DATA VISUALIZATION SECTION" comment)
+# This is for debugging - remove once working
+
+# DEBUG SECTION - TEMPORARY
+st.markdown("---")
+st.markdown("#### 🔍 Debug Information")
+
+with st.expander("Click to see debug info"):
+    st.write("**User ID:**", st.session_state.user['id'])
+    
+    # Check database connection
+    from database import get_all_user_files
+    files_in_db = get_all_user_files(st.session_state.user['id'])
+    st.write(f"**Files in database:** {len(files_in_db)}")
+    
+    if files_in_db:
+        for i, file in enumerate(files_in_db[:3]):  # Show first 3
+            st.write(f"File {i+1}:")
+            st.write(f"  - Filename: {file.get('filename', 'N/A')}")
+            st.write(f"  - Type: {file.get('file_type', 'N/A')}")
+            st.write(f"  - Data size: {len(file.get('file_data', b''))} bytes")
+    
+    # Try to load data
+    st.write("**Attempting to load data...**")
+    try:
+        from data_loader import load_all_user_data
+        test_data = load_all_user_data(st.session_state.user['id'])
+        st.write(f"**Data loaded:** {len(test_data)} rows")
+        
+        if not test_data.empty:
+            st.write("**Columns:**", list(test_data.columns))
+            st.write("**First few rows:**")
+            st.dataframe(test_data.head())
+        else:
+            st.error("Data is empty after processing")
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        import traceback
+        st.code(traceback.format_exc())
+
+st.markdown("---")
+# END DEBUG SECTION
     
     if total_files == 0:
         st.info("📂 No files uploaded yet. Upload your first bank statement above!")
