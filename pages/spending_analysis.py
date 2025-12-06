@@ -235,6 +235,107 @@ def render_category_editor():
                     clear_data_cache()
                     st.rerun()
 
+def render_cash_flow_charts(data, selected_year, selected_months):
+    """Render cash flow visualization charts"""
+    import plotly.graph_objects as go
+    import calendar
+    
+    st.markdown("##### 💰 Cash Flow Overview")
+    
+    # Filter data for selected period
+    period_data = data[(data['Year'] == selected_year) & (data['Month'].isin(selected_months))]
+    
+    if period_data.empty:
+        st.warning("No data available for selected period")
+        return
+    
+    # Calculate monthly income and spending
+    monthly_stats = []
+    for month_num in sorted(selected_months):
+        year_month = f"{selected_year}-{month_num:02d}"
+        stats = calculate_monthly_stats(data, year_month)
+        monthly_stats.append({
+            'Month': calendar.month_name[month_num],
+            'Income': stats['income'],
+            'Spending': stats['spending'],
+            'Savings': stats['savings']
+        })
+    
+    stats_df = pd.DataFrame(monthly_stats)
+    
+    # Create dual-axis chart
+    fig = go.Figure()
+    
+    # Add income bars
+    fig.add_trace(go.Bar(
+        name='Income',
+        x=stats_df['Month'],
+        y=stats_df['Income'],
+        marker_color='#10b981',
+        text=stats_df['Income'].apply(lambda x: f'J${x:,.0f}'),
+        textposition='outside'
+    ))
+    
+    # Add spending bars
+    fig.add_trace(go.Bar(
+        name='Spending',
+        x=stats_df['Month'],
+        y=stats_df['Spending'],
+        marker_color='#ef4444',
+        text=stats_df['Spending'].apply(lambda x: f'J${x:,.0f}'),
+        textposition='outside'
+    ))
+    
+    # Add savings line
+    fig.add_trace(go.Scatter(
+        name='Net Savings',
+        x=stats_df['Month'],
+        y=stats_df['Savings'],
+        mode='lines+markers',
+        line=dict(color='#3b82f6', width=3),
+        marker=dict(size=10),
+        text=stats_df['Savings'].apply(lambda x: f'J${x:,.0f}'),
+        textposition='top center'
+    ))
+    
+    fig.update_layout(
+        title=f'Cash Flow Analysis - {selected_year}',
+        xaxis_title='Month',
+        yaxis_title='Amount (J$)',
+        barmode='group',
+        height=500,
+        hovermode='x unified',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Summary metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    total_income = stats_df['Income'].sum()
+    total_spending = stats_df['Spending'].sum()
+    total_savings = stats_df['Savings'].sum()
+    avg_savings = stats_df['Savings'].mean()
+    
+    with col1:
+        st.metric("Total Income", f"J${total_income:,.0f}")
+    
+    with col2:
+        st.metric("Total Spending", f"J${total_spending:,.0f}")
+    
+    with col3:
+        st.metric("Total Savings", f"J${total_savings:,.0f}")
+    
+    with col4:
+        st.metric("Avg Monthly Savings", f"J${avg_savings:,.0f}")
+        
 
 def render_analysis_section(data):
     """Render the main analysis section"""
