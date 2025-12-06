@@ -12,12 +12,13 @@ from data_processing import (
     process_csv, 
     process_pdf_ncb, 
     extract_from_pdf,
-    standardize_dataframe_columns
+    standardize_dataframe_columns,
+    categorize_transactions  # Add this import
 )
 import pdfplumber
 
 
-@st.cache_data(ttl=300, show_spinner=False)  # Cache for 5 minutes, hide spinner
+@st.cache_data(ttl=300, show_spinner=False)
 def load_all_user_data(user_id):
     """
     Load all user data with caching
@@ -47,13 +48,19 @@ def load_all_user_data(user_id):
             # Validate and clean
             if not df.empty:
                 df = standardize_dataframe_columns(df)
+                
+                # CRITICAL FIX: Ensure categorization happens here
+                if 'Spending Category' not in df.columns:
+                    df = categorize_transactions(df)
+                
                 df = clean_dataframe(df)
                 
                 if not df.empty:
                     all_data.append(df)
                     
         except Exception as e:
-            # Silently log errors, don't show to user unless needed
+            # Log error for debugging
+            print(f"Error processing file {filename}: {e}")
             continue
     
     if not all_data:
@@ -72,6 +79,10 @@ def load_all_user_data(user_id):
     
     # Remove duplicate columns
     result = result.loc[:, ~result.columns.duplicated()]
+    
+    # CRITICAL FIX: Final check for Spending Category
+    if 'Spending Category' not in result.columns:
+        result = categorize_transactions(result)
     
     # Final cleanup
     if 'Amount' in result.columns:
@@ -109,8 +120,6 @@ def clean_dataframe(df):
     if df.empty:
         return df
     
-    initial_count = len(df)
-    
     # Remove rows with invalid data
     if 'Amount' in df.columns:
         df = df[df['Amount'] > 0]
@@ -120,7 +129,6 @@ def clean_dataframe(df):
         df = df[~df['Description'].isin(['nan', 'NaN', 'None'])]
         df = df[df['Description'].astype(str).str.strip() != '']
     
-    # Silently clean without showing message
     return df
 
 
