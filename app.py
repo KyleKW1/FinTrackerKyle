@@ -156,20 +156,23 @@ def render_settings():
 def render_alerts():
     """Render alerts section in sidebar"""
     from data_loader import load_all_user_data
-    from utils import get_spending_by_category, compare_budget_vs_actual, generate_alert_email_body, send_email_alert
+    from utils import get_spending_by_category, send_email_alert
     
-    st.caption("Get notified when you exceed budgets")
+    st.markdown("##### 📧 Budget Alerts")
     
     # Load data
     data = load_all_user_data(st.session_state.user['id'])
     
     if data.empty:
-        st.info("📊 Upload data to see alerts")
+        st.info("Upload data to see alerts")
         return
     
     prefs = get_user_preferences(st.session_state.user['id'])
     if not prefs or not prefs.get('monthly_budgets'):
-        st.info("⚙️ Set budgets above first")
+        st.warning("Set budgets first")
+        if st.button("Go to Budget Planner", key="goto_budget_planner", use_container_width=True):
+            st.session_state.selected_feature = 'planner'
+            st.rerun()
         return
     
     # Get latest month
@@ -186,38 +189,80 @@ def render_alerts():
     if summary.empty:
         return
     
-    comparison = compare_budget_vs_actual(budgets, summary)
-    overspent = comparison[comparison['Amount'] > comparison['Budget']]
+    # Calculate comparison
+    over_budget_categories = []
+    warning_categories = []
     
-    if overspent.empty:
-        st.success("✅ All within budget!")
+    for category in budgets.keys():
+        if category in ['Income', 'Other']:
+            continue
+        
+        budget = budgets[category]
+        actual = summary[summary['Spending Category'] == category]['Amount'].sum()
+        
+        if budget > 0:
+            percentage = (actual / budget) * 100
+            
+            if percentage > 100:
+                over_budget_categories.append({
+                    'Category': category,
+                    'Budget': budget,
+                    'Actual': actual,
+                    'Percentage': percentage
+                })
+            elif percentage > 80:
+                warning_categories.append({
+                    'Category': category,
+                    'Budget': budget,
+                    'Actual': actual,
+                    'Percentage': percentage
+                })
+    
+    # Display status
+    if over_budget_categories:
+        st.error(f"⚠️ {len(over_budget_categories)} over budget!")
+        for cat in over_budget_categories[:3]:  # Show top 3
+            st.caption(f"**{cat['Category']}**: {cat['Percentage']:.0f}%")
+    elif warning_categories:
+        st.warning(f"⚡ {len(warning_categories)} near limit")
+        for cat in warning_categories[:3]:
+            st.caption(f"**{cat['Category']}**: {cat['Percentage']:.0f}%")
     else:
-        st.warning(f"⚠️ Over budget in {len(overspent)} categories")
-        
-        for _, row in overspent.iterrows():
-            st.caption(f"**{row['Spending Category']}**: J${row['Amount']:,.0f} / J${row['Budget']:,.0f}")
-        
-        # Email alert
-        recipient_email = st.text_input(
-            "Email",
-            value=st.session_state.user['email'],
-            key="alert_email"
-        )
-        
-        if st.button("📧 Send Alert", use_container_width=True, key="send_alert"):
-            if recipient_email:
-                email_body = generate_alert_email_body(
-                    st.session_state.user['username'],
-                    latest_month,
-                    overspent
-                )
-                
-                if send_email_alert(
-                    recipient_email,
-                    f"Budget Alert - {latest_month}",
-                    email_body
-                ):
-                    st.success("✅ Email sent!")
+        st.success("✅ All within budget!")
+    
+    # Email alert option if over budget
+    if over_budget_categories:
+        with st.expander("Send Email Alert", expanded=False):
+            recipient_email = st.text_input(
+                "Email",
+                value=st.session_state.user['email'],
+                key="alert_email"
+            )
+            
+            if st.button("📧 Send Alert", use_container_width=True, key="send_alert_btn"):
+                if recipient_email:
+                    # Generate email body
+                    body_lines = [
+                        f"Dear {st.session_state.user['username']},\n",
+                        f"Budget Alert for {latest_month}:\n\n",
+                        "Categories over budget:\n"
+                    ]
+                    
+                    for cat in over_budget_categories:
+                        body_lines.append(
+                            f"- {cat['Category']}: J${cat['Actual']:,.0f} / J${cat['Budget']:,.0f} ({cat['Percentage']:.0f}%)"
+                        )
+                    
+                    body_lines.append("\n\nPlease review your spending.\n\nBest regards,\nFinance Hub")
+                    
+                    if send_email_alert(
+                        recipient_email,
+                        f"Budget Alert - {latest_month}",
+                        "\n".join(body_lines)
+                    ):
+                        st.success("✅ Email sent!")
+                    else:
+                        st.error("❌ Failed to send email")
 
 
 if __name__ == "__main__":
