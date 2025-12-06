@@ -270,28 +270,52 @@ def budget_planner_page():
                 # Detailed breakdown
                 st.markdown("##### 📋 Category Details")
                 
-                # Style the dataframe
-                display_df = comparison_df.copy()
-                display_df['Budget'] = display_df['Budget'].apply(lambda x: f"J${x:,.0f}")
-                display_df['Actual'] = display_df['Actual'].apply(lambda x: f"J${x:,.0f}")
-                display_df['Remaining'] = display_df['Remaining'].apply(lambda x: f"J${x:,.0f}")
-                display_df['Percentage'] = display_df['Percentage'].apply(lambda x: f"{x:.1f}%")
-                
-                # Color code based on percentage
-                #def highlight_status(row):
-                    pct = float(row['Percentage'].replace('%', ''))
-                    #if pct > 100:
-                        #return ['background-color: #fee2e2'] * len(row)
-                    #elif pct > 80:
-                        #return ['background-color: #fef3c7'] * len(row)
-                    #else:
-                        #return ['background-color: #d1fae5'] * len(row)
-                
-                st.dataframe(
-                    display_df.style.apply(highlight_status, axis=1),
-                    use_container_width=True,
-                    hide_index=True
-                )
+                # Create a better visual table
+                for _, row in comparison_df.iterrows():
+                    pct = row['Percentage']
+                    
+                    # Determine status and color
+                    if pct > 100:
+                        status = "🔴 OVER BUDGET"
+                        color = "#ef4444"
+                        bg_color = "#fee2e2"
+                    elif pct > 80:
+                        status = "🟡 WARNING"
+                        color = "#f59e0b"
+                        bg_color = "#fef3c7"
+                    else:
+                        status = "🟢 ON TRACK"
+                        color = "#10b981"
+                        bg_color = "#d1fae5"
+                    
+                    # Create card for each category
+                    st.markdown(f"""
+                        <div style='background: {bg_color}; padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem; border-left: 4px solid {color};'>
+                            <div style='display: flex; justify-content: space-between; align-items: center;'>
+                                <div style='flex: 1;'>
+                                    <div style='font-size: 1.1rem; font-weight: 600; color: #111827; margin-bottom: 0.25rem;'>
+                                        {row['Category']}
+                                    </div>
+                                    <div style='font-size: 0.85rem; color: #6b7280;'>
+                                        Budget: J${row['Budget']:,.0f} | Spent: J${row['Actual']:,.0f} | Left: J${row['Remaining']:,.0f}
+                                    </div>
+                                </div>
+                                <div style='text-align: right;'>
+                                    <div style='font-size: 0.9rem; font-weight: 600; color: {color}; margin-bottom: 0.25rem;'>
+                                        {status}
+                                    </div>
+                                    <div style='font-size: 1.25rem; font-weight: 700; color: {color};'>
+                                        {pct:.0f}%
+                                    </div>
+                                </div>
+                            </div>
+                            <div style='margin-top: 0.5rem;'>
+                                <div style='background: white; height: 8px; border-radius: 4px; overflow: hidden;'>
+                                    <div style='background: {color}; height: 100%; width: {min(pct, 100):.0f}%; transition: width 0.3s ease;'></div>
+                                </div>
+                            </div>
+                        </div>
+                    """, unsafe_allow_html=True)
                 
                 # Alerts
                 over_budget = comparison_df[comparison_df['Percentage'] > 100]
