@@ -45,51 +45,87 @@ def spending_analysis_page():
     
     # FILE UPLOAD SECTION
     st.markdown("#### 📁 Upload Bank Statements")
-    st.info("💡 Upload a JMMB CSV or NCB PDF bank statements to analyze your spending")
+    st.info("💡 Upload JMMB CSV or NCB PDF bank statements to analyze your spending")
+    
+    # Initialize upload state if not exists
+    if 'files_uploaded' not in st.session_state:
+        st.session_state.files_uploaded = False
+    
+    # File uploader with unique key that changes after upload
+    uploader_key = f"file_uploader_{st.session_state.get('upload_counter', 0)}"
     
     uploaded_files = st.file_uploader(
         "Choose files",
         type=['csv', 'pdf'],
         accept_multiple_files=True,
-        key="file_uploader"
+        key=uploader_key,
+        help="Select one or more CSV or PDF files from your bank"
     )
     
     if uploaded_files:
-        if st.button("📤 Upload Files", type="primary"):
-            success_count = 0
-            error_count = 0
-            
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            for idx, file in enumerate(uploaded_files):
-                status_text.text(f"Uploading {file.name}...")
+        # Show file list
+        st.write(f"**Selected files:** {len(uploaded_files)}")
+        for file in uploaded_files:
+            file_icon = "📄" if file.name.endswith('.pdf') else "📊"
+            st.caption(f"{file_icon} {file.name}")
+        
+        col1, col2, col3 = st.columns([1, 1, 2])
+        
+        with col1:
+            if st.button("📤 Upload All Files", type="primary", use_container_width=True):
+                success_count = 0
+                error_count = 0
                 
-                file_bytes = file.read()
-                file_type = file.name.split('.')[-1].lower()
+                progress_bar = st.progress(0)
+                status_text = st.empty()
                 
-                if save_user_file(
-                    st.session_state.user['id'],
-                    file.name,
-                    file_bytes,
-                    file_type
-                ):
-                    success_count += 1
-                else:
-                    error_count += 1
+                for idx, file in enumerate(uploaded_files):
+                    status_text.text(f"Uploading {file.name}...")
+                    
+                    try:
+                        file_bytes = file.read()
+                        file_type = file.name.split('.')[-1].lower()
+                        
+                        if save_user_file(
+                            st.session_state.user['id'],
+                            file.name,
+                            file_bytes,
+                            file_type
+                        ):
+                            success_count += 1
+                        else:
+                            error_count += 1
+                    except Exception as e:
+                        st.error(f"Error processing {file.name}: {e}")
+                        error_count += 1
+                    
+                    progress_bar.progress((idx + 1) / len(uploaded_files))
                 
-                progress_bar.progress((idx + 1) / len(uploaded_files))
-            
-            progress_bar.empty()
-            status_text.empty()
-            
-            if success_count > 0:
-                st.success(f"✅ Successfully uploaded {success_count} file(s)")
-                clear_data_cache()
+                progress_bar.empty()
+                status_text.empty()
+                
+                if success_count > 0:
+                    st.success(f"✅ Successfully uploaded {success_count} file(s)")
+                    clear_data_cache()
+                    
+                    # Clear the uploader by incrementing counter
+                    if 'upload_counter' not in st.session_state:
+                        st.session_state.upload_counter = 0
+                    st.session_state.upload_counter += 1
+                    st.session_state.files_uploaded = True
+                    
+                    st.rerun()
+                
+                if error_count > 0:
+                    st.error(f"❌ Failed to upload {error_count} file(s)")
+        
+        with col2:
+            if st.button("🗑️ Clear Selection", use_container_width=True):
+                # Clear by incrementing counter
+                if 'upload_counter' not in st.session_state:
+                    st.session_state.upload_counter = 0
+                st.session_state.upload_counter += 1
                 st.rerun()
-            
-            if error_count > 0:
-                st.error(f"❌ Failed to upload {error_count} file(s)")
     
     # YOUR FILES SECTION
     st.markdown("---")
