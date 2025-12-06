@@ -115,7 +115,7 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
     # ==========================================
     # PERIOD OVERVIEW
     # ==========================================
-    pdf.section_title('Period Overview', '📅')
+    pdf.section_title('Period Overview', 'X')
     
     pdf.set_font('Arial', '', 11)
     pdf.cell(0, 8, f'Analysis Type: {analysis_type}', 0, 1)
