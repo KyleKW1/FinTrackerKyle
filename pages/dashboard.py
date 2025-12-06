@@ -29,11 +29,12 @@ def dashboard_page():
     if 'selected_feature' not in st.session_state or st.session_state.selected_feature is None:
         display_feature_selection()
     else:
-        # Render selected feature - import here to avoid circular imports
+        # Render selected feature
         if st.session_state.selected_feature == 'analysis':
             from .spending_analysis import spending_analysis_page
             spending_analysis_page()
         elif st.session_state.selected_feature == 'planner':
+            from .budget_planner import budget_planner_page
             budget_planner_page()
         elif st.session_state.selected_feature == 'network':
             network_analysis_page()
