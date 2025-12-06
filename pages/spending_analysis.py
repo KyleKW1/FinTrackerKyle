@@ -454,92 +454,57 @@ def render_analysis_section(data):
         st.markdown("---")
         render_aggregate_analysis(data, selected_year, selected_months)
     
-    # EXPORT OPTIONS - CLEAN VERSION
+    # EXPORT OPTIONS - STREAMLINED VERSION
     st.markdown("---")
     st.markdown("#### 📥 Export Data")
     
-    # Single row with format selector and download button side by side
-    col_format, col_download = st.columns([3, 1])
+    col1, col2 = st.columns([2, 1])
     
-    with col_format:
-        export_format = st.selectbox(
-            "Export format", 
-            options=["Excel (Data Only)", "PDF Report (With Charts)"],
-            key="export_format_selector",
+    with col1:
+        export_format = st.radio(
+            "Format",
+            options=["Excel", "PDF Report"],
+            horizontal=True,
             label_visibility="collapsed"
         )
     
-    with col_download:
-        download_clicked = st.button("📥 Download", use_container_width=True, type="primary")
-    
-    # Handle download when button is clicked
-    if download_clicked:
-        if export_format == "Excel (Data Only)":
-            # Excel export
-            with st.spinner("Generating Excel file..."):
-                excel_data = export_to_excel(period_data)
-                st.download_button(
-                    label="⬇️ Click to Save Excel",
-                    data=excel_data,
-                    file_name=f"transactions_{selected_year}_{analysis_type.replace(' ', '_')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                    key="download_excel_btn"
-                )
-        else:
-            # PDF with charts
+    with col2:
+        if export_format == "Excel":
+            excel_data = export_to_excel(period_data)
+            st.download_button(
+                label="📥 Download Excel",
+                data=excel_data,
+                file_name=f"transactions_{selected_year}_{analysis_type.replace(' ', '_')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                type="primary"
+            )
+        else:  # PDF Report
             try:
-                from pdf_generator import create_pdf_with_charts
+                from pdf_generator import create_comprehensive_pdf
                 
-                with st.spinner("Generating PDF with charts..."):
-                    if len(selected_months) > 0:
-                        first_month_num = sorted(selected_months)[0]
-                        year_month = f"{selected_year}-{first_month_num:02d}"
-                        month_data_for_pdf = data[data['YearMonth'] == year_month]
-                        month_name = calendar.month_name[first_month_num]
-                        
-                        # Calculate stats for PDF
-                        month_stats = calculate_monthly_stats(data, year_month)
-                        month_summary = get_spending_by_category(data, year_month)
-                        
-                        # Get budgets for comparison
-                        prefs = get_user_preferences(st.session_state.user['id'])
-                        if prefs and prefs.get('monthly_budgets'):
-                            budgets = json.loads(prefs['monthly_budgets'])
-                            comparison = compare_budget_vs_actual(budgets, month_summary)
-                        else:
-                            comparison = pd.DataFrame()
-                        
-                        savings_goal_value = prefs.get('savings_goal', 5000) if prefs else 5000
-                        
-                        # Generate PDF
-                        pdf_bytes = create_pdf_with_charts(
-                            month_data=month_data_for_pdf,
-                            selected_month=month_name,
-                            summary=month_summary,
-                            comparison=comparison,
-                            month_income=month_stats['income'],
-                            month_spending=month_stats['spending'],
-                            month_savings=month_stats['savings'],
-                            SAVINGS_GOAL=savings_goal_value
-                        )
-                        
-                        st.download_button(
-                            label="⬇️ Click to Save PDF",
-                            data=pdf_bytes,
-                            file_name=f"Finance_Report_{month_name}_{selected_year}.pdf",
-                            mime="application/pdf",
-                            use_container_width=True,
-                            key="download_pdf_btn"
-                        )
-                    else:
-                        st.error("Please select at least one month to generate PDF")
-                        
-            except ImportError:
-                st.error("❌ PDF generation dependencies not installed.")
+                # Generate PDF with full period data
+                pdf_bytes = create_comprehensive_pdf(
+                    data=data,
+                    selected_year=selected_year,
+                    selected_months=selected_months,
+                    analysis_type=analysis_type,
+                    user_id=st.session_state.user['id']
+                )
+                
+                period_label = f"{analysis_type}_{selected_year}".replace(" ", "_")
+                
+                st.download_button(
+                    label="📥 Download PDF",
+                    data=pdf_bytes,
+                    file_name=f"Finance_Report_{period_label}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    type="primary"
+                )
+                
             except Exception as e:
                 st.error(f"❌ Error generating PDF: {e}")
-
 
 def render_monthly_analysis(data, year_month, month_name):
     """Render detailed analysis for a specific month"""
