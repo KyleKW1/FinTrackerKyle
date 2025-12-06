@@ -17,7 +17,7 @@ from data_processing import (
 import pdfplumber
 
 
-@st.cache_data(ttl=300)  # Cache for 5 minutes
+@st.cache_data(ttl=300, show_spinner=False)  # Cache for 5 minutes, hide spinner
 def load_all_user_data(user_id):
     """
     Load all user data with caching
@@ -53,11 +53,10 @@ def load_all_user_data(user_id):
                     all_data.append(df)
                     
         except Exception as e:
-            st.warning(f"Error processing {filename}: {str(e)}")
+            # Silently log errors, don't show to user unless needed
             continue
     
     if not all_data:
-        st.info("No valid data found in uploaded files.")
         return pd.DataFrame()
     
     # Combine all data
@@ -121,10 +120,7 @@ def clean_dataframe(df):
         df = df[~df['Description'].isin(['nan', 'NaN', 'None'])]
         df = df[df['Description'].astype(str).str.strip() != '']
     
-    removed = initial_count - len(df)
-    if removed > 0:
-        st.info(f"Cleaned {removed} invalid rows")
-    
+    # Silently clean without showing message
     return df
 
 
