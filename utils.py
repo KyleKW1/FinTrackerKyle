@@ -88,8 +88,15 @@ def calculate_monthly_stats(data, year_month):
             'savings': 0.0
         }
     
-    income = float(month_data[month_data['Category'] == 'Credit']['Amount'].sum())
-    spending = float(month_data[month_data['Category'] == 'Debit']['Amount'].sum())
+    # SAFETY CHECK: Ensure Category column exists
+    if 'Category' not in month_data.columns:
+        # Default behavior if Category is missing
+        income = 0.0
+        spending = float(month_data['Amount'].sum())
+    else:
+        income = float(month_data[month_data['Category'] == 'Credit']['Amount'].sum())
+        spending = float(month_data[month_data['Category'] == 'Debit']['Amount'].sum())
+    
     savings = income - spending
     
     return {
@@ -109,10 +116,26 @@ def calculate_percentage_change(current, previous):
 def get_spending_by_category(data, year_month):
     """Get spending breakdown by category for a month"""
     month_data = data[data['YearMonth'] == year_month]
-    spend_data = month_data[month_data['Category'] == 'Debit']
+    
+    # SAFETY CHECK: Ensure Category column exists
+    if 'Category' in month_data.columns:
+        spend_data = month_data[month_data['Category'] == 'Debit']
+    else:
+        # If no Category column, assume all are spending
+        spend_data = month_data.copy()
     
     if spend_data.empty:
         return pd.DataFrame()
+    
+    # CRITICAL FIX: Check if Spending Category exists
+    if 'Spending Category' not in spend_data.columns:
+        # Import categorize_transactions and apply it
+        from data_processing import categorize_transactions
+        spend_data = categorize_transactions(spend_data)
+    
+    # If still no Spending Category, create a default one
+    if 'Spending Category' not in spend_data.columns:
+        spend_data['Spending Category'] = 'Uncategorized'
     
     summary = spend_data.groupby('Spending Category')['Amount'].sum().reset_index()
     summary['Percentage'] = 100 * summary['Amount'] / summary['Amount'].sum()
@@ -122,6 +145,9 @@ def get_spending_by_category(data, year_month):
 
 def compare_budget_vs_actual(budgets, actual_spending):
     """Compare budgets against actual spending"""
+    if actual_spending.empty:
+        return pd.DataFrame()
+    
     budget_df = pd.DataFrame.from_dict(budgets, orient='index', columns=['Budget']).reset_index()
     budget_df.rename(columns={'index': 'Spending Category'}, inplace=True)
     
