@@ -355,6 +355,7 @@ def render_analysis_section(data):
         st.error("No valid years found in data")
         return
     
+    # Always create 3 columns for consistent layout
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col1:
@@ -410,14 +411,20 @@ def render_analysis_section(data):
     elif analysis_type == "Last 3 Months":
         selected_months = available_months_nums[-3:] if len(available_months_nums) >= 3 else available_months_nums
         selected_month_names = [calendar.month_name[m] for m in selected_months]
+        with col3:
+            st.info(f"{len(selected_months)} months")
     
     elif analysis_type == "Last 6 Months":
         selected_months = available_months_nums[-6:] if len(available_months_nums) >= 6 else available_months_nums
         selected_month_names = [calendar.month_name[m] for m in selected_months]
+        with col3:
+            st.info(f"{len(selected_months)} months")
     
     else:  # All Time
         selected_months = available_months_nums
         selected_month_names = [calendar.month_name[m] for m in selected_months]
+        with col3:
+            st.info(f"{len(selected_months)} months")
     
     # Filter data
     period_data = data[(data['Year'] == selected_year) & (data['Month'].isin(selected_months))]
@@ -425,9 +432,6 @@ def render_analysis_section(data):
     if period_data.empty:
         st.warning("No data available for selected period")
         return
-    
-    #st.success(f"📊 Analyzing {len(selected_months)} month(s): {', '.join(selected_month_names)} in {selected_year}")
-    #st.info(f"Total transactions: {len(period_data)}")
     
     # CASH FLOW CHARTS
     st.markdown("---")
