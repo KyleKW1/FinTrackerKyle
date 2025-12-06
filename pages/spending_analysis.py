@@ -45,7 +45,7 @@ def spending_analysis_page():
     
     # FILE UPLOAD SECTION
     st.markdown("#### 📁 Upload Bank Statements")
-    st.info("💡 Upload CSV or PDF bank statements to analyze your spending")
+    st.info("💡 Upload a JMMB CSV or NCB PDF bank statements to analyze your spending")
     
     uploaded_files = st.file_uploader(
         "Choose files",
