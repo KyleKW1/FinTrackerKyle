@@ -21,6 +21,7 @@ from utils import (
     export_to_excel,
     compare_budget_vs_actual
 )
+
 from config import FILES_PER_PAGE, DEFAULT_CATEGORY_MAPPING, DEFAULT_BUDGETS, DEFAULT_SAVINGS_GOAL
 import json
 from datetime import datetime
@@ -352,118 +353,81 @@ def render_analysis_section(data):
     st.markdown("---")
     st.markdown("#### 📥 Export Data")
     
-    col1, col2, col3 = st.columns([1, 1, 2])
+    export_format = st.selectbox(
+        "Select export format", 
+        options=["Excel (Data Only)", "PDF (With Charts)"],
+        key="export_format_selector"
+    )
     
-    with col1:
-        excel_data = export_to_excel(period_data)
-        st.download_button(
-            label="📊 Download Excel",
-            data=excel_data,
-            file_name=f"transactions_{selected_year}_{analysis_type.replace(' ', '_')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
-    
-    with col2:
-        csv_data = period_data.to_csv(index=False)
-        st.download_button(
-            label="📄 Download CSV",
-            data=csv_data,
-            file_name=f"transactions_{selected_year}_{analysis_type.replace(' ', '_')}.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-
-def render_cash_flow_charts(data, selected_year, selected_months):
-    """Render separate income/spending and net cash flow charts"""
-    st.markdown("##### 💰 Financial Overview")
-    
-    # Prepare data
-    cash_flow_data = []
-    for month_num in sorted(selected_months):
-        year_month = f"{selected_year}-{month_num:02d}"
-        stats = calculate_monthly_stats(data, year_month)
-        cash_flow_data.append({
-            'Month': calendar.month_name[month_num],
-            'Income': stats['income'],
-            'Spending': stats['spending'],
-            'Savings': stats['savings']
-        })
-    
-    cash_flow_df = pd.DataFrame(cash_flow_data)
-    
-    if cash_flow_df.empty:
-        return
-    
-    col1, col2 = st.columns(2)
-    
-    # Chart 1: Income vs Spending (Bar Chart)
-    with col1:
-        st.markdown("**💵 Income vs Spending**")
-        
-        fig_bars = go.Figure()
-        
-        fig_bars.add_trace(go.Bar(
-            name='Income',
-            x=cash_flow_df['Month'],
-            y=cash_flow_df['Income'],
-            marker_color='#10b981',
-            text=cash_flow_df['Income'].apply(lambda x: f'J${x:,.0f}'),
-            textposition='outside'
-        ))
-        
-        fig_bars.add_trace(go.Bar(
-            name='Spending',
-            x=cash_flow_df['Month'],
-            y=cash_flow_df['Spending'],
-            marker_color='#ef4444',
-            text=cash_flow_df['Spending'].apply(lambda x: f'J${x:,.0f}'),
-            textposition='outside'
-        ))
-        
-        fig_bars.update_layout(
-            barmode='group',
-            height=400,
-            yaxis_title='Amount (J$)',
-            showlegend=True,
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-        )
-        
-        st.plotly_chart(fig_bars, use_container_width=True)
-    
-    # Chart 2: Net Cash Flow (Line Chart)
-    with col2:
-        st.markdown("**📈 Net Cash Flow**")
-        
-        fig_line = go.Figure()
-        
-        # Add zero line
-        fig_line.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
-        
-        # Add savings line
-        colors = ['#10b981' if x >= 0 else '#ef4444' for x in cash_flow_df['Savings']]
-        
-        fig_line.add_trace(go.Scatter(
-            x=cash_flow_df['Month'],
-            y=cash_flow_df['Savings'],
-            mode='lines+markers',
-            name='Net Savings',
-            line=dict(color='#3b82f6', width=3),
-            marker=dict(size=10, color=colors, line=dict(color='white', width=2)),
-            text=cash_flow_df['Savings'].apply(lambda x: f'J${x:,.0f}'),
-            textposition='top center',
-            fill='tozeroy',
-            fillcolor='rgba(59, 130, 246, 0.1)'
-        ))
-        
-        fig_line.update_layout(
-            height=400,
-            yaxis_title='Net Savings (J$)',
-            showlegend=False,
-            hovermode='x unified'
-        )
-        
-        st.plotly_chart(fig_line, use_container_width=True)
+    if st.button("📥 Download Report", use_container_width=True, type="primary"):
+        if export_format == "Excel (Data Only)":
+            # Excel export
+            excel_data = export_to_excel(period_data)
+            st.download_button(
+                label="📊 Download Excel File",
+                data=excel_data,
+                file_name=f"transactions_{selected_year}_{analysis_type.replace(' ', '_')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key="download_excel_btn"
+            )
+        else:
+            # PDF with charts
+            try:
+                from pdf_generator import create_pdf_with_charts
+                
+                with st.spinner("Generating PDF with charts..."):
+                    # Get the data for the first selected month (or combined data)
+                    if len(selected_months) > 0:
+                        first_month_num = sorted(selected_months)[0]
+                        year_month = f"{selected_year}-{first_month_num:02d}"
+                        month_data_for_pdf = data[data['YearMonth'] == year_month]
+                        month_name = calendar.month_name[first_month_num]
+                        
+                        # Calculate stats for PDF
+                        month_stats = calculate_monthly_stats(data, year_month)
+                        month_summary = get_spending_by_category(data, year_month)
+                        
+                        # Get budgets for comparison
+                        prefs = get_user_preferences(st.session_state.user['id'])
+                        if prefs and prefs.get('monthly_budgets'):
+                            budgets = json.loads(prefs['monthly_budgets'])
+                            comparison = compare_budget_vs_actual(budgets, month_summary)
+                        else:
+                            comparison = pd.DataFrame()
+                        
+                        savings_goal_value = prefs.get('savings_goal', 5000) if prefs else 5000
+                        
+                        # Generate PDF
+                        pdf_bytes = create_pdf_with_charts(
+                            month_data=month_data_for_pdf,
+                            selected_month=month_name,
+                            summary=month_summary,
+                            comparison=comparison,
+                            month_income=month_stats['income'],
+                            month_spending=month_stats['spending'],
+                            month_savings=month_stats['savings'],
+                            SAVINGS_GOAL=savings_goal_value
+                        )
+                        
+                        st.download_button(
+                            label="📥 Download PDF Report with Charts",
+                            data=pdf_bytes,
+                            file_name=f"Finance_Report_{month_name}_{selected_year}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True,
+                            key="download_pdf_btn"
+                        )
+                        st.success("✅ PDF generated successfully!")
+                    else:
+                        st.error("Please select at least one month to generate PDF")
+                        
+            except ImportError:
+                st.error("❌ PDF generation dependencies not installed. Please run: pip install matplotlib")
+            except Exception as e:
+                st.error(f"❌ Error generating PDF: {e}")
+                import traceback
+                st.code(traceback.format_exc())
 
 
 def render_monthly_analysis(data, year_month, month_name):
