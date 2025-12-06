@@ -103,7 +103,7 @@ def possible_savings_page():
         st.markdown("</div>", unsafe_allow_html=True)
         return
     
-    st.success(f"✅ Analyzing {len(spending_data)} spending transactions")
+    #st.success(f"✅ Analyzing {len(spending_data)} spending transactions")
     
     # ==========================================
     # OVERVIEW - ALL ROUND-UP OPTIONS
