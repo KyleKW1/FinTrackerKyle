@@ -317,16 +317,65 @@ def budget_planner_page():
                         </div>
                     """, unsafe_allow_html=True)
                 
-                # Alerts
+                # Alerts and Email
+                st.markdown("---")
+                
                 over_budget = comparison_df[comparison_df['Percentage'] > 100]
                 warning_budget = comparison_df[(comparison_df['Percentage'] > 80) & (comparison_df['Percentage'] <= 100)]
                 
                 if not over_budget.empty:
-                    st.error(f"⚠️ **{len(over_budget)} categories over budget!**")
-                    for _, row in over_budget.iterrows():
-                        st.caption(f"• **{row['Category']}**: {row['Percentage']:.0f}% used (J${row['Actual']:,.0f} / J${row['Budget']:,.0f})")
+                    col1, col2 = st.columns([2, 1])
+                    
+                    with col1:
+                        st.error(f"⚠️ **{len(over_budget)} categories over budget!**")
+                        for _, row in over_budget.iterrows():
+                            st.caption(f"• **{row['Category']}**: {row['Percentage']:.0f}% used (J${row['Actual']:,.0f} / J${row['Budget']:,.0f})")
+                    
+                    with col2:
+                        st.markdown("##### 📧 Email Alert")
+                        recipient_email = st.text_input(
+                            "Email Address",
+                            value=st.session_state.user['email'],
+                            key="budget_alert_email",
+                            placeholder="your@email.com"
+                        )
+                        
+                        if st.button("📧 Send Alert", use_container_width=True, type="primary", key="send_budget_alert"):
+                            if recipient_email:
+                                from utils import send_email_alert
+                                
+                                # Generate email body
+                                body_lines = [
+                                    f"Dear {st.session_state.user['username']},\n",
+                                    f"Budget Alert for {selected_month}:\n\n",
+                                    "Categories Over Budget:\n"
+                                ]
+                                
+                                for _, row in over_budget.iterrows():
+                                    body_lines.append(
+                                        f"- {row['Category']}: J${row['Actual']:,.0f} / J${row['Budget']:,.0f} ({row['Percentage']:.0f}%)"
+                                    )
+                                
+                                if not warning_budget.empty:
+                                    body_lines.append("\n\nCategories Approaching Limit:\n")
+                                    for _, row in warning_budget.iterrows():
+                                        body_lines.append(
+                                            f"- {row['Category']}: J${row['Actual']:,.0f} / J${row['Budget']:,.0f} ({row['Percentage']:.0f}%)"
+                                        )
+                                
+                                body_lines.append("\n\nPlease review your spending.\n\nBest regards,\nFinance Hub Team")
+                                
+                                email_body = "\n".join(body_lines)
+                                
+                                with st.spinner("Sending email..."):
+                                    if send_email_alert(recipient_email, f"Budget Alert - {selected_month}", email_body):
+                                        st.success("✅ Email sent successfully!")
+                                    else:
+                                        st.error("❌ Failed to send email")
+                            else:
+                                st.error("Please enter an email address")
                 
-                if not warning_budget.empty:
+                elif not warning_budget.empty:
                     st.warning(f"⚡ **{len(warning_budget)} categories approaching limit**")
                     for _, row in warning_budget.iterrows():
                         st.caption(f"• **{row['Category']}**: {row['Percentage']:.0f}% used (J${row['Remaining']:,.0f} remaining)")
