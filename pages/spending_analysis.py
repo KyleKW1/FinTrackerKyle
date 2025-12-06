@@ -137,38 +137,120 @@ def spending_analysis_page():
         render_analysis_section(data)
     
     st.markdown("</div>", unsafe_allow_html=True)
-    # TEMPORARY DEBUG - Remove after fixing
-    if not data.empty:
-        st.markdown("---")
-        st.markdown("### 🔍 DEBUG INFO")
+
+# Add this RIGHT AFTER the line: data = load_all_user_data(st.session_state.user['id'])
+# This is around line 155 in your spending_analysis.py
+
+    # ============================================
+    # COMPREHENSIVE DEBUG SECTION
+    # ============================================
+    st.markdown("---")
+    st.markdown("### 🔍 COMPREHENSIVE DEBUG")
+    
+    with st.expander("📊 Click to see what's happening", expanded=True):
+        # Check 1: Data exists?
+        st.write(f"**Total rows in data:** {len(data)}")
         
-        with st.expander("Click to see what's wrong", expanded=True):
-            st.write("**Columns in data:**", list(data.columns))
+        if data.empty:
+            st.error("❌ DATA IS COMPLETELY EMPTY!")
             
-            if 'Spending Category' in data.columns:
-                st.write("✅ 'Spending Category' column EXISTS")
-                categories = data['Spending Category'].value_counts()
-                st.write("**Categories found:**")
-                st.write(categories)
+            # Check if files exist in database
+            from database import get_all_user_files
+            files = get_all_user_files(st.session_state.user['id'])
+            st.write(f"**Files in database:** {len(files)}")
+            
+            if files:
+                st.write("**Your files:**")
+                for f in files:
+                    st.write(f"- ID: {f['id']}, Name: {f.get('filename', 'Unknown')}, Type: {f.get('file_type', 'Unknown')}")
+                    st.write(f"  Data size: {len(f.get('file_data', b''))} bytes")
                 
-                st.write("**Sample transactions:**")
-                sample = data[['Description', 'Spending Category', 'Amount']].head(10)
-                st.dataframe(sample)
+                # Try to manually load one file
+                st.write("---")
+                st.write("**Attempting to manually load first file...**")
+                
+                try:
+                    from io import BytesIO
+                    import pdfplumber
+                    from data_processing import process_pdf_ncb, standardize_dataframe_columns, categorize_transactions
+                    
+                    first_file = files[0]
+                    file_bytes = BytesIO(first_file['file_data'])
+                    
+                    st.write(f"Processing: {first_file.get('filename', 'Unknown')}")
+                    
+                    # Try NCB parser
+                    test_df = process_pdf_ncb(file_bytes)
+                    
+                    st.write(f"**Rows after NCB parser:** {len(test_df)}")
+                    
+                    if not test_df.empty:
+                        st.write("**Columns after parsing:**", list(test_df.columns))
+                        st.write("**Sample data:**")
+                        st.dataframe(test_df.head())
+                        
+                        # Try standardizing
+                        test_df = standardize_dataframe_columns(test_df)
+                        st.write(f"**Rows after standardizing:** {len(test_df)}")
+                        st.write("**Columns after standardizing:**", list(test_df.columns))
+                        
+                        # Try categorizing
+                        test_df = categorize_transactions(test_df)
+                        st.write(f"**Rows after categorizing:** {len(test_df)}")
+                        
+                        if 'Spending Category' in test_df.columns:
+                            st.write("**Categories:**", test_df['Spending Category'].value_counts().to_dict())
+                        
+                        st.write("**Final sample:**")
+                        st.dataframe(test_df.head())
+                    else:
+                        st.error("❌ NCB parser returned empty DataFrame")
+                        
+                        # Try checking raw PDF content
+                        file_bytes.seek(0)
+                        with pdfplumber.open(file_bytes) as pdf:
+                            st.write(f"**PDF has {len(pdf.pages)} pages**")
+                            if pdf.pages:
+                                first_page_text = pdf.pages[0].extract_text()
+                                st.write("**First 500 characters of PDF:**")
+                                st.code(first_page_text[:500])
+                
+                except Exception as e:
+                    st.error(f"❌ Manual load failed: {e}")
+                    import traceback
+                    st.code(traceback.format_exc())
             else:
-                st.error("❌ 'Spending Category' column is MISSING!")
-            
-            if 'Description' in data.columns:
-                st.write("**Sample descriptions (first 10):**")
-                st.write(list(data['Description'].head(10)))
-            
-            # Check if categorize_transactions was called
-            st.write("**Checking categorization function...**")
-            from config import DEFAULT_CATEGORY_MAPPING
-            st.write("**Keywords from config:**")
-            for cat, keywords in list(DEFAULT_CATEGORY_MAPPING.items())[:3]:
-                st.write(f"- {cat}: {keywords[:3]}...")
+                st.warning("No files in database!")
         
-        st.markdown("---")
+        else:
+            # Data exists - show details
+            st.success(f"✅ Data loaded: {len(data)} rows")
+            
+            st.write("**Columns:**", list(data.columns))
+            
+            # Check critical columns
+            for col in ['Date', 'Description', 'Amount', 'Category', 'Spending Category', 'YearMonth']:
+                if col in data.columns:
+                    st.write(f"✅ `{col}` exists")
+                    if col == 'Spending Category':
+                        st.write(f"   Categories: {data[col].value_counts().to_dict()}")
+                    elif col == 'YearMonth':
+                        st.write(f"   Months: {sorted(data[col].unique())}")
+                else:
+                    st.error(f"❌ `{col}` MISSING!")
+            
+            st.write("---")
+            st.write("**First 5 rows:**")
+            st.dataframe(data.head())
+            
+            st.write("---")
+            st.write("**Data types:**")
+            st.write(data.dtypes)
+    
+    st.markdown("---")
+    # ============================================
+    # END DEBUG SECTION
+    # ============================================
 
 
 def render_category_editor():
