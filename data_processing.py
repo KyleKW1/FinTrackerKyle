@@ -276,9 +276,134 @@ def parse_amount(amount_str):
         return 0.0
 
 
+def parse_ncb_transaction_line(line, year):
+    """Parse NCB transaction line: DD/Mon DESCRIPTION AMOUNT BALANCE"""
+    # More flexible pattern that captures everything between date and amounts
+    pattern = r'(\d{2}/\w{3})\s+(.*?)\s+(-?[\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$'
+    match = re.search(pattern, line)
+    
+    if match:
+        try:
+            date_str = match.group(1)
+            description = match.group(2).strip()
+            amount_str = match.group(3).replace(',', '')
+            
+            # Skip if description is empty or just whitespace
+            if not description or description.isspace():
+                return None
+            
+            full_date = f"{date_str}/{year}"
+            amount = float(amount_str)
+            
+            # NCB format: negative amounts are DEBITS (money going out)
+            # positive amounts are CREDITS (money coming in)
+            if amount < 0:
+                category = 'Debit'
+                amount = abs(amount)  # Convert to positive for storage
+            else:
+                category = 'Credit'
+            
+            # Validate we got real data
+            if amount == 0 and description == '':
+                return None
+            
+            return {
+                'Date': full_date, 
+                'Description': description, 
+                'Amount': amount, 
+                'Category': category
+            }
+        except Exception as e:
+            print(f"Error parsing line: {line[:50]}... Error: {e}")
+            return None
+    return None
+
+
 def process_pdf_ncb(file_bytes):
-    """Process NCB PDF bank statement - uses enhanced extraction"""
-    return extract_from_pdf(file_bytes)
+    """Process NCB PDF statement with improved parsing"""
+    try:
+        transactions = []
+        year = "2024"
+        
+        if isinstance(file_bytes, BytesIO):
+            pdf_file = file_bytes
+        else:
+            pdf_file = BytesIO(file_bytes.read()) if hasattr(file_bytes, 'read') else BytesIO(file_bytes)
+        
+        with pdfplumber.open(pdf_file) as pdf:
+            for page_num, page in enumerate(pdf.pages, 1):
+                text = page.extract_text()
+                if not text:
+                    continue
+                
+                # Extract year from first page
+                if page_num == 1:
+                    patterns = [
+                        r'P\.O\.,?\s*\d{2}-\d{2}-(\d{4})',
+                        r'(\d{4})-\d{2}-\d{2}',
+                        r'\b(20\d{2})\b'
+                    ]
+                    
+                    for pattern in patterns:
+                        year_match = re.search(pattern, text)
+                        if year_match:
+                            year = year_match.group(1)
+                            break
+                
+                for line in text.split('\n'):
+                    line = line.strip()
+                    
+                    if not line:
+                        continue
+                    
+                    # Skip header/footer lines
+                    skip_keywords = ['CONTINUED', 'END OF STATEMENT', 'JAMAICA', 'NATIONAL COMMERCIAL BANK',
+                                   'REGULAR SAVINGS', 'CURRENT ACCOUNT', 'SAVINGS ACCOUNT', 'STATEMENT',
+                                   'PAGE', 'MANDEVILLE', 'MANCHESTER', 'JMD', 'USD', 'P.O.',
+                                   'BALANCE', 'DATE', 'DESCRIPTION', 'WITHDRAWALS', 'DEPOSITS']
+                    
+                    if any(keyword in line.upper() for keyword in skip_keywords):
+                        continue
+                    
+                    # Skip customer info and addresses
+                    if re.match(r'^(MR|MRS|MS|DR|MISS)\s+[A-Z]', line):
+                        continue
+                    if re.search(r'^MA \d{2}-\d{2}', line):
+                        continue
+                    if re.search(r'^\d{9,}$', line):
+                        continue
+                    if line.isupper() and not any(c.isdigit() for c in line) and len(line.split()) <= 3:
+                        continue
+                    
+                    # Try to parse as transaction
+                    parsed = parse_ncb_transaction_line(line, year)
+                    if parsed and parsed['Amount'] > 0 and parsed['Description']:
+                        transactions.append(parsed)
+        
+        # Return empty DataFrame if no valid transactions
+        if not transactions:
+            print("⚠️ Could not extract transactions from NCB PDF.")
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(transactions)
+        df['Date'] = pd.to_datetime(df['Date'], format='%d/%b/%Y', errors='coerce')
+        df = df.dropna(subset=['Date'])
+        
+        # Remove duplicates
+        df = df.drop_duplicates(subset=['Date', 'Description', 'Amount'], keep='first')
+        
+        print(f"✅ Successfully extracted {len(df)} transactions from NCB PDF.")
+        
+        if len(df) > 0:
+            credit_count = len(df[df['Category'] == 'Credit'])
+            debit_count = len(df[df['Category'] == 'Debit'])
+            print(f"📊 Breakdown: {credit_count} Credits | {debit_count} Debits")
+        
+        return df
+        
+    except Exception as e:
+        print(f"NCB PDF Processing Error: {str(e)}")
+        return pd.DataFrame()
 
 
 def standardize_dataframe_columns(df):
