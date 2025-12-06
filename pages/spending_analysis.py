@@ -129,22 +129,18 @@ def spending_analysis_page():
     
     # Load data
     with st.spinner("Loading your data..."):
-    data = load_all_user_data(st.session_state.user['id'])
-
-    if data.empty:
-        st.warning("📊 No data available yet. Upload files above to see your spending analysis.")
-    else:
-        # ✅ ADD YEAR AND MONTH COLUMNS (like Test3.py does)
-        if 'Year' not in data.columns and 'Date' in data.columns:
-            data['Year'] = pd.to_datetime(data['Date']).dt.year
-        if 'Month' not in data.columns and 'Date' in data.columns:
-            data['Month'] = pd.to_datetime(data['Date']).dt.month
-    
-    # Show success message
-    st.success(f"✅ Loaded {len(data)} transactions from {len(data['YearMonth'].unique())} months")
-    
-    # Remove the debug section and just call render_analysis_section
-    render_analysis_section(data)
+        data = load_all_user_data(st.session_state.user['id'])
+        
+        if data.empty:
+            st.warning("📊 No data available yet. Upload files above to see your spending analysis.")
+        else:
+            # ✅ ADD YEAR AND MONTH COLUMNS (like Test3.py does)
+            if 'Year' not in data.columns and 'Date' in data.columns:
+                data['Year'] = pd.to_datetime(data['Date']).dt.year
+                if 'Month' not in data.columns and 'Date' in data.columns:
+                    data['Month'] = pd.to_datetime(data['Date']).dt.month
+                    st.success(f"✅ Loaded {len(data)} transactions from {len(data['YearMonth'].unique())} months")
+                    render_analysis_section(data)
     
     st.markdown("</div>", unsafe_allow_html=True)
 
