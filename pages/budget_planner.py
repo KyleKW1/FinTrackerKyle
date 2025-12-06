@@ -278,14 +278,14 @@ def budget_planner_page():
                 display_df['Percentage'] = display_df['Percentage'].apply(lambda x: f"{x:.1f}%")
                 
                 # Color code based on percentage
-                def highlight_status(row):
+                #def highlight_status(row):
                     pct = float(row['Percentage'].replace('%', ''))
-                    if pct > 100:
-                        return ['background-color: #fee2e2'] * len(row)
-                    elif pct > 80:
-                        return ['background-color: #fef3c7'] * len(row)
-                    else:
-                        return ['background-color: #d1fae5'] * len(row)
+                    #if pct > 100:
+                        #return ['background-color: #fee2e2'] * len(row)
+                    #elif pct > 80:
+                        #return ['background-color: #fef3c7'] * len(row)
+                    #else:
+                        #return ['background-color: #d1fae5'] * len(row)
                 
                 st.dataframe(
                     display_df.style.apply(highlight_status, axis=1),
