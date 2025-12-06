@@ -8,7 +8,10 @@ import streamlit as st
 from config import APP_TITLE, APP_ICON
 from auth import init_session_state, logout
 from styles import apply_custom_styles
-from pages import login_page, register_page, dashboard_page
+
+# Import pages - these are now properly exported from pages/__init__.py
+from pages.auth_pages import login_page, register_page
+from pages.dashboard import dashboard_page
 from password_reset import forgot_password_page, reset_password_page
 
 
