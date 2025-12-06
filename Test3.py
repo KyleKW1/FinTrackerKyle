@@ -296,7 +296,52 @@ DB_CONFIG = {
     'ssl_verify_cert': True,
     'ssl_verify_identity': True
 }
-
+def show_update_banner():
+    """Display a prominent update notification banner"""
+    st.markdown("""
+        <div style='
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            padding: 1.5rem;
+            border-radius: 16px;
+            margin-bottom: 2rem;
+            box-shadow: 0 8px 16px rgba(245, 158, 11, 0.3);
+            border: 3px solid #fbbf24;
+            animation: pulse 2s ease-in-out infinite;
+        '>
+            <style>
+                @keyframes pulse {
+                    0%, 100% { transform: scale(1); }
+                    50% { transform: scale(1.02); }
+                }
+            </style>
+            <div style='text-align: center;'>
+                <h2 style='color: white; margin: 0 0 0.5rem 0; font-size: 2rem;'>
+                    🎉 We Have a New Update! 🎉
+                </h2>
+                <p style='color: white; font-size: 1.1rem; margin: 0 0 1rem 0; opacity: 0.95;'>
+                    Experience our improved Finance Hub with enhanced features, better performance, and a modern interface!
+                </p>
+                <a href='https://updatedfintracker.streamlit.app/' target='_blank' style='
+                    display: inline-block;
+                    background: white;
+                    color: #d97706;
+                    padding: 1rem 3rem;
+                    border-radius: 12px;
+                    text-decoration: none;
+                    font-weight: 700;
+                    font-size: 1.2rem;
+                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+                    transition: all 0.3s ease;
+                '>
+                    🚀 Switch to New Version
+                </a>
+                <p style='color: white; font-size: 0.9rem; margin: 1rem 0 0 0; opacity: 0.85;'>
+                    ⚡ New features include: Enhanced dashboard, faster loading, improved analytics, and more!
+                </p>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+    
 def create_connection():
     """Create database connection"""
     try:
@@ -1226,6 +1271,8 @@ def logout():
 
 def enhanced_login_page():
     apply_custom_styles()
+    show_update_banner()
+
     
     col1, col2, col3 = st.columns([1, 2, 1])
     
@@ -1335,6 +1382,8 @@ def enhanced_register_page():
 
 def enhanced_main_app():
     apply_custom_styles()
+    show_update_banner()
+
     
     # Sidebar
     with st.sidebar:
