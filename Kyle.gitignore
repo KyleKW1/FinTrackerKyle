@@ -1,57 +1,29 @@
-# Environment variables
-.env
-.env.local
-.env.*.local
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-ENV/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Database files
-*.db
-*.sqlite
-*.sqlite3
-finance_hub.db
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Streamlit
+# 1. Update .gitignore
+cat > .gitignore << 'EOF'
 .streamlit/secrets.toml
+config_local.py
+pass.env
+.env
+__pycache__/
+*.pyc
+.idea/
+EOF
 
-# Logs
-*.log
+# 2. Create secrets directory
+mkdir -p .streamlit
 
-# Temporary files
-*.tmp
-temp/
-tmp/
+# 3. Create secrets file (DO NOT commit this!)
+cat > .streamlit/secrets.toml << 'EOF'
+DB_HOST = "mysql-11beff9b-kamarwatson36-874b.g.aivencloud.com"
+DB_PORT = 11510
+DB_USER = "avnadmin"
+DB_PASSWORD = "AVNS_Dxyg2mu3MEiRoVyasff"
+DB_NAME = "defaultdb"
+
+EMAIL_USER = "fintrackeralerts@gmail.com"
+EMAIL_PASSWORD = "myhdkbyrzmpvwjyb"
+EOF
+
+# 4. Verify secrets.toml is NOT tracked
+git status
+# Should NOT show secrets.toml
