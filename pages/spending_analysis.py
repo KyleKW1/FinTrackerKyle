@@ -134,7 +134,18 @@ def spending_analysis_page():
     if data.empty:
         st.warning("📊 No data available yet. Upload files above to see your spending analysis.")
     else:
-        render_analysis_section(data)
+        # Show quick data summary
+        st.success(f"✅ Loaded {len(data)} transactions from {len(data['YearMonth'].unique())} months")
+        
+        # Check if we have the required columns
+        required_cols = ['Year', 'Month', 'YearMonth', 'Category', 'Spending Category']
+        missing_cols = [col for col in required_cols if col not in data.columns]
+        
+        if missing_cols:
+            st.error(f"Missing columns: {missing_cols}")
+            st.write("Available columns:", list(data.columns))
+        else:
+            render_analysis_section(data)
     
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -346,10 +357,18 @@ def render_analysis_section(data):
     # SMART MONTH/YEAR SELECTOR
     st.markdown("##### 📅 Select Analysis Period")
     
+    # Make sure we have the required columns
+    if 'Year' not in data.columns:
+        data['Year'] = pd.to_datetime(data['Date']).dt.year
+    if 'Month' not in data.columns:
+        data['Month'] = pd.to_datetime(data['Date']).dt.month
+    
     # Extract years from data
-    data['Year'] = pd.to_datetime(data['Date']).dt.year
-    data['Month'] = pd.to_datetime(data['Date']).dt.month
     available_years = sorted(data['Year'].unique())
+    
+    if not available_years:
+        st.error("No valid years found in data")
+        return
     
     col1, col2, col3 = st.columns([1, 2, 1])
     
@@ -370,7 +389,7 @@ def render_analysis_section(data):
                 key="selected_year"
             )
         else:
-            selected_year = available_years[0] if available_years else datetime.now().year
+            selected_year = available_years[0]
             st.info(f"📅 Showing data for {selected_year}")
     
     # Month names
@@ -379,6 +398,11 @@ def render_analysis_section(data):
     # Get available months for selected year
     year_data = data[data['Year'] == selected_year]
     available_months_nums = sorted(year_data['Month'].unique())
+    
+    if not available_months_nums:
+        st.warning(f"No data available for year {selected_year}")
+        return
+    
     available_month_names = [calendar.month_name[m] for m in available_months_nums]
     
     # Determine selected months based on analysis type
@@ -417,7 +441,8 @@ def render_analysis_section(data):
         st.warning("No data available for selected period")
         return
     
-    st.info(f"📊 Analyzing {len(selected_months)} month(s): {', '.join(selected_month_names)}")
+    st.success(f"📊 Analyzing {len(selected_months)} month(s): {', '.join(selected_month_names)} in {selected_year}")
+    st.info(f"Total transactions: {len(period_data)}")
     
     # CASH FLOW CHARTS
     st.markdown("---")
@@ -465,7 +490,6 @@ def render_analysis_section(data):
             mime="text/csv",
             use_container_width=True
         )
-
 
 def render_cash_flow_charts(data, selected_year, selected_months):
     """Render separate income/spending and net cash flow charts"""
