@@ -36,7 +36,7 @@ def process_csv(file_bytes):
         # Standardize columns
         df = standardize_dataframe_columns(df)
         
-        # Categorize transactions
+        # Categorize transactions - ALWAYS call this
         df = categorize_transactions(df)
         
         return df
@@ -69,6 +69,8 @@ def extract_from_pdf(file_bytes):
         # Remove duplicates
         df = pd.DataFrame(transactions)
         df = df.drop_duplicates(subset=['Date', 'Description', 'Amount'])
+        
+        # ALWAYS categorize after creating DataFrame
         df = categorize_transactions(df)
         
         return df
@@ -363,39 +365,61 @@ def standardize_dataframe_columns(df):
 
 
 def categorize_transactions(df):
-    """Categorize transactions based on keywords"""
-    if df.empty or 'Description' not in df.columns:
+    """
+    Categorize transactions based on keywords
+    This function MUST always add a 'Spending Category' column
+    """
+    if df.empty:
+        return df
+    
+    # Ensure Description column exists
+    if 'Description' not in df.columns:
+        df['Spending Category'] = 'Other'
         return df
     
     # Get user preferences or use defaults
+    category_keywords = DEFAULT_CATEGORY_MAPPING.copy()
+    
     try:
         if 'user' in st.session_state and st.session_state.user:
             prefs = get_user_preferences(st.session_state.user['id'])
             if prefs and prefs.get('category_keywords'):
-                category_keywords = json.loads(prefs['category_keywords'])
-            else:
-                category_keywords = DEFAULT_CATEGORY_MAPPING
-        else:
-            category_keywords = DEFAULT_CATEGORY_MAPPING
-    except:
-        category_keywords = DEFAULT_CATEGORY_MAPPING
+                user_keywords = json.loads(prefs['category_keywords'])
+                # Merge user keywords with defaults (user keywords take priority)
+                for category, keywords in user_keywords.items():
+                    if keywords:  # Only update if user has keywords for this category
+                        category_keywords[category] = keywords
+    except Exception as e:
+        print(f"Error loading user preferences, using defaults: {e}")
     
-    # Initialize spending category
+    # Initialize spending category column
     df['Spending Category'] = 'Other'
     
     # Categorize each transaction
     for idx, row in df.iterrows():
         description = str(row['Description']).lower()
         
-        # Skip income transactions
+        # Check if it's income/credit first
         if row.get('Category') == 'Credit':
             df.at[idx, 'Spending Category'] = 'Income'
             continue
         
         # Check each category's keywords
+        categorized = False
         for category, keywords in category_keywords.items():
-            if any(keyword.lower() in description for keyword in keywords):
-                df.at[idx, 'Spending Category'] = category
+            if category == 'Other':  # Skip 'Other' category
+                continue
+            
+            # Check if any keyword matches
+            for keyword in keywords:
+                if keyword.lower() in description:
+                    df.at[idx, 'Spending Category'] = category
+                    categorized = True
+                    break
+            
+            if categorized:
                 break
+        
+        # If not categorized, it remains 'Other'
     
     return df
