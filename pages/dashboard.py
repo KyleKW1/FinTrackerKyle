@@ -6,7 +6,6 @@ Main dashboard page with feature selection
 import streamlit as st
 from data_loader import load_all_user_data
 from utils import calculate_monthly_stats, calculate_percentage_change
-from .spending_analysis import spending_analysis_page
 
 
 def dashboard_page():
@@ -30,8 +29,9 @@ def dashboard_page():
     if 'selected_feature' not in st.session_state or st.session_state.selected_feature is None:
         display_feature_selection()
     else:
-        # Render selected feature
+        # Render selected feature - import here to avoid circular imports
         if st.session_state.selected_feature == 'analysis':
+            from .spending_analysis import spending_analysis_page
             spending_analysis_page()
         elif st.session_state.selected_feature == 'planner':
             budget_planner_page()
@@ -42,7 +42,8 @@ def dashboard_page():
 def display_quick_stats():
     """Display quick statistics cards"""
     try:
-        data = load_all_user_data(st.session_state.user['id'])
+        with st.spinner("Loading your financial data..."):
+            data = load_all_user_data(st.session_state.user['id'])
     except Exception as e:
         st.error(f"Error loading data: {e}")
         data = None
@@ -125,7 +126,7 @@ def display_feature_selection():
             <div class="feature-card">
                 <div class="feature-icon">📊</div>
                 <div class="feature-title">Spending Analysis</div>
-                <div class="feature-desc">Track and analyze your spending patterns with detailed insights</div>
+                <div class="feature-desc">Upload statements and analyze your spending patterns with detailed insights</div>
             </div>
         """, unsafe_allow_html=True)
         if st.button("Open Analysis", key="btn_analysis", use_container_width=True):
