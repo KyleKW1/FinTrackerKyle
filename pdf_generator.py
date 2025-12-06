@@ -1,6 +1,6 @@
 """
-pdf_generator.py
-PDF Report Generation Module for Finance Hub
+pdf_generator.py - COMPLETE FILE
+Professional PDF Report Generation for Finance Hub
 """
 
 from fpdf import FPDF
@@ -10,264 +10,69 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend
+matplotlib.use('Agg')
 import shutil
+import calendar
 
 
-def create_pdf_with_charts(month_data, selected_month, summary, comparison, 
-                          month_income, month_spending, month_savings, SAVINGS_GOAL):
-    """
-    Create a comprehensive PDF report with charts using matplotlib
+class FinancePDF(FPDF):
+    """Custom PDF class with professional styling"""
     
-    Parameters:
-    -----------
-    month_data : pd.DataFrame
-        Transaction data for the selected month
-    selected_month : str
-        Name of the selected month
-    summary : pd.DataFrame
-        Spending summary by category
-    comparison : pd.DataFrame
-        Budget vs actual comparison
-    month_income : float
-        Total income for the month
-    month_spending : float
-        Total spending for the month
-    month_savings : float
-        Net savings for the month
-    SAVINGS_GOAL : float
-        Target savings goal
-    
-    Returns:
-    --------
-    bytes
-        PDF file as bytes
-    """
-    
-    class PDF(FPDF):
-        def header(self):
-            self.set_font('Arial', 'B', 16)
-            self.cell(0, 10, f'Finance Report - {selected_month}', 0, 1, 'C')
-            self.set_font('Arial', '', 10)
-            self.cell(0, 10, f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M")}', 0, 1, 'C')
-            self.ln(5)
+    def __init__(self, report_month, username):
+        super().__init__()
+        self.report_month = report_month
+        self.username = username
         
-        def footer(self):
-            self.set_y(-15)
-            self.set_font('Arial', 'I', 8)
-            self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
-    
-    pdf = PDF()
-    pdf.add_page()
-    
-    # ==========================================
-    # SUMMARY SECTION
-    # ==========================================
-    pdf.set_font('Arial', 'B', 14)
-    pdf.cell(0, 10, 'Monthly Summary', 0, 1)
-    pdf.set_font('Arial', '', 12)
-    pdf.ln(2)
-    
-    pdf.cell(60, 10, 'Total Income:', 0, 0)
-    pdf.cell(0, 10, f'J${month_income:,.2f}', 0, 1)
-    
-    pdf.cell(60, 10, 'Total Spending:', 0, 0)
-    pdf.cell(0, 10, f'J${month_spending:,.2f}', 0, 1)
-    
-    pdf.cell(60, 10, 'Net Savings:', 0, 0)
-    pdf.cell(0, 10, f'J${month_savings:,.2f}', 0, 1)
-    
-    pdf.cell(60, 10, 'Savings Goal:', 0, 0)
-    pdf.cell(0, 10, f'J${SAVINGS_GOAL:,.2f}', 0, 1)
-    
-    if month_savings >= SAVINGS_GOAL:
-        pdf.set_text_color(0, 128, 0)
-        pdf.cell(0, 10, f'Goal achieved! Exceeded by J${month_savings - SAVINGS_GOAL:,.2f}', 0, 1)
-    else:
-        pdf.set_text_color(255, 0, 0)
-        pdf.cell(0, 10, f'Below goal by J${SAVINGS_GOAL - month_savings:,.2f}', 0, 1)
-    
-    pdf.set_text_color(0, 0, 0)
-    pdf.ln(10)
-    
-    # Create temporary directory for charts
-    temp_dir = tempfile.mkdtemp()
-    
-    try:
-        # ==========================================
-        # CHART 1: SPENDING DISTRIBUTION PIE CHART
-        # ==========================================
-        if not summary.empty:
-            pdf.set_font('Arial', 'B', 14)
-            pdf.cell(0, 10, 'Spending Distribution by Category', 0, 1)
-            pdf.ln(2)
-            
-            fig, ax = plt.subplots(figsize=(8, 6))
-            colors = plt.cm.Set3(range(len(summary)))
-            wedges, texts, autotexts = ax.pie(
-                summary['Amount'], 
-                labels=summary['Spending Category'],
-                autopct='%1.1f%%',
-                startangle=90,
-                colors=colors
-            )
-            for autotext in autotexts:
-                autotext.set_color('white')
-                autotext.set_weight('bold')
-            ax.set_title(f'{selected_month} Spending Distribution')
-            
-            pie_chart_path = os.path.join(temp_dir, 'pie_chart.png')
-            plt.savefig(pie_chart_path, bbox_inches='tight', dpi=150)
-            plt.close()
-            
-            pdf.image(pie_chart_path, x=10, w=190)
-            pdf.ln(5)
+    def header(self):
+        # Gradient-style header background
+        self.set_fill_color(102, 126, 234)  # Purple-blue
+        self.rect(0, 0, 210, 40, 'F')
         
-        # ==========================================
-        # CHART 2: BUDGET VS ACTUAL BAR CHART
-        # ==========================================
-        if comparison is not None and not comparison.empty:
-            pdf.add_page()
-            pdf.set_font('Arial', 'B', 14)
-            pdf.cell(0, 10, 'Budget vs. Actual Spending', 0, 1)
-            pdf.ln(2)
-            
-            fig, ax = plt.subplots(figsize=(10, 6))
-            x = range(len(comparison))
-            width = 0.35
-            
-            ax.bar([i - width/2 for i in x], comparison['Budget'], 
-                   width, label='Budget', color='#3b82f6')
-            ax.bar([i + width/2 for i in x], comparison['Amount'], 
-                   width, label='Actual', color='#ef4444')
-            
-            ax.set_xlabel('Category')
-            ax.set_ylabel('Amount (J$)')
-            ax.set_title('Budget vs. Actual Spending by Category')
-            ax.set_xticks(x)
-            ax.set_xticklabels(comparison['Spending Category'], rotation=45, ha='right')
-            ax.legend()
-            ax.grid(axis='y', alpha=0.3)
-            
-            # Format y-axis as currency
-            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'J${x:,.0f}'))
-            
-            bar_chart_path = os.path.join(temp_dir, 'bar_chart.png')
-            plt.savefig(bar_chart_path, bbox_inches='tight', dpi=150)
-            plt.close()
-            
-            pdf.image(bar_chart_path, x=10, w=190)
-            pdf.ln(5)
+        # Title
+        self.set_text_color(255, 255, 255)
+        self.set_font('Arial', 'B', 24)
+        self.set_y(12)
+        self.cell(0, 10, 'Finance Hub Report', 0, 1, 'C')
         
-        # ==========================================
-        # SPENDING SUMMARY TABLE
-        # ==========================================
-        pdf.add_page()
-        pdf.set_font('Arial', 'B', 14)
-        pdf.cell(0, 10, 'Spending Breakdown', 0, 1)
-        pdf.ln(2)
+        # Subtitle
+        self.set_font('Arial', '', 12)
+        self.cell(0, 8, f'{self.report_month}', 0, 1, 'C')
         
-        pdf.set_font('Arial', 'B', 10)
-        pdf.cell(80, 10, 'Category', 1)
-        pdf.cell(50, 10, 'Amount (J$)', 1)
-        pdf.cell(50, 10, 'Percentage', 1)
-        pdf.ln()
-        
-        pdf.set_font('Arial', '', 10)
-        for idx, row in summary.iterrows():
-            pdf.cell(80, 10, str(row['Spending Category']), 1)
-            pdf.cell(50, 10, f"J${row['Amount']:,.2f}", 1)
-            pdf.cell(50, 10, f"{row['Percentage']:.2f}%", 1)
-            pdf.ln()
-        
-        # ==========================================
-        # BUDGET COMPARISON TABLE
-        # ==========================================
-        if comparison is not None and not comparison.empty:
-            pdf.ln(10)
-            pdf.set_font('Arial', 'B', 14)
-            pdf.cell(0, 10, 'Budget Comparison', 0, 1)
-            pdf.ln(2)
-            
-            pdf.set_font('Arial', 'B', 10)
-            pdf.cell(60, 10, 'Category', 1)
-            pdf.cell(40, 10, 'Budget', 1)
-            pdf.cell(40, 10, 'Actual', 1)
-            pdf.cell(40, 10, 'Difference', 1)
-            pdf.ln()
-            
-            pdf.set_font('Arial', '', 10)
-            for idx, row in comparison.iterrows():
-                pdf.cell(60, 10, str(row['Spending Category']), 1)
-                pdf.cell(40, 10, f"J${row['Budget']:,.0f}", 1)
-                pdf.cell(40, 10, f"J${row['Amount']:,.0f}", 1)
-                
-                # Color code the difference
-                if row['Amount'] > row['Budget']:
-                    pdf.set_text_color(255, 0, 0)
-                else:
-                    pdf.set_text_color(0, 128, 0)
-                
-                pdf.cell(40, 10, f"J${row['Difference']:,.0f}", 1)
-                pdf.set_text_color(0, 0, 0)
-                pdf.ln()
-        
-        # ==========================================
-        # TRANSACTION DETAILS
-        # ==========================================
-        pdf.add_page()
-        pdf.set_font('Arial', 'B', 14)
-        pdf.cell(0, 10, 'Recent Transactions', 0, 1)
-        pdf.ln(2)
-        
-        pdf.set_font('Arial', 'B', 9)
-        pdf.cell(30, 8, 'Date', 1)
-        pdf.cell(80, 8, 'Description', 1)
-        pdf.cell(35, 8, 'Amount', 1)
-        pdf.cell(35, 8, 'Category', 1)
-        pdf.ln()
-        
-        pdf.set_font('Arial', '', 8)
-        for idx, row in month_data.head(20).iterrows():
-            pdf.cell(30, 8, str(row['Date'].date()), 1)
-            
-            # Truncate long descriptions
-            desc = str(row['Description'])[:35]
-            pdf.cell(80, 8, desc, 1)
-            
-            pdf.cell(35, 8, f"J${row['Amount']:,.2f}", 1)
-            pdf.cell(35, 8, str(row['Spending Category'])[:12], 1)
-            pdf.ln()
-            
-            # Check if we need a new page
-            if pdf.get_y() > 270:
-                pdf.add_page()
-                pdf.set_font('Arial', 'B', 9)
-                pdf.cell(30, 8, 'Date', 1)
-                pdf.cell(80, 8, 'Description', 1)
-                pdf.cell(35, 8, 'Amount', 1)
-                pdf.cell(35, 8, 'Category', 1)
-                pdf.ln()
-                pdf.set_font('Arial', '', 8)
-        
-    finally:
-        # Clean up temporary files
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        # Reset text color
+        self.set_text_color(0, 0, 0)
+        self.ln(15)
     
-    # Handle different FPDF versions
-    output = pdf.output(dest='S')
-    if isinstance(output, bytes):
-        return output
-    elif isinstance(output, bytearray):
-        return bytes(output)
-    elif isinstance(output, str):
-        return output.encode('latin-1')
-    else:
-        return bytes(output)
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Arial', 'I', 8)
+        self.set_text_color(128, 128, 128)
+        self.cell(0, 10, f'Page {self.page_no()} | Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}', 0, 0, 'C')
+    
+    def section_title(self, title, icon=''):
+        self.set_font('Arial', 'B', 16)
+        self.set_text_color(102, 126, 234)
+        self.cell(0, 10, f'{icon} {title}', 0, 1, 'L')
+        self.set_text_color(0, 0, 0)
+        self.ln(2)
+    
+    def metric_box(self, label, value, color_rgb):
+        """Create a colored metric box"""
+        # Box background
+        self.set_fill_color(*color_rgb)
+        self.rect(self.get_x(), self.get_y(), 60, 25, 'F')
+        
+        # Label
+        self.set_font('Arial', '', 9)
+        self.set_text_color(255, 255, 255)
+        self.cell(60, 8, label, 0, 1, 'C')
+        
+        # Value
+        self.set_font('Arial', 'B', 14)
+        self.cell(60, 12, value, 0, 1, 'C')
+        
+        # Reset
+        self.set_text_color(0, 0, 0)
 
-"""
-Add this to your pdf_generator.py file
-"""
 
 def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type, user_id):
     """
@@ -286,7 +91,6 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
     user_id : int
         User ID for preferences
     """
-    import calendar
     from database import get_user_preferences
     from utils import calculate_monthly_stats, get_spending_by_category, compare_budget_vs_actual
     import json
@@ -358,10 +162,10 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
     pdf.set_font('Arial', '', 11)
     if total_savings >= adjusted_goal:
         pdf.set_text_color(16, 185, 129)
-        status = f'✓ Goal Achieved! Exceeded by J${total_savings - adjusted_goal:,.0f}'
+        status = f'Goal Achieved! Exceeded by J${total_savings - adjusted_goal:,.0f}'
     else:
         pdf.set_text_color(239, 68, 68)
-        status = f'✗ Below Goal by J${adjusted_goal - total_savings:,.0f}'
+        status = f'Below Goal by J${adjusted_goal - total_savings:,.0f}'
     
     pdf.cell(0, 10, f'Savings Goal ({len(selected_months)} months): J${adjusted_goal:,.0f} | {status}', 0, 1, 'C')
     pdf.set_text_color(0, 0, 0)
@@ -581,41 +385,24 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
         return bytes(output)
 
 
-def create_simple_pdf(text_content, title="Finance Report"):
-    """
-    Create a simple text-based PDF report
-    
-    Parameters:
-    -----------
-    text_content : str
-        Text content to include in PDF
-    title : str
-        Report title
-    
-    Returns:
-    --------
-    bytes
-        PDF file as bytes
-    """
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, title, 0, 1, 'C')
-    pdf.ln(5)
-    
-    pdf.set_font("Arial", size=12)
-    for line in text_content.split('\n'):
-        # Handle special characters
-        safe_line = line.encode('latin-1', 'replace').decode('latin-1')
-        pdf.cell(200, 10, txt=safe_line, ln=True)
-    
-    # Handle different FPDF versions
-    output = pdf.output()
-    if isinstance(output, bytes):
-        return output
-    elif isinstance(output, bytearray):
-        return bytes(output)
-    elif isinstance(output, str):
-        return output.encode('latin-1')
+# Keep the old function for backward compatibility
+def create_pdf_with_charts(month_data, selected_month, summary, comparison, 
+                          month_income, month_spending, month_savings, SAVINGS_GOAL):
+    """Legacy function - redirects to comprehensive PDF"""
+    # This is kept for any old code that might call it
+    # Extract year and month from the data
+    if not month_data.empty and 'Year' in month_data.columns and 'Month' in month_data.columns:
+        selected_year = month_data['Year'].iloc[0]
+        selected_months = [month_data['Month'].iloc[0]]
+        
+        # Reconstruct the full data (we only have month_data)
+        # For now, just use the month_data as the full dataset
+        return create_comprehensive_pdf(
+            data=month_data,
+            selected_year=selected_year,
+            selected_months=selected_months,
+            analysis_type=selected_month,
+            user_id=1  # Default user
+        )
     else:
-        return bytes(output)
+        raise ValueError("Invalid month data provided")
