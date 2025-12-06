@@ -467,7 +467,5 @@ def possible_savings_page():
         """, unsafe_allow_html=True)
     
     st.markdown("</div>", unsafe_allow_html=True)
-        
-        st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.2;'>", unsafe_allow_html=True)
     
     st.markdown("</div>", unsafe_allow_html=True)
