@@ -18,11 +18,15 @@ def budget_planner_page():
     """Budget Planner - Set and track monthly budgets"""
     st.markdown("<div class='content-container'>", unsafe_allow_html=True)
     
-    # Header with back button
-    col1, col2 = st.columns([3, 1])
+    # Header with back button and possible savings link
+    col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
         st.markdown("### 💰 Budget Planner")
     with col2:
+        if st.button("💎 Possible Savings", use_container_width=True, type="secondary"):
+            st.session_state.selected_sub_feature = 'possible_savings'
+            st.rerun()
+    with col3:
         if st.button("← Back to Dashboard", use_container_width=True):
             st.session_state.selected_feature = None
             st.rerun()
