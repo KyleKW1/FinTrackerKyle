@@ -8,6 +8,7 @@ import mysql.connector
 from mysql.connector import Error
 import streamlit as st
 import json
+import ssl
 
 # Import config - with fallback
 try:
@@ -18,9 +19,21 @@ except ImportError:
 
 
 def create_connection():
-    """Create database connection with error handling"""
+    """Create database connection with SSL fix"""
     try:
-        connection = mysql.connector.connect(**DB_CONFIG)
+        # Create connection config with SSL disabled for Streamlit Cloud
+        connection_config = {
+            'host': DB_CONFIG['host'],
+            'port': DB_CONFIG['port'],
+            'user': DB_CONFIG['user'],
+            'password': DB_CONFIG['password'],
+            'database': DB_CONFIG['database'],
+            'connection_timeout': 30,
+            'autocommit': False,
+            'ssl_disabled': True  # Disable SSL verification
+        }
+        
+        connection = mysql.connector.connect(**connection_config)
         return connection
     except Error as e:
         st.error(f"Database connection error: {e}")
