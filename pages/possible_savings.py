@@ -231,17 +231,69 @@ def possible_savings_page():
     # ==========================================
     st.markdown("---")
     st.markdown("#### 🎯 What Could You Achieve?")
-    st.caption("See how your savings could help you reach these common financial goals")
+    
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.caption("See how your savings could help you reach these common financial goals")
+    with col2:
+        customize_goals = st.checkbox("✏️ Customize Goals", key="customize_goals")
     
     # Use best option for goals calculation
     best_savings = best_option[1]['total']
     
-    goals = [
+    # Default goals
+    default_goals = [
         {"name": "Emergency Fund", "amount": 50000, "icon": "🏥"},
         {"name": "Vacation", "amount": 100000, "icon": "✈️"},
         {"name": "New Phone", "amount": 150000, "icon": "📱"},
         {"name": "Down Payment", "amount": 500000, "icon": "🏠"}
     ]
+    
+    # Initialize session state for custom goals if not exists
+    if 'custom_goals' not in st.session_state:
+        st.session_state.custom_goals = default_goals.copy()
+    
+    goals = st.session_state.custom_goals
+    
+    # Show customization interface if checkbox is selected
+    if customize_goals:
+        st.markdown("##### ✏️ Customize Your Goals")
+        st.info("💡 Adjust the goal amounts to match your personal financial targets")
+        
+        cols = st.columns(4)
+        updated_goals = []
+        
+        for idx, goal in enumerate(goals):
+            with cols[idx]:
+                st.markdown(f"**{goal['icon']} {goal['name']}**")
+                new_amount = st.number_input(
+                    "Amount (J$)",
+                    min_value=1000,
+                    max_value=10000000,
+                    value=int(goal['amount']),
+                    step=10000,
+                    key=f"goal_amount_{idx}",
+                    label_visibility="collapsed"
+                )
+                updated_goals.append({
+                    "name": goal['name'],
+                    "amount": new_amount,
+                    "icon": goal['icon']
+                })
+        
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            if st.button("💾 Save Goals", use_container_width=True):
+                st.session_state.custom_goals = updated_goals
+                st.success("✅ Goals saved!")
+                st.rerun()
+        with col2:
+            if st.button("🔄 Reset to Defaults", use_container_width=True):
+                st.session_state.custom_goals = default_goals.copy()
+                st.success("✅ Goals reset to defaults!")
+                st.rerun()
+        
+        st.markdown("---")
     
     cols = st.columns(4)
     
