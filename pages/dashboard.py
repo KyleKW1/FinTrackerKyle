@@ -37,6 +37,7 @@ def dashboard_page():
             from .budget_planner import budget_planner_page
             budget_planner_page()
         elif st.session_state.selected_feature == 'network':
+            from .network_analysis import network_analysis_page
             network_analysis_page()
 
 
@@ -159,31 +160,3 @@ def display_feature_selection():
             st.rerun()
 
 
-def budget_planner_page():
-    """Budget planner feature (placeholder)"""
-    st.markdown("<div class='content-container'>", unsafe_allow_html=True)
-    st.markdown("### 📅 Budget Planner")
-    
-    if st.button("← Back to Dashboard", use_container_width=False):
-        st.session_state.selected_feature = None
-        st.rerun()
-    
-    st.info("🎯 Set up your monthly budgets and track your progress")
-    st.warning("⚠️ This feature is under development")
-    
-    st.markdown("</div>", unsafe_allow_html=True)
-
-
-def network_analysis_page():
-    """Network analysis feature (placeholder)"""
-    st.markdown("<div class='content-container'>", unsafe_allow_html=True)
-    st.markdown("### 🌐 Network Analysis")
-    
-    if st.button("← Back to Dashboard", use_container_width=False):
-        st.session_state.selected_feature = None
-        st.rerun()
-    
-    st.info("🔍 Visualize your transaction patterns and spending relationships")
-    st.warning("⚠️ This feature requires transaction data. Please upload files in Spending Analysis first.")
-    
-    st.markdown("</div>", unsafe_allow_html=True)
