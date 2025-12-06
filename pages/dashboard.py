@@ -34,8 +34,13 @@ def dashboard_page():
             from .spending_analysis import spending_analysis_page
             spending_analysis_page()
         elif st.session_state.selected_feature == 'planner':
-            from .budget_planner import budget_planner_page
-            budget_planner_page()
+            # Check if sub-feature is selected
+            if 'selected_sub_feature' in st.session_state and st.session_state.selected_sub_feature == 'possible_savings':
+                from .possible_savings import possible_savings_page
+                possible_savings_page()
+            else:
+                from .budget_planner import budget_planner_page
+                budget_planner_page()
         elif st.session_state.selected_feature == 'network':
             from .network_analysis import network_analysis_page
             network_analysis_page()
