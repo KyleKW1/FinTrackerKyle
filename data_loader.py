@@ -75,18 +75,29 @@ def load_all_user_data(user_id):
     
     # Add date-based columns
     if 'Date' in result.columns:
+        # CRITICAL: Ensure Date is datetime before extracting year
         result['Date'] = pd.to_datetime(result['Date'], errors='coerce')
         result = result.dropna(subset=['Date'])
         
-        # Force Year to be integer type
+        # Debug: Check what dates we actually have
+        print(f"   [date columns] Date range BEFORE year extraction: {result['Date'].min()} to {result['Date'].max()}")
+        
+        # Force Year to be integer type from the Date column
         result['Year'] = result['Date'].dt.year.astype(int)
         result['Month'] = result['Date'].dt.month.astype(int)
         result['Month-Name'] = result['Date'].dt.month_name()
         result['Month-Year'] = result['Date'].dt.strftime('%B %Y')
         result['YearMonth'] = result['Date'].dt.strftime('%Y-%m')
         
-        print(f"   [date columns] Years in data: {sorted(result['Year'].unique())}")
-        print(f"   [date columns] Date range: {result['Date'].min()} to {result['Date'].max()}")
+        print(f"   [date columns] Years extracted: {sorted(result['Year'].unique())}")
+        print(f"   [date columns] Sample Year values: {result['Year'].head(10).tolist()}")
+        print(f"   [date columns] Sample Date values: {result['Date'].head(10).tolist()}")
+        
+        # Verify the year matches the date
+        sample_check = result[['Date', 'Year']].head(5)
+        print(f"   [date columns] Date vs Year check:")
+        for idx, row in sample_check.iterrows():
+            print(f"      Date: {row['Date']} -> Year: {row['Year']}")
     
     # Remove duplicates across all files
     result = result.drop_duplicates(subset=['Date', 'Description', 'Amount'], keep='first')
