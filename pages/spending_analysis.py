@@ -35,7 +35,9 @@ def file_diagnostic_page():
     """Comprehensive file processing diagnostic"""
     import pdfplumber
     import re
-    from data_processing import process_pdf_ncb
+    from database import create_connection
+    from data_processing import process_pdf_ncb, process_csv, standardize_dataframe_columns
+    from io import BytesIO
     
     st.title("🔍 File Processing Diagnostic Tool")
     st.info("This will show you exactly what's happening with each uploaded file")
@@ -64,6 +66,7 @@ def file_diagnostic_page():
         
         for idx, file_info in enumerate(files):
             filename = file_info['filename']
+            file_type = file_info['file_type']
             
             st.markdown("---")
             with st.expander(f"📄 {idx+1}. {filename}", expanded=False):
@@ -73,57 +76,142 @@ def file_diagnostic_page():
                     
                     st.write(f"**File Info:**")
                     st.write(f"- Size: {file_size:,} bytes")
-                    st.write(f"- Type: {file_info['file_type']}")
+                    st.write(f"- Type: {file_type}")
+                    st.write(f"- Upload date: {file_info['upload_date']}")
                     
-                    file_bytes.seek(0)
-                    with pdfplumber.open(file_bytes) as pdf:
-                        st.write(f"- Pages: {len(pdf.pages)}")
+                    # CSV Processing
+                    if file_type == 'csv':
+                        st.write("**📊 CSV Processing:**")
+                        file_bytes.seek(0)
                         
-                        first_page_text = pdf.pages[0].extract_text()
-                        lines = first_page_text.split('\n')[:40]
+                        # Show raw first few lines
+                        file_bytes.seek(0)
+                        first_lines = file_bytes.read(500).decode('utf-8', errors='ignore')
+                        st.write("**First 500 characters:**")
+                        st.code(first_lines)
                         
-                        st.write("**📄 First 40 lines:**")
-                        st.code('\n'.join(f"{i:3d}: {line}" for i, line in enumerate(lines, 1)))
+                        # Try to process
+                        file_bytes.seek(0)
+                        df = process_csv(file_bytes)
                         
-                        st.write("**🔍 Year Detection:**")
-                        year_found = None
-                        year_patterns = [
-                            (r'P\.?O\.?,?\s*\d{2}-\d{2}-(\d{4})', 'P.O. line'),
-                            (r'\d{2}/[A-Za-z]{3}/(\d{4})', 'Transaction date'),
-                            (r'\b(202[0-9])\b', 'Any 202X'),
-                        ]
-                        
-                        for pattern, desc in year_patterns:
-                            matches = re.findall(pattern, first_page_text, re.IGNORECASE)
-                            if matches:
-                                year_found = matches[0][-1] if isinstance(matches[0], tuple) else matches[0]
-                                st.success(f"✅ Found: **{year_found}** ({desc})")
-                                break
-                        
-                        if not year_found:
-                            st.error("❌ No year detected!")
+                        if df.empty:
+                            st.error("❌ FAILED - 0 transactions")
+                            summary_data.append({
+                                'Filename': filename,
+                                'Status': '❌ FAILED',
+                                'Transactions': 0,
+                                'Type': 'CSV'
+                            })
+                        else:
+                            st.success(f"✅ SUCCESS - {len(df)} transactions")
+                            st.write(f"**Columns:** {list(df.columns)}")
+                            st.write(f"**Date range:** {df['Date'].min()} to {df['Date'].max()}")
+                            st.dataframe(df.head(10))
+                            summary_data.append({
+                                'Filename': filename,
+                                'Status': '✅ SUCCESS',
+                                'Transactions': len(df),
+                                'Type': 'CSV'
+                            })
                     
-                    st.write("**📊 Processing:**")
-                    file_bytes.seek(0)
-                    df = process_pdf_ncb(file_bytes)
+                    # PDF Processing
+                    elif file_type == 'pdf':
+                        st.write("**📄 PDF Processing:**")
+                        file_bytes.seek(0)
+                        
+                        with pdfplumber.open(file_bytes) as pdf:
+                            st.write(f"- Pages: {len(pdf.pages)}")
+                            
+                            first_page_text = pdf.pages[0].extract_text()
+                            lines = first_page_text.split('\n')[:40]
+                            
+                            st.write("**First 40 lines:**")
+                            st.code('\n'.join(f"{i:3d}: {line}" for i, line in enumerate(lines, 1)))
+                            
+                            # Check if NCB
+                            is_ncb = any(keyword in first_page_text.upper() for keyword in 
+                                        ['NCB', 'NATIONAL COMMERCIAL BANK'])
+                            
+                            if is_ncb:
+                                st.info("✅ Detected as NCB PDF")
+                                
+                                # Year detection
+                                st.write("**🔍 Year Detection:**")
+                                year_patterns = [
+                                    (r'P\.?O\.?,?\s*\d{2}-\d{2}-(\d{4})', 'P.O. line'),
+                                    (r'\d{2}/[A-Za-z]{3}/(\d{4})', 'Transaction date'),
+                                    (r'\b(202[0-9])\b', 'Any 202X'),
+                                ]
+                                
+                                year_found = None
+                                for pattern, desc in year_patterns:
+                                    matches = re.findall(pattern, first_page_text, re.IGNORECASE)
+                                    if matches:
+                                        year_found = matches[0] if isinstance(matches[0], str) else matches[0][-1]
+                                        st.success(f"✅ Found: **{year_found}** ({desc})")
+                                        break
+                                
+                                if not year_found:
+                                    st.warning("⚠️ No year detected - will use 2024")
+                                
+                                # Transaction line detection
+                                st.write("**🔍 Transaction Lines:**")
+                                pattern = r'(\d{2}/\w{3})\s+(.*?)\s+(-?[\d,]+\.\d{2})'
+                                
+                                matching_lines = []
+                                for line in lines:
+                                    if re.search(pattern, line):
+                                        matching_lines.append(line)
+                                
+                                st.write(f"Found {len(matching_lines)} potential transaction lines")
+                                if matching_lines:
+                                    st.write("**Sample lines:**")
+                                    for i, line in enumerate(matching_lines[:5], 1):
+                                        st.code(f"{i}. {line}")
+                            else:
+                                st.info("Not detected as NCB - using generic PDF parser")
+                        
+                        # Actually process
+                        st.write("**📊 Processing Result:**")
+                        file_bytes.seek(0)
+                        
+                        if is_ncb:
+                            df = process_pdf_ncb(file_bytes, debug=False)
+                        else:
+                            from data_processing import extract_from_pdf
+                            df = extract_from_pdf(file_bytes)
+                        
+                        if df.empty:
+                            st.error("❌ FAILED - 0 transactions")
+                            summary_data.append({
+                                'Filename': filename,
+                                'Status': '❌ FAILED',
+                                'Transactions': 0,
+                                'Type': 'PDF (NCB)' if is_ncb else 'PDF (Generic)'
+                            })
+                        else:
+                            st.success(f"✅ SUCCESS - {len(df)} transactions")
+                            st.write(f"**Columns:** {list(df.columns)}")
+                            if 'Date' in df.columns:
+                                st.write(f"**Date range:** {df['Date'].min()} to {df['Date'].max()}")
+                            if 'Category' in df.columns:
+                                cat_counts = df['Category'].value_counts()
+                                st.write(f"**Category breakdown:** {cat_counts.to_dict()}")
+                            st.dataframe(df[['Date', 'Description', 'Amount']].head(10))
+                            summary_data.append({
+                                'Filename': filename,
+                                'Status': '✅ SUCCESS',
+                                'Transactions': len(df),
+                                'Type': 'PDF (NCB)' if is_ncb else 'PDF (Generic)'
+                            })
                     
-                    if df.empty:
-                        st.error("❌ FAILED - 0 transactions")
-                        summary_data.append({
-                            'Filename': filename,
-                            'Status': '❌ FAILED',
-                            'Transactions': 0,
-                            'Year': year_found or 'None'
-                        })
                     else:
-                        st.success(f"✅ SUCCESS - {len(df)} transactions")
-                        st.write(f"Date range: {df['Date'].min()} to {df['Date'].max()}")
-                        st.dataframe(df[['Date', 'Description', 'Amount']].head(5))
+                        st.warning(f"⚠️ Unknown file type: {file_type}")
                         summary_data.append({
                             'Filename': filename,
-                            'Status': '✅ SUCCESS',
-                            'Transactions': len(df),
-                            'Year': year_found or 'Auto'
+                            'Status': '⚠️ SKIPPED',
+                            'Transactions': 0,
+                            'Type': file_type
                         })
                     
                 except Exception as e:
@@ -134,26 +222,45 @@ def file_diagnostic_page():
                         'Filename': filename,
                         'Status': '❌ ERROR',
                         'Transactions': 0,
-                        'Year': 'N/A'
+                        'Type': file_type
                     })
         
+        # Summary
         st.markdown("---")
         st.markdown("## 📊 Summary")
         summary_df = pd.DataFrame(summary_data)
         st.dataframe(summary_df, use_container_width=True)
         
         success_count = len([r for r in summary_data if r['Status'] == '✅ SUCCESS'])
-        failed_count = len([r for r in summary_data if r['Status'].startswith('❌')])
+        failed_count = len([r for r in summary_data if r['Status'] == '❌ FAILED'])
+        error_count = len([r for r in summary_data if r['Status'] == '❌ ERROR'])
         
-        col1, col2 = st.columns(2)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("✅ Successful", success_count)
         with col2:
             st.metric("❌ Failed", failed_count)
+        with col3:
+            st.metric("⚠️ Errors", error_count)
+        with col4:
+            total_txns = sum(r['Transactions'] for r in summary_data)
+            st.metric("📊 Total Transactions", total_txns)
+        
+        if failed_count > 0 or error_count > 0:
+            st.warning("### 💡 Troubleshooting Tips")
+            st.markdown("""
+            **Common issues:**
+            1. **Different PDF format**: NCB may have changed their statement format
+            2. **Scanned PDFs**: If the PDF is a scanned image, text extraction won't work
+            3. **CSV column names**: Make sure your CSV has columns like 'Date', 'Description', 'Amount'
+            4. **Empty descriptions**: Transactions without descriptions are filtered out
+            5. **Date format issues**: Dates must be parseable (e.g., MM/DD/YYYY, DD/MM/YYYY)
+            """)
         
     except Exception as e:
         st.error(f"Diagnostic error: {e}")
-
+        import traceback
+        st.code(traceback.format_exc())
 
 # HELPER FUNCTIONS
 def render_category_editor():
