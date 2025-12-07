@@ -6,47 +6,9 @@ from utils import calculate_monthly_stats, calculate_percentage_change
 
 
 def dashboard_page():
-    """Render main dashboard"""
-    # Header
-    st.markdown(f"""
-        <div style='text-align: center; padding: 2rem 0 1rem 0;'>
-            <h1 style='font-size: 3rem; font-weight: 700; color: white; margin-bottom: 0.5rem;'>
-                💼 Finance Hub Dashboard
-            </h1>
-            <p style='font-size: 1.25rem; color: rgba(255, 255, 255, 0.9);'>
-                Welcome back, {st.session_state.user['username']}! Your financial command center
-            </p>
-        </div>
-    """, unsafe_allow_html=True)
+    """Render modern, clean dashboard"""
     
-    # Load and display stats
-    display_quick_stats()
-    
-    # Feature selection
-    if 'selected_feature' not in st.session_state or st.session_state.selected_feature is None:
-        display_feature_selection()
-    else:
-        # Render selected feature
-        if st.session_state.selected_feature == 'analysis':
-            from .spending_analysis import spending_analysis_page
-            spending_analysis_page()
-        elif st.session_state.selected_feature == 'planner':
-            # Check if sub-feature is selected
-            if 'selected_sub_feature' in st.session_state and st.session_state.selected_sub_feature == 'possible_savings':
-                from .possible_savings import possible_savings_page
-                possible_savings_page()
-            else:
-                from .budget_planner import budget_planner_page
-                budget_planner_page()
-        elif st.session_state.selected_feature == 'network':
-            from .network_analysis import network_analysis_page
-            network_analysis_page()
-        elif st.session_state.selected_feature == 'timemachine':  
-            from .financial_time_machine import financial_time_machine_page
-            financial_time_machine_page()
-
-def display_quick_stats():
-    """Display quick statistics cards"""
+    # Load data first
     try:
         with st.spinner("Loading your financial data..."):
             data = load_all_user_data(st.session_state.user['id'])
@@ -54,11 +16,9 @@ def display_quick_stats():
         st.error(f"Error loading data: {e}")
         data = None
     
-    # Initialize default values
+    # Calculate stats
     current_income = current_spending = current_savings = 0.0
     income_change = spending_change = savings_change = 0.0
-    income_arrow = spending_arrow = savings_arrow = "→"
-    income_class = spending_class = savings_class = "positive"
     
     if data is not None and not data.empty and 'YearMonth' in data.columns:
         try:
@@ -72,7 +32,6 @@ def display_quick_stats():
                 current_spending = current_stats['spending']
                 current_savings = current_stats['savings']
                 
-                # Calculate changes if previous month exists
                 if len(available_months) >= 2:
                     prev_month = available_months[-2]
                     prev_stats = calculate_monthly_stats(data, prev_month)
@@ -80,98 +39,292 @@ def display_quick_stats():
                     income_change = calculate_percentage_change(current_income, prev_stats['income'])
                     spending_change = calculate_percentage_change(current_spending, prev_stats['spending'])
                     savings_change = calculate_percentage_change(current_savings, prev_stats['savings'])
-                    
-                    # Set arrows and classes
-                    income_arrow = "↑" if income_change > 0 else ("↓" if income_change < 0 else "→")
-                    spending_arrow = "↑" if spending_change > 0 else ("↓" if spending_change < 0 else "→")
-                    savings_arrow = "↑" if savings_change > 0 else ("↓" if savings_change < 0 else "→")
-                    
-                    income_class = "positive" if income_change >= 0 else "negative"
-                    spending_class = "negative" if spending_change > 0 else "positive"
-                    savings_class = "positive" if savings_change >= 0 else "negative"
         except Exception as e:
             st.warning(f"Could not calculate statistics: {e}")
     
-    # Display stats
+    # Header
+    st.markdown(f"""
+        <div style='padding: 2rem 0 1rem 0;'>
+            <h1 style='font-size: 2.5rem; font-weight: 700; color: white; margin-bottom: 0.5rem;'>
+                Welcome back, {st.session_state.user['username']}
+            </h1>
+            <p style='font-size: 1.1rem; color: rgba(255, 255, 255, 0.85);'>
+                Here's your financial overview
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # Stats cards
+    st.markdown("<div style='margin-bottom: 2rem;'>", unsafe_allow_html=True)
+    
     col1, col2, col3 = st.columns(3)
     
     with col1:
+        delta_color = "🟢" if income_change >= 0 else "🔴"
         st.markdown(f"""
-            <div class="stat-card income">
-                <div class="stat-title">💰 Total Income</div>
-                <div class="stat-value">J${current_income:,.0f}</div>
-                <div class="stat-change {income_class}">{income_arrow} {abs(income_change):.1f}% from last month</div>
+            <div style='background: white; border-radius: 16px; padding: 1.75rem; 
+                 box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-left: 4px solid #10b981;'>
+                <div style='color: #6b7280; font-size: 0.875rem; font-weight: 600; 
+                     text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;'>
+                    💰 Total Income
+                </div>
+                <div style='font-size: 2rem; font-weight: 700; color: #111827; margin-bottom: 0.5rem;'>
+                    J${current_income:,.0f}
+                </div>
+                <div style='font-size: 0.875rem; color: #6b7280;'>
+                    {delta_color} {abs(income_change):.1f}% from last month
+                </div>
             </div>
         """, unsafe_allow_html=True)
     
     with col2:
+        delta_color = "🔴" if spending_change > 0 else "🟢"
         st.markdown(f"""
-            <div class="stat-card spending">
-                <div class="stat-title">💸 Total Spending</div>
-                <div class="stat-value">J${current_spending:,.0f}</div>
-                <div class="stat-change {spending_class}">{spending_arrow} {abs(spending_change):.1f}% from last month</div>
+            <div style='background: white; border-radius: 16px; padding: 1.75rem; 
+                 box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-left: 4px solid #ef4444;'>
+                <div style='color: #6b7280; font-size: 0.875rem; font-weight: 600; 
+                     text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;'>
+                    💸 Total Spending
+                </div>
+                <div style='font-size: 2rem; font-weight: 700; color: #111827; margin-bottom: 0.5rem;'>
+                    J${current_spending:,.0f}
+                </div>
+                <div style='font-size: 0.875rem; color: #6b7280;'>
+                    {delta_color} {abs(spending_change):.1f}% from last month
+                </div>
             </div>
         """, unsafe_allow_html=True)
     
     with col3:
+        delta_color = "🟢" if savings_change >= 0 else "🔴"
         st.markdown(f"""
-            <div class="stat-card savings">
-                <div class="stat-title">🎯 Net Savings</div>
-                <div class="stat-value">J${current_savings:,.0f}</div>
-                <div class="stat-change {savings_class}">{savings_arrow} {abs(savings_change):.1f}% from last month</div>
+            <div style='background: white; border-radius: 16px; padding: 1.75rem; 
+                 box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-left: 4px solid #3b82f6;'>
+                <div style='color: #6b7280; font-size: 0.875rem; font-weight: 600; 
+                     text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;'>
+                    🎯 Net Savings
+                </div>
+                <div style='font-size: 2rem; font-weight: 700; color: #111827; margin-bottom: 0.5rem;'>
+                    J${current_savings:,.0f}
+                </div>
+                <div style='font-size: 0.875rem; color: #6b7280;'>
+                    {delta_color} {abs(savings_change):.1f}% from last month
+                </div>
             </div>
         """, unsafe_allow_html=True)
+    
+    st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Feature selection section
+    if 'selected_feature' not in st.session_state or st.session_state.selected_feature is None:
+        display_feature_selection()
+    else:
+        # Render selected feature
+        if st.session_state.selected_feature == 'analysis':
+            from .spending_analysis import spending_analysis_page
+            spending_analysis_page()
+        elif st.session_state.selected_feature == 'planner':
+            if 'selected_sub_feature' in st.session_state and st.session_state.selected_sub_feature == 'possible_savings':
+                from .possible_savings import possible_savings_page
+                possible_savings_page()
+            else:
+                from .budget_planner import budget_planner_page
+                budget_planner_page()
+        elif st.session_state.selected_feature == 'network':
+            from .network_analysis import network_analysis_page
+            network_analysis_page()
+        elif st.session_state.selected_feature == 'timemachine':  
+            from .financial_time_machine import financial_time_machine_page
+            financial_time_machine_page()
 
 
 def display_feature_selection():
-    """Display feature selection cards"""
-    # All 4 features in one row
-    col1, col2, col3, col4 = st.columns(4)
+    """Display modern feature cards"""
+    
+    st.markdown("""
+        <div style='margin: 2rem 0 1.5rem 0;'>
+            <h2 style='font-size: 1.5rem; font-weight: 700; color: white; margin-bottom: 0.5rem;'>
+                What would you like to do?
+            </h2>
+            <p style='font-size: 1rem; color: rgba(255, 255, 255, 0.85);'>
+                Choose a tool to get started
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # Grid of feature cards
+    col1, col2 = st.columns(2)
     
     with col1:
+        # Spending Analysis Card
         st.markdown("""
-            <div class="feature-card">
-                <div class="feature-icon">📊</div>
-                <div class="feature-title">Spending Analysis</div>
-                <div class="feature-desc">Upload statements and analyze your spending patterns with detailed insights</div>
+            <div style='background: white; border-radius: 20px; padding: 2rem; 
+                 margin-bottom: 1.5rem; box-shadow: 0 4px 6px rgba(0,0,0,0.07);
+                 transition: all 0.3s ease; cursor: pointer;'
+                 onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 12px 24px rgba(0,0,0,0.15)';"
+                 onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 6px rgba(0,0,0,0.07)';">
+                <div style='display: flex; align-items: center; margin-bottom: 1rem;'>
+                    <div style='font-size: 2.5rem; margin-right: 1rem;'>📊</div>
+                    <div style='font-size: 1.5rem; font-weight: 700; color: #111827;'>
+                        Spending Analysis
+                    </div>
+                </div>
+                <p style='color: #6b7280; font-size: 1rem; line-height: 1.6; margin-bottom: 0;'>
+                    Upload bank statements and visualize your spending patterns with detailed charts and insights
+                </p>
             </div>
         """, unsafe_allow_html=True)
-        if st.button("Open Analysis", key="btn_analysis", use_container_width=True):
+        
+        if st.button("Open Spending Analysis", key="btn_analysis", use_container_width=True, type="primary"):
             st.session_state.selected_feature = 'analysis'
             st.rerun()
-    
-    with col2:
+        
+        # Network Analysis Card
         st.markdown("""
-            <div class="feature-card">
-                <div class="feature-icon">📅</div>
-                <div class="feature-title">Budget Planner</div>
-                <div class="feature-desc">Create and manage your monthly budgets efficiently</div>
+            <div style='background: white; border-radius: 20px; padding: 2rem; 
+                 margin-bottom: 1.5rem; box-shadow: 0 4px 6px rgba(0,0,0,0.07);
+                 transition: all 0.3s ease; cursor: pointer;'
+                 onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 12px 24px rgba(0,0,0,0.15)';"
+                 onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 6px rgba(0,0,0,0.07)';">
+                <div style='display: flex; align-items: center; margin-bottom: 1rem;'>
+                    <div style='font-size: 2.5rem; margin-right: 1rem;'>🌐</div>
+                    <div style='font-size: 1.5rem; font-weight: 700; color: #111827;'>
+                        Network Analysis
+                    </div>
+                </div>
+                <p style='color: #6b7280; font-size: 1rem; line-height: 1.6; margin-bottom: 0;'>
+                    Discover spending patterns and merchant relationships with interactive visualizations
+                </p>
             </div>
         """, unsafe_allow_html=True)
-        if st.button("Open Planner", key="btn_planner", use_container_width=True):
-            st.session_state.selected_feature = 'planner'
-            st.rerun()
-    
-    with col3:
-        st.markdown("""
-            <div class="feature-card">
-                <div class="feature-icon">🌐</div>
-                <div class="feature-title">Network Analysis</div>
-                <div class="feature-desc">Visualize transaction patterns and relationships</div>
-            </div>
-        """, unsafe_allow_html=True)
-        if st.button("Open Network", key="btn_network", use_container_width=True):
+        
+        if st.button("Open Network Analysis", key="btn_network", use_container_width=True, type="primary"):
             st.session_state.selected_feature = 'network'
             st.rerun()
     
-    with col4:
+    with col2:
+        # Budget Planner Card
         st.markdown("""
-            <div class="feature-card">
-                <div class="feature-icon">🔮</div>
-                <div class="feature-title">Time Machine <span style="color: #667eea;">⭐ NEW</span></div>
-                <div class="feature-desc">See your financial future based on today's decisions</div>
+            <div style='background: white; border-radius: 20px; padding: 2rem; 
+                 margin-bottom: 1.5rem; box-shadow: 0 4px 6px rgba(0,0,0,0.07);
+                 transition: all 0.3s ease; cursor: pointer;'
+                 onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 12px 24px rgba(0,0,0,0.15)';"
+                 onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 6px rgba(0,0,0,0.07)';">
+                <div style='display: flex; align-items: center; margin-bottom: 1rem;'>
+                    <div style='font-size: 2.5rem; margin-right: 1rem;'>📅</div>
+                    <div style='font-size: 1.5rem; font-weight: 700; color: #111827;'>
+                        Budget Planner
+                    </div>
+                </div>
+                <p style='color: #6b7280; font-size: 1rem; line-height: 1.6; margin-bottom: 0;'>
+                    Set monthly budgets, track progress, and get alerts when approaching limits
+                </p>
             </div>
         """, unsafe_allow_html=True)
-        if st.button("Open Time Machine", key="btn_timemachine", use_container_width=True):
+        
+        if st.button("Open Budget Planner", key="btn_planner", use_container_width=True, type="primary"):
+            st.session_state.selected_feature = 'planner'
+            st.rerun()
+        
+        # Time Machine Card (Featured)
+        st.markdown("""
+            <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                 border-radius: 20px; padding: 2rem; margin-bottom: 1.5rem; 
+                 box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
+                 transition: all 0.3s ease; cursor: pointer;'
+                 onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 16px 32px rgba(102, 126, 234, 0.4)';"
+                 onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 8px 16px rgba(102, 126, 234, 0.3)';">
+                <div style='display: flex; align-items: center; margin-bottom: 1rem;'>
+                    <div style='font-size: 2.5rem; margin-right: 1rem;'>🔮</div>
+                    <div>
+                        <div style='font-size: 1.5rem; font-weight: 700; color: white;'>
+                            Time Machine
+                        </div>
+                        <div style='background: rgba(255,255,255,0.2); display: inline-block; 
+                             padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.75rem; 
+                             font-weight: 600; color: white; margin-top: 0.25rem;'>
+                            ⭐ NEW
+                        </div>
+                    </div>
+                </div>
+                <p style='color: rgba(255,255,255,0.95); font-size: 1rem; line-height: 1.6; margin-bottom: 0;'>
+                    See your financial future based on today's decisions. Compare 3 different scenarios.
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        if st.button("Open Time Machine", key="btn_timemachine", use_container_width=True, type="secondary"):
             st.session_state.selected_feature = 'timemachine'
             st.rerun()
+    
+    # Quick stats section
+    if data is not None and not data.empty:
+        st.markdown("""
+            <div style='margin-top: 3rem; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,0.2);'>
+                <h3 style='font-size: 1.25rem; font-weight: 700; color: white; margin-bottom: 1rem;'>
+                    📈 Quick Insights
+                </h3>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        try:
+            total_transactions = len(data)
+            unique_merchants = data['Description'].nunique() if 'Description' in data.columns else 0
+            months_tracked = data['YearMonth'].nunique() if 'YearMonth' in data.columns else 0
+            avg_transaction = data['Amount'].mean() if 'Amount' in data.columns else 0
+            
+            with col1:
+                st.markdown(f"""
+                    <div style='background: rgba(255,255,255,0.1); border-radius: 12px; padding: 1.25rem; text-align: center;'>
+                        <div style='color: rgba(255,255,255,0.8); font-size: 0.75rem; font-weight: 600; 
+                             text-transform: uppercase; margin-bottom: 0.5rem;'>
+                            Transactions
+                        </div>
+                        <div style='font-size: 1.75rem; font-weight: 700; color: white;'>
+                            {total_transactions:,}
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown(f"""
+                    <div style='background: rgba(255,255,255,0.1); border-radius: 12px; padding: 1.25rem; text-align: center;'>
+                        <div style='color: rgba(255,255,255,0.8); font-size: 0.75rem; font-weight: 600; 
+                             text-transform: uppercase; margin-bottom: 0.5rem;'>
+                            Merchants
+                        </div>
+                        <div style='font-size: 1.75rem; font-weight: 700; color: white;'>
+                            {unique_merchants}
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+            
+            with col3:
+                st.markdown(f"""
+                    <div style='background: rgba(255,255,255,0.1); border-radius: 12px; padding: 1.25rem; text-align: center;'>
+                        <div style='color: rgba(255,255,255,0.8); font-size: 0.75rem; font-weight: 600; 
+                             text-transform: uppercase; margin-bottom: 0.5rem;'>
+                            Months Tracked
+                        </div>
+                        <div style='font-size: 1.75rem; font-weight: 700; color: white;'>
+                            {months_tracked}
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+            
+            with col4:
+                st.markdown(f"""
+                    <div style='background: rgba(255,255,255,0.1); border-radius: 12px; padding: 1.25rem; text-align: center;'>
+                        <div style='color: rgba(255,255,255,0.8); font-size: 0.75rem; font-weight: 600; 
+                             text-transform: uppercase; margin-bottom: 0.5rem;'>
+                            Avg Transaction
+                        </div>
+                        <div style='font-size: 1.75rem; font-weight: 700; color: white;'>
+                            J${avg_transaction:,.0f}
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+        except Exception as e:
+            pass
