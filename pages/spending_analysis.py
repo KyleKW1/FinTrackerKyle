@@ -345,6 +345,61 @@ def render_category_editor():
                     st.success("✅ Reset to defaults!")
                     clear_data_cache()
                     st.rerun()
+def render_other_transactions_viewer(data):
+    """Render a viewer for transactions categorized as 'Other'"""
+    
+    if data.empty:
+        return
+    
+    # Filter for 'Other' transactions
+    other_transactions = data[data['Spending Category'] == 'Other'].copy()
+    
+    if other_transactions.empty:
+        return
+    
+    with st.expander(f"🔍 Review Uncategorized Transactions ({len(other_transactions)} items)", expanded=False):
+        st.caption("These transactions are currently categorized as 'Other'. Add keywords above to auto-categorize them.")
+        
+        # Show summary by description frequency
+        st.markdown("##### 📊 Most Common Merchants")
+        
+        merchant_counts = other_transactions['Description'].value_counts().head(15)
+        
+        if not merchant_counts.empty:
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                # Show as table
+                summary_df = pd.DataFrame({
+                    'Merchant/Description': merchant_counts.index,
+                    'Count': merchant_counts.values,
+                    'Total Amount': [other_transactions[other_transactions['Description'] == desc]['Amount'].sum() 
+                                    for desc in merchant_counts.index]
+                })
+                summary_df['Total Amount'] = summary_df['Total Amount'].apply(lambda x: f"J${x:,.2f}")
+                
+                st.dataframe(summary_df, use_container_width=True, hide_index=True)
+            
+            with col2:
+                st.markdown("**💡 Quick Tips:**")
+                st.caption("• Look for common merchants")
+                st.caption("• Add keywords from descriptions")
+                st.caption("• Use partial words (e.g. 'pharmacy')")
+                st.caption("• Separate with commas")
+                
+                total_other = other_transactions['Amount'].sum()
+                st.metric("Total Uncategorized", f"J${total_other:,.2f}")
+        
+        # Show detailed transactions (collapsible)
+        with st.expander("📋 View All Uncategorized Transactions", expanded=False):
+            # Sort by amount descending
+            display_df = other_transactions[['Date', 'Description', 'Amount']].copy()
+            display_df = display_df.sort_values('Amount', ascending=False)
+            display_df['Date'] = display_df['Date'].dt.strftime('%Y-%m-%d')
+            display_df['Amount'] = display_df['Amount'].apply(lambda x: f"J${x:,.2f}")
+            
+            st.dataframe(display_df, use_container_width=True, hide_index=True, height=400)
+
 
 
 def render_cash_flow_charts(data, selected_year, selected_months):
