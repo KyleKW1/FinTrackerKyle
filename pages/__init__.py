@@ -1,6 +1,7 @@
 # pages/__init__.py
 """
 Pages module - exports all page rendering functions
+TEMPORARY VERSION - Time Machine disabled until syntax error is fixed
 """
 
 # Use relative imports (. means current package)
@@ -24,23 +25,36 @@ except ImportError as e:
             st.session_state.selected_feature = None
             st.rerun()
 
-# Import financial_time_machine - AFTER spending_analysis
-try:
-    from .financial_time_machine import financial_time_machine_page
-    HAS_TIME_MACHINE = True
-except (ImportError, SyntaxError) as e:
-    HAS_TIME_MACHINE = False
-    print(f"Warning: financial_time_machine not available: {e}")
+# TEMPORARY: Create placeholder for Time Machine (don't import the broken file)
+def financial_time_machine_page():
+    """Placeholder for Time Machine while we fix syntax errors"""
+    import streamlit as st
     
-    # Create placeholder function
-    def financial_time_machine_page():
-        import streamlit as st
-        st.error("⚠️ Financial Time Machine page has a syntax error")
-        st.info("Check pages/financial_time_machine.py for errors")
-        st.code(str(e))
-        if st.button("← Back to Dashboard"):
+    st.markdown("<div class='content-container'>", unsafe_allow_html=True)
+    
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.markdown("### 🔮 Financial Time Machine")
+    with col2:
+        if st.button("← Back to Dashboard", use_container_width=True):
             st.session_state.selected_feature = None
             st.rerun()
+    
+    st.markdown("---")
+    
+    st.warning("⚠️ Financial Time Machine temporarily disabled")
+    st.info("There's a syntax error in pages/financial_time_machine.py that needs to be fixed")
+    
+    st.markdown("### 🔧 How to Fix:")
+    st.markdown("""
+    1. Delete the file: `pages/financial_time_machine.py`
+    2. Create a new empty file with that name
+    3. Copy the code from the minimal test version (Artifact #10)
+    4. Save and redeploy
+    5. Once that works, replace with the full version
+    """)
+    
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # Export all functions
 __all__ = [
@@ -48,5 +62,5 @@ __all__ = [
     'register_page', 
     'dashboard_page',
     'spending_analysis_page',
-    'financial_time_machine_page',
+    'financial_time_machine_page',  # Placeholder version
 ]
