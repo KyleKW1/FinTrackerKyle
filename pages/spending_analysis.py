@@ -26,24 +26,148 @@ from config import FILES_PER_PAGE, DEFAULT_CATEGORY_MAPPING, DEFAULT_BUDGETS, DE
 import json
 from datetime import datetime
 import calendar
+from io import BytesIO
 
 
-# DEFINE ALL HELPER FUNCTIONS FIRST
+# DIAGNOSTIC FUNCTION
+def file_diagnostic_page():
+    """Comprehensive file processing diagnostic"""
+    import pdfplumber
+    import re
+    from database import create_connection
+    from data_processing import process_pdf_ncb
+    
+    st.title("🔍 File Processing Diagnostic Tool")
+    st.info("This will show you exactly what's happening with each uploaded file")
+    
+    connection = create_connection()
+    if not connection:
+        st.error("Cannot connect to database")
+        return
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """SELECT id, filename, file_type, file_data, upload_date 
+               FROM user_files 
+               WHERE user_id = %s 
+               ORDER BY filename""",
+            (st.session_state.user['id'],)
+        )
+        files = cursor.fetchall()
+        cursor.close()
+        connection.close()
+        
+        st.success(f"📁 Found {len(files)} files in database")
+        
+        summary_data = []
+        
+        for idx, file_info in enumerate(files):
+            filename = file_info['filename']
+            
+            st.markdown("---")
+            with st.expander(f"📄 {idx+1}. {filename}", expanded=False):
+                try:
+                    file_bytes = BytesIO(file_info['file_data'])
+                    file_size = len(file_info['file_data'])
+                    
+                    st.write(f"**File Info:**")
+                    st.write(f"- Size: {file_size:,} bytes")
+                    st.write(f"- Type: {file_info['file_type']}")
+                    
+                    file_bytes.seek(0)
+                    with pdfplumber.open(file_bytes) as pdf:
+                        st.write(f"- Pages: {len(pdf.pages)}")
+                        
+                        first_page_text = pdf.pages[0].extract_text()
+                        lines = first_page_text.split('\n')[:40]
+                        
+                        st.write("**📄 First 40 lines:**")
+                        st.code('\n'.join(f"{i:3d}: {line}" for i, line in enumerate(lines, 1)))
+                        
+                        st.write("**🔍 Year Detection:**")
+                        year_found = None
+                        year_patterns = [
+                            (r'P\.?O\.?,?\s*\d{2}-\d{2}-(\d{4})', 'P.O. line'),
+                            (r'\d{2}/[A-Za-z]{3}/(\d{4})', 'Transaction date'),
+                            (r'\b(202[0-9])\b', 'Any 202X'),
+                        ]
+                        
+                        for pattern, desc in year_patterns:
+                            matches = re.findall(pattern, first_page_text, re.IGNORECASE)
+                            if matches:
+                                year_found = matches[0][-1] if isinstance(matches[0], tuple) else matches[0]
+                                st.success(f"✅ Found: **{year_found}** ({desc})")
+                                break
+                        
+                        if not year_found:
+                            st.error("❌ No year detected!")
+                    
+                    st.write("**📊 Processing:**")
+                    file_bytes.seek(0)
+                    df = process_pdf_ncb(file_bytes)
+                    
+                    if df.empty:
+                        st.error("❌ FAILED - 0 transactions")
+                        summary_data.append({
+                            'Filename': filename,
+                            'Status': '❌ FAILED',
+                            'Transactions': 0,
+                            'Year': year_found or 'None'
+                        })
+                    else:
+                        st.success(f"✅ SUCCESS - {len(df)} transactions")
+                        st.write(f"Date range: {df['Date'].min()} to {df['Date'].max()}")
+                        st.dataframe(df[['Date', 'Description', 'Amount']].head(5))
+                        summary_data.append({
+                            'Filename': filename,
+                            'Status': '✅ SUCCESS',
+                            'Transactions': len(df),
+                            'Year': year_found or 'Auto'
+                        })
+                    
+                except Exception as e:
+                    st.error(f"❌ Error: {e}")
+                    import traceback
+                    st.code(traceback.format_exc())
+                    summary_data.append({
+                        'Filename': filename,
+                        'Status': '❌ ERROR',
+                        'Transactions': 0,
+                        'Year': 'N/A'
+                    })
+        
+        st.markdown("---")
+        st.markdown("## 📊 Summary")
+        summary_df = pd.DataFrame(summary_data)
+        st.dataframe(summary_df, use_container_width=True)
+        
+        success_count = len([r for r in summary_data if r['Status'] == '✅ SUCCESS'])
+        failed_count = len([r for r in summary_data if r['Status'].startswith('❌')])
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("✅ Successful", success_count)
+        with col2:
+            st.metric("❌ Failed", failed_count)
+        
+    except Exception as e:
+        st.error(f"Diagnostic error: {e}")
 
+
+# HELPER FUNCTIONS
 def render_category_editor():
     """Render category keyword editor"""
     with st.expander("🏷️ Customize Spending Categories", expanded=False):
         st.markdown("**Edit keywords to customize how transactions are categorized**")
         st.caption("Add keywords separated by commas. Transactions matching these keywords will be assigned to the category.")
         
-        # Load current preferences
         prefs = get_user_preferences(st.session_state.user['id'])
         if prefs and prefs.get('category_keywords'):
             current_keywords = json.loads(prefs['category_keywords'])
         else:
             current_keywords = DEFAULT_CATEGORY_MAPPING.copy()
         
-        # Create editable fields for each category
         updated_keywords = {}
         
         col1, col2 = st.columns(2)
@@ -81,7 +205,6 @@ def render_category_editor():
         
         updated_keywords['Other'] = []
         
-        # Save button
         col1, col2, col3 = st.columns([1, 1, 2])
         
         with col1:
@@ -121,14 +244,12 @@ def render_cash_flow_charts(data, selected_year, selected_months):
     """Render cash flow visualization charts"""
     st.markdown("##### 💰 Cash Flow Overview")
     
-    # Filter data for selected period
     period_data = data[(data['Year'] == selected_year) & (data['Month'].isin(selected_months))]
     
     if period_data.empty:
         st.warning("No data available for selected period")
         return
     
-    # Calculate monthly income and spending
     monthly_stats = []
     for month_num in sorted(selected_months):
         year_month = f"{selected_year}-{month_num:02d}"
@@ -142,10 +263,8 @@ def render_cash_flow_charts(data, selected_year, selected_months):
     
     stats_df = pd.DataFrame(monthly_stats)
     
-    # Create dual-axis chart
     fig = go.Figure()
     
-    # Add income bars
     fig.add_trace(go.Bar(
         name='Income',
         x=stats_df['Month'],
@@ -155,7 +274,6 @@ def render_cash_flow_charts(data, selected_year, selected_months):
         textposition='outside'
     ))
     
-    # Add spending bars
     fig.add_trace(go.Bar(
         name='Spending',
         x=stats_df['Month'],
@@ -165,7 +283,6 @@ def render_cash_flow_charts(data, selected_year, selected_months):
         textposition='outside'
     ))
     
-    # Add savings line
     fig.add_trace(go.Scatter(
         name='Net Savings',
         x=stats_df['Month'],
@@ -195,7 +312,6 @@ def render_cash_flow_charts(data, selected_year, selected_months):
     
     st.plotly_chart(fig, use_container_width=True)
     
-    # Summary metrics
     col1, col2, col3, col4 = st.columns(4)
     
     total_income = stats_df['Income'].sum()
@@ -205,13 +321,10 @@ def render_cash_flow_charts(data, selected_year, selected_months):
     
     with col1:
         st.metric("Total Income", f"J${total_income:,.0f}")
-    
     with col2:
         st.metric("Total Spending", f"J${total_spending:,.0f}")
-    
     with col3:
         st.metric("Total Savings", f"J${total_savings:,.0f}")
-    
     with col4:
         st.metric("Avg Monthly Savings", f"J${avg_savings:,.0f}")
 
@@ -224,23 +337,18 @@ def render_monthly_analysis(data, year_month, month_name):
         st.warning("No data for this month")
         return
     
-    # Calculate statistics
     stats = calculate_monthly_stats(data, year_month)
     summary = get_spending_by_category(data, year_month)
     
-    # Display metrics
     col1, col2, col3 = st.columns(3)
     
     with col1:
         st.metric("💰 Income", f"J${stats['income']:,.0f}")
-    
     with col2:
         st.metric("💸 Spending", f"J${stats['spending']:,.0f}")
-    
     with col3:
         st.metric("🎯 Savings", f"J${stats['savings']:,.0f}")
     
-    # Visualizations
     if not summary.empty:
         st.markdown(f"##### 📈 Spending Breakdown for {month_name}")
         
@@ -273,7 +381,6 @@ def render_monthly_analysis(data, year_month, month_name):
             )
             st.plotly_chart(fig_bar, use_container_width=True)
         
-        # Budget comparison
         prefs = get_user_preferences(st.session_state.user['id'])
         if prefs and prefs.get('monthly_budgets'):
             budgets = json.loads(prefs['monthly_budgets'])
@@ -307,7 +414,6 @@ def render_monthly_analysis(data, year_month, month_name):
                 
                 st.plotly_chart(fig_comparison, use_container_width=True)
                 
-                # Show over-budget categories
                 over_budget = comparison[comparison['Amount'] > comparison['Budget']]
                 if not over_budget.empty:
                     st.warning(f"⚠️ Over budget in {len(over_budget)} categories")
@@ -318,7 +424,6 @@ def render_monthly_analysis(data, year_month, month_name):
                             f"(+J${row['Amount'] - row['Budget']:,.0f})"
                         )
         
-        # Spending table
         st.markdown("##### 📋 Detailed Breakdown")
         summary_display = summary.copy()
         summary_display['Amount'] = summary_display['Amount'].apply(lambda x: f"J${x:,.2f}")
@@ -330,7 +435,6 @@ def render_aggregate_analysis(data, selected_year, selected_months):
     """Render aggregate analysis for multiple months"""
     st.markdown("##### 📊 Aggregate Analysis")
     
-    # Calculate totals
     year_months = [f"{selected_year}-{m:02d}" for m in selected_months]
     total_income = sum([calculate_monthly_stats(data, ym)['income'] for ym in year_months])
     total_spending = sum([calculate_monthly_stats(data, ym)['spending'] for ym in year_months])
@@ -345,7 +449,6 @@ def render_aggregate_analysis(data, selected_year, selected_months):
     with col3:
         st.metric("🎯 Total Savings", f"J${total_savings:,.0f}")
     
-    # Aggregate category spending
     st.markdown("##### 🥧 Aggregate Spending by Category")
     
     all_spending = []
@@ -393,13 +496,11 @@ def render_analysis_section(data):
     
     st.markdown("##### 📅 Select Analysis Period")
     
-    # Get available years
     available_years = sorted(data['Year'].dropna().unique())
     if len(available_years) == 0:
         st.error("❌ No valid years found in data")
         return
     
-    # Layout
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col1:
@@ -421,7 +522,6 @@ def render_analysis_section(data):
             selected_year = int(available_years[0])
             st.info(f"📅 Year: {selected_year}")
     
-    # Get available months for selected year
     year_data = data[data['Year'] == selected_year]
     available_months_nums = sorted([int(m) for m in year_data['Month'].dropna().unique()])
     
@@ -431,7 +531,6 @@ def render_analysis_section(data):
     
     available_month_names = [calendar.month_name[m] for m in available_months_nums]
     
-    # Determine selected months
     if analysis_type == "Specific Months":
         with col3:
             selected_month_names = st.multiselect(
@@ -458,12 +557,11 @@ def render_analysis_section(data):
         with col3:
             st.info(f"{len(selected_months)} months")
     
-    else:  # All Time
+    else:
         selected_months = available_months_nums
         with col3:
             st.info(f"{len(selected_months)} months")
     
-    # Filter data for selected period
     period_data = data[(data['Year'] == selected_year) & (data['Month'].isin(selected_months))]
     
     if period_data.empty:
@@ -472,11 +570,9 @@ def render_analysis_section(data):
     
     st.success(f"✅ Analyzing {len(period_data)} transactions across {len(selected_months)} month(s)")
     
-    # CASH FLOW CHARTS
     st.markdown("---")
     render_cash_flow_charts(data, selected_year, selected_months)
     
-    # MONTHLY ANALYSIS TABS
     st.markdown("---")
     st.markdown("##### 📅 Monthly Analysis")
     
@@ -488,12 +584,10 @@ def render_analysis_section(data):
                 year_month = f"{selected_year}-{month_num:02d}"
                 render_monthly_analysis(data, year_month, calendar.month_name[month_num])
     
-    # AGGREGATE ANALYSIS
     if len(selected_months) > 1:
         st.markdown("---")
         render_aggregate_analysis(data, selected_year, selected_months)
     
-    # EXPORT OPTIONS
     st.markdown("---")
     st.markdown("#### 📥 Export Data")
     
@@ -598,8 +692,6 @@ def display_pagination_controls(total_files, page_size):
             st.session_state.file_page = total_pages - 1
             st.rerun()
 
-
-# MAIN PAGE FUNCTION - DEFINED LAST
 
 def spending_analysis_page():
 
