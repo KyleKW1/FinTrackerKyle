@@ -19,15 +19,7 @@ import json
 
 def main():
     """Main application function"""
-    # Page config
-    st.set_page_config(
-        page_title=APP_TITLE,
-        page_icon=APP_ICON,
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
-    
-    # Initialize session state
+    # Initialize session state FIRST (before page config)
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
     if 'user' not in st.session_state:
@@ -38,6 +30,14 @@ def main():
         st.session_state.selected_feature = None
     if 'file_page' not in st.session_state:
         st.session_state.file_page = 0
+    
+    # Page config - Hide sidebar on login, show when authenticated
+    st.set_page_config(
+        page_title=APP_TITLE,
+        page_icon=APP_ICON,
+        layout="wide",
+        initial_sidebar_state="collapsed" if not st.session_state.authenticated else "expanded"
+    )
     
     # Apply custom styles
     apply_custom_styles()
@@ -56,6 +56,25 @@ def main():
         }
         </style>
     """, unsafe_allow_html=True)
+    
+    # Hide sidebar completely on login/auth pages
+    if not st.session_state.authenticated:
+        st.markdown("""
+            <style>
+            [data-testid="stSidebar"] {
+                display: none !important;
+            }
+            section[data-testid="stSidebar"] {
+                display: none !important;
+            }
+            /* Expand main content to full width when sidebar is hidden */
+            .main .block-container {
+                max-width: 100%;
+                padding-left: 5rem;
+                padding-right: 5rem;
+            }
+            </style>
+        """, unsafe_allow_html=True)
     
     # Handle query params for password reset
     try:
