@@ -305,10 +305,59 @@ def diagnostic_page():
             try:
                 from io import BytesIO
                 from data_processing import process_csv, process_pdf_ncb, extract_from_pdf, standardize_dataframe_columns
+                import pdfplumber
                 
                 file_bytes = BytesIO(file_info['file_data'])
                 filename = file_info.get('filename', '')
                 file_type = file_info['file_type'].lower()
+                
+                # For PDFs, show raw content first with search
+                if file_type == 'pdf':
+                    try:
+                        file_bytes.seek(0)
+                        with pdfplumber.open(file_bytes) as pdf:
+                            first_page = pdf.pages[0].extract_text()
+                            
+                            # Show year detection
+                            st.write("**🔍 Year Detection:**")
+                            year_found = None
+                            year_patterns = [
+                                (r'(\d{2}/[A-Za-z]{3}/(\d{4}))', 'Full date format'),
+                                (r'Statement.*?(\d{4})', 'Statement date'),
+                                (r'\b(202[0-9])\b', 'Any 202X year'),
+                            ]
+                            
+                            for pattern, desc in year_patterns:
+                                matches = re.findall(pattern, first_page)
+                                if matches:
+                                    if isinstance(matches[0], tuple):
+                                        year_found = matches[0][-1]
+                                    else:
+                                        year_found = matches[0]
+                                    st.success(f"Found year {year_found} using: {desc}")
+                                    break
+                            
+                            if not year_found:
+                                st.error("❌ Could not detect year from PDF!")
+                            
+                            # Show first lines that look like transactions
+                            st.write("**📄 Lines that look like transactions:**")
+                            transaction_pattern = r'\d{2}/[A-Za-z]{3}\s+.+?\s+[\d,]+\.\d{2}'
+                            potential_transactions = [line for line in first_page.split('\n') 
+                                                     if re.search(transaction_pattern, line)]
+                            
+                            if potential_transactions:
+                                st.code('\n'.join(potential_transactions[:10]))
+                                st.info(f"Found {len(potential_transactions)} potential transaction lines")
+                            else:
+                                st.error("❌ No lines matching transaction pattern!")
+                                st.write("**First 30 lines of PDF:**")
+                                st.code('\n'.join(first_page.split('\n')[:30]))
+                            
+                    except Exception as e:
+                        st.error(f"Could not extract text: {e}")
+                    
+                    file_bytes.seek(0)  # Reset for processing
                 
                 if file_type == 'pdf':
                     if 'ncb' in filename.lower():
@@ -427,6 +476,11 @@ def diagnostic_page():
         import traceback
         st.code(traceback.format_exc())
 
+
+# Add this to your dashboard or create a temporary button to access it
+if st.session_state.authenticated:
+    if st.sidebar.button("🔍 Open Diagnostic Tool"):
+        diagnostic_page()
 
 # Add this to your dashboard or create a temporary button to access it
 if st.session_state.authenticated:
