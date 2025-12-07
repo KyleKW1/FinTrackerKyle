@@ -6,6 +6,8 @@ Pages module - exports all page rendering functions
 # Use relative imports (. means current package)
 from .auth_pages import login_page, register_page
 from .dashboard import dashboard_page
+from .financial_time_machine import financial_time_machine_page
+
 
 # Try to import spending_analysis (optional)
 try:
@@ -30,4 +32,6 @@ __all__ = [
     'register_page', 
     'dashboard_page',
     'spending_analysis_page',
+    'financial_time_machine_page',
+
 ]
