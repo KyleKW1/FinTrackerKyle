@@ -623,10 +623,20 @@ def render_analysis_section(data):
     
     st.markdown("##### 📅 Select Analysis Period")
     
-    available_years = sorted(data['Year'].dropna().unique())
+    # CRITICAL FIX: Get available years as integers from actual data
+    if 'Year' not in data.columns and 'Date' in data.columns:
+        data['Year'] = pd.to_datetime(data['Date']).dt.year
+    
+    available_years = sorted([int(y) for y in data['Year'].dropna().unique()])
+    
     if len(available_years) == 0:
         st.error("❌ No valid years found in data")
         return
+    
+    # Show data range for clarity
+    min_date = data['Date'].min()
+    max_date = data['Date'].max()
+    st.info(f"📊 Data available from {min_date.strftime('%B %Y')} to {max_date.strftime('%B %Y')}")
     
     col1, col2, col3 = st.columns([1, 2, 1])
     
@@ -638,17 +648,15 @@ def render_analysis_section(data):
         )
     
     with col2:
-        if len(available_years) > 1:
-            selected_year = st.selectbox(
-                "Select Year",
-                available_years,
-                index=len(available_years) - 1,
-                key="selected_year"
-            )
-        else:
-            selected_year = int(available_years[0])
-            st.info(f"📅 Year: {selected_year}")
+        # ALWAYS show year selector, even if only one year
+        selected_year = st.selectbox(
+            "Select Year",
+            available_years,
+            index=len(available_years) - 1,  # Default to most recent
+            key="selected_year"
+        )
     
+    # Filter data for selected year
     year_data = data[data['Year'] == selected_year]
     available_months_nums = sorted([int(m) for m in year_data['Month'].dropna().unique()])
     
@@ -684,7 +692,7 @@ def render_analysis_section(data):
         with col3:
             st.info(f"{len(selected_months)} months")
     
-    else:
+    else:  # All Time
         selected_months = available_months_nums
         with col3:
             st.info(f"{len(selected_months)} months")
