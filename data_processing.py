@@ -79,7 +79,6 @@ def extract_from_pdf(file_bytes):
         print(f"Error extracting from PDF: {e}")
         return pd.DataFrame()
 
-
 def extract_from_tables(tables):
     """Extract transactions from PDF tables"""
     transactions = []
