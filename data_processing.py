@@ -274,6 +274,76 @@ def parse_amount(amount_str):
         return 0.0
 
 
+def detect_ncb_pdf(file_bytes):
+    """
+    Score-based NCB detection - generalized for all branches
+    Works for NCB statements from any branch in Jamaica
+    """
+    try:
+        file_bytes.seek(0)
+        with pdfplumber.open(file_bytes) as pdf:
+            if not pdf.pages:
+                return False
+            
+            # Extract text from first page
+            text = pdf.pages[0].extract_text()
+            if not text:
+                return False
+                
+            text = text.upper()
+            score = 0
+            
+            # Primary identifier - CRITICAL (3 points)
+            if 'NATIONAL COMMERCIAL BANK' in text:
+                score += 3
+            
+            # Check for NCB-specific account types (1 point)
+            account_types = [
+                'REGULAR SAVINGS', 'CURRENT ACCOUNT', 'SAVINGS ACCOUNT', 
+                'CHEQUING', 'NCB ACCOUNT', 'STUDENT ACCOUNT'
+            ]
+            if any(acc_type in text for acc_type in account_types):
+                score += 1
+            
+            # Check for NCB date format (DD/Mon pattern, e.g., 15/Jan) (2 points)
+            if re.search(r'\d{2}/[A-Z][a-z]{2}\s', text):
+                score += 2
+            
+            # Check for NCB-specific transaction codes (1-2 points)
+            ncb_keywords = [
+                'ELINK TRF', 'BPYMT', 'ABM TX FEE', 'POS PURCHASE', 
+                'ATM WITHDRAWAL', 'BILL PAYMENT', 'BILLPAY', 'E-LINK'
+            ]
+            keyword_matches = sum(1 for kw in ncb_keywords if kw in text)
+            if keyword_matches >= 2:
+                score += 2
+            elif keyword_matches >= 1:
+                score += 1
+            
+            # Check for Jamaica-specific patterns (1 point)
+            jamaica_indicators = ['JAMAICA', 'JMD', 'J$', 'JA ']
+            if any(indicator in text for indicator in jamaica_indicators):
+                score += 1
+            
+            # Check for statement-specific headers (1 point)
+            if 'STATEMENT' in text and 'ACCOUNT' in text:
+                score += 1
+            
+            # Check for NCB branch patterns - any branch (1 point)
+            # Look for typical branch address format
+            if re.search(r'[A-Z\s]+,\s*JAMAICA', text):
+                score += 1
+            
+            print(f"   NCB Detection Score: {score}/12")
+            
+            # Threshold: need at least 4 points to confirm NCB
+            # This ensures we need multiple indicators, not just one
+            return score >= 4
+            
+    except Exception as e:
+        print(f"   NCB Detection Error: {e}")
+        return False
+
 
 def parse_ncb_transaction_line(line, year):
     """
@@ -371,7 +441,7 @@ def process_pdf_ncb(file, debug=False):
                 
                 year_patterns = [
                     r'P\.?O\.?,?\s*\d{2}-\d{2}-(\d{4})',
-                    r'PRATVILLE.*?(\d{4})',
+                    r'[A-Z\s]+,\s*JAMAICA.*?(\d{4})',
                     r'\d{2}/[A-Za-z]{3}/(\d{4})',
                     r'(\d{4})-\d{2}-\d{2}',
                     r'\b(202[0-9])\b'
