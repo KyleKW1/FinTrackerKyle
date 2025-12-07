@@ -480,4 +480,4 @@ def categorize_transactions(df):
             if categorized:
                 break
     
-    return df
+    return df 
