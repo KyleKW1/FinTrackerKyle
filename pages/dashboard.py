@@ -9,12 +9,12 @@ def dashboard_page():
     """Render modern, clean dashboard"""
     
     # Load data first
+    data = None
     try:
         with st.spinner("Loading your financial data..."):
             data = load_all_user_data(st.session_state.user['id'])
     except Exception as e:
         st.error(f"Error loading data: {e}")
-        data = None
     
     # Calculate stats
     current_income = current_spending = current_savings = 0.0
@@ -117,7 +117,7 @@ def dashboard_page():
     
     # Feature selection section
     if 'selected_feature' not in st.session_state or st.session_state.selected_feature is None:
-        display_feature_selection()
+        display_feature_selection(data)  # Pass data to the function
     else:
         # Render selected feature
         if st.session_state.selected_feature == 'analysis':
@@ -138,7 +138,7 @@ def dashboard_page():
             financial_time_machine_page()
 
 
-def display_feature_selection():
+def display_feature_selection(data):
     """Display modern feature cards"""
     
     st.markdown("""
