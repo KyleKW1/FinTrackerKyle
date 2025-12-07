@@ -620,28 +620,16 @@ def render_analysis_section(data):
     if data.empty:
         st.error("❌ No data to analyze")
         return
-        
-        # DEBUG - Show what's actually in the data
-    st.write("### 🔍 DEBUG INFO")
-    st.write(f"**Total rows:** {len(data)}")
-    st.write(f"**Columns:** {list(data.columns)}")
-    st.write(f"**Date column dtype:** {data['Date'].dtype}")
-    st.write(f"**Sample dates:** {data['Date'].head(10).tolist()}")
-    st.write(f"**Year column dtype:** {data['Year'].dtype if 'Year' in data.columns else 'NOT FOUND'}")
-    st.write(f"**Unique years:** {sorted(data['Year'].unique()) if 'Year' in data.columns else 'NO YEAR COLUMN'}")
-    st.write(f"**Date min:** {data['Date'].min()}")
-    st.write(f"**Date max:** {data['Date'].max()}")
-    
-    # Show first few rows
-    st.write("**Sample data:**")
-    st.dataframe(data[['Date', 'Year', 'Month', 'Description', 'Amount']].head(10))
-    st.markdown("---")
     
     st.markdown("##### 📅 Select Analysis Period")
     
-    # CRITICAL FIX: Get available years as integers from actual data
-    if 'Year' not in data.columns and 'Date' in data.columns:
-        data['Year'] = pd.to_datetime(data['Date']).dt.year
+    # CRITICAL FIX: FORCE recalculate Year from Date column
+    if 'Date' in data.columns:
+        data['Date'] = pd.to_datetime(data['Date'], errors='coerce')
+        data = data.dropna(subset=['Date'])
+        # FORCE recalculate Year from actual Date values
+        data['Year'] = data['Date'].dt.year.astype(int)
+        data['Month'] = data['Date'].dt.month.astype(int)
     
     available_years = sorted([int(y) for y in data['Year'].dropna().unique()])
     
@@ -788,7 +776,6 @@ def render_analysis_section(data):
                 
             except Exception as e:
                 st.error(f"❌ Error generating PDF: {e}")
-
 
 def display_file_card(file):
     """Display a file card with delete button"""
