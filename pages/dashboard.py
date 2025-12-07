@@ -125,7 +125,7 @@ def display_quick_stats():
 
 def display_feature_selection():
     """Display feature selection cards"""
-    # First row - 4 features
+    # All 4 features in one row
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
