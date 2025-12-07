@@ -158,15 +158,20 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
     
     # Metric boxes
     start_x = 15
-    pdf.set_xy(start_x, pdf.get_y())
+    start_y = pdf.get_y()
     
+    pdf.set_xy(start_x, start_y)
     pdf.metric_box('Total Income', f'J${total_income:,.0f}', (16, 185, 129))
-    pdf.set_xy(start_x + 65, pdf.get_y() - 25)
+    
+    pdf.set_xy(start_x + 65, start_y)
     pdf.metric_box('Total Spending', f'J${total_spending:,.0f}', (239, 68, 68))
-    pdf.set_xy(start_x + 130, pdf.get_y() - 25)
+    
+    pdf.set_xy(start_x + 130, start_y)
     pdf.metric_box('Net Savings', f'J${total_savings:,.0f}', (59, 130, 246))
     
-    pdf.ln(30)
+    # Move past the metric boxes
+    pdf.set_xy(10, start_y + 30)
+    pdf.ln(5)
     
     # Get user preferences
     prefs = get_user_preferences(user_id)
@@ -175,6 +180,8 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
     # Savings goal status (adjusted for multiple months)
     adjusted_goal = SAVINGS_GOAL * len(selected_months)
     pdf.set_font('Arial', '', 11)
+    
+    # Determine status color
     if total_savings >= adjusted_goal:
         pdf.set_text_color(16, 185, 129)
         status = f'Goal Achieved! Exceeded by J${total_savings - adjusted_goal:,.0f}'
@@ -184,7 +191,7 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
     
     pdf.cell(0, 10, f'Savings Goal ({len(selected_months)} months): J${adjusted_goal:,.0f} | {status}', 0, 1, 'C')
     pdf.set_text_color(0, 0, 0)
-    pdf.ln(10)
+    pdf.ln(15)  # Extra spacing before next section
     
     # Create temporary directory for charts
     temp_dir = tempfile.mkdtemp()
@@ -243,9 +250,10 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
         if os.path.exists(trend_chart_path):
             current_y = pdf.get_y()
             pdf.image(trend_chart_path, x=15, y=current_y, w=180)
-            pdf.ln(95)  # Move down to avoid overlap
+            pdf.ln(100)  # Move down to avoid overlap with next section
         else:
             pdf.cell(0, 10, '[Chart could not be generated]', 0, 1, 'C')
+            pdf.ln(10)
         
         # ==========================================
         # AGGREGATE SPENDING DISTRIBUTION
@@ -321,9 +329,10 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
             if os.path.exists(pie_chart_path):
                 current_y = pdf.get_y()
                 pdf.image(pie_chart_path, x=25, y=current_y, w=160)
-                pdf.ln(100)  # Move down
+                pdf.ln(105)  # Move down with extra spacing
             else:
                 pdf.cell(0, 10, '[Chart could not be generated]', 0, 1, 'C')
+                pdf.ln(10)
             
             # ==========================================
             # SPENDING BREAKDOWN TABLE
