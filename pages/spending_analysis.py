@@ -542,15 +542,6 @@ def render_aggregate_analysis(data, selected_year, selected_months):
     """Render aggregate analysis for multiple months"""
     st.markdown("##### 📊 Aggregate Analysis")
     # At the start of your Aggregate Analysis page
-    data = load_all_user_data(st.session_state.user['id'])
-    
-    st.write("🔍 DEBUG INFO:")
-    st.write(f"Total rows loaded: {len(data)}")
-    st.write(f"Columns: {list(data.columns)}")
-    if not data.empty:
-        st.write(f"Date range: {data['Date'].min()} to {data['Date'].max()}")
-        st.write(f"Sample data:")
-        st.dataframe(data.head())
     
     year_months = [f"{selected_year}-{m:02d}" for m in selected_months]
     total_income = sum([calculate_monthly_stats(data, ym)['income'] for ym in year_months])
