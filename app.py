@@ -1,15 +1,15 @@
 # app.py
 """
-Main application entry point - FIXED VERSION
-Handles routing and page rendering
+Main application entry point - FINAL VERSION
+No sidebar page links will appear
 """
 
 import streamlit as st
 from config import APP_TITLE, APP_ICON
 from auth import logout
 from styles import apply_custom_styles
-from pages.auth_pages import login_page, register_page  # FIXED: Changed back to pages.
-from pages.dashboard import dashboard_page  # FIXED: Changed back to pages.
+from app_pages.auth_pages import login_page, register_page
+from app_pages.dashboard import dashboard_page
 from password_reset import forgot_password_page, reset_password_page
 from database import get_user_preferences, save_user_preferences
 from data_loader import clear_data_cache
@@ -19,7 +19,7 @@ import json
 
 def main():
     """Main application function"""
-    # Page config
+    # Page config - HIDE SIDEBAR PAGES
     st.set_page_config(
         page_title=APP_TITLE,
         page_icon=APP_ICON,
@@ -41,6 +41,15 @@ def main():
     
     # Apply custom styles
     apply_custom_styles()
+    
+    # HIDE STREAMLIT PAGES - Add this CSS
+    st.markdown("""
+        <style>
+        [data-testid="stSidebarNav"] {
+            display: none;
+        }
+        </style>
+    """, unsafe_allow_html=True)
     
     # Handle query params for password reset
     try:
