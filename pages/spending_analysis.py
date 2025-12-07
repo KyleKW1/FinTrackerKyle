@@ -541,8 +541,15 @@ def render_monthly_analysis(data, year_month, month_name):
 def render_aggregate_analysis(data, selected_year, selected_months):
     """Render aggregate analysis for multiple months"""
     st.markdown("##### 📊 Aggregate Analysis")
-    # At the start of your Aggregate Analysis page
     
+    # Filter data for selected period
+    period_data = data[(data['Year'] == selected_year) & (data['Month'].isin(selected_months))]
+    
+    if period_data.empty:
+        st.warning("⚠️ No data available for selected months")
+        return
+    
+    # Calculate totals
     year_months = [f"{selected_year}-{m:02d}" for m in selected_months]
     total_income = sum([calculate_monthly_stats(data, ym)['income'] for ym in year_months])
     total_spending = sum([calculate_monthly_stats(data, ym)['spending'] for ym in year_months])
@@ -559,41 +566,53 @@ def render_aggregate_analysis(data, selected_year, selected_months):
     
     st.markdown("##### 🥧 Aggregate Spending by Category")
     
+    # Get spending data for all selected months
     all_spending = []
     for ym in year_months:
         month_summary = get_spending_by_category(data, ym)
         if not month_summary.empty:
             all_spending.append(month_summary)
     
-    if all_spending:
-        aggregate_spending = pd.concat(all_spending).groupby('Spending Category')['Amount'].sum().reset_index()
-        aggregate_spending['Percentage'] = 100 * aggregate_spending['Amount'] / aggregate_spending['Amount'].sum()
-        aggregate_spending = aggregate_spending.sort_values('Amount', ascending=False)
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            fig_agg_pie = px.pie(
-                aggregate_spending,
-                values='Amount',
-                names='Spending Category',
-                hole=0.4,
-                title='Total Spending Distribution'
-            )
-            st.plotly_chart(fig_agg_pie, use_container_width=True)
-        
-        with col2:
-            fig_agg_bar = px.bar(
-                aggregate_spending,
-                x='Spending Category',
-                y='Amount',
-                color='Amount',
-                color_continuous_scale='Reds',
-                title='Category Breakdown'
-            )
-            fig_agg_bar.update_layout(showlegend=False, xaxis_tickangle=-45)
-            st.plotly_chart(fig_agg_bar, use_container_width=True)
-
+    if not all_spending:
+        st.info("📊 No spending data to display")
+        return
+    
+    # Aggregate spending by category
+    aggregate_spending = pd.concat(all_spending).groupby('Spending Category')['Amount'].sum().reset_index()
+    aggregate_spending['Percentage'] = 100 * aggregate_spending['Amount'] / aggregate_spending['Amount'].sum()
+    aggregate_spending = aggregate_spending.sort_values('Amount', ascending=False)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        fig_agg_pie = px.pie(
+            aggregate_spending,
+            values='Amount',
+            names='Spending Category',
+            hole=0.4,
+            title='Total Spending Distribution'
+        )
+        st.plotly_chart(fig_agg_pie, use_container_width=True)
+    
+    with col2:
+        fig_agg_bar = px.bar(
+            aggregate_spending,
+            x='Spending Category',
+            y='Amount',
+            color='Amount',
+            color_continuous_scale='Reds',
+            title='Category Breakdown'
+        )
+        fig_agg_bar.update_layout(showlegend=False, xaxis_tickangle=-45)
+        st.plotly_chart(fig_agg_bar, use_container_width=True)
+    
+    # Show detailed breakdown table
+    st.markdown("##### 📋 Detailed Breakdown")
+    breakdown_display = aggregate_spending.copy()
+    breakdown_display['Amount'] = breakdown_display['Amount'].apply(lambda x: f"J${x:,.2f}")
+    breakdown_display['Percentage'] = breakdown_display['Percentage'].apply(lambda x: f"{x:.1f}%")
+    st.dataframe(breakdown_display, use_container_width=True, hide_index=True)
+    
 
 def render_analysis_section(data):
     """Render the main analysis section"""
