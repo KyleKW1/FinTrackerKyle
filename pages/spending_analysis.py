@@ -833,11 +833,7 @@ def display_pagination_controls(total_files, page_size):
 
 def spending_analysis_page():
     """Main spending analysis page with flowing layout"""
-       if st.button("🔄 FORCE RELOAD DATA", type="primary"):
-        from data_loader import clear_data_cache
-        clear_data_cache()
-        st.cache_data.clear()
-        st.rerun()
+
     st.markdown("<div class='content-container'>", unsafe_allow_html=True)
 
     # Check if diagnostic mode
