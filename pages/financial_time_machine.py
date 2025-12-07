@@ -1,3 +1,12 @@
+"""
+pages/financial_time_machine.py - Revolutionary Future Scenario Simulator
+Place this file in the pages/ directory
+
+INTEGRATION STEPS:
+1. Save this file as: pages/financial_time_machine.py
+2. Update pages/dashboard.py to add the Time Machine button
+3. Update pages/__init__.py to import this module
+"""
 
 import streamlit as st
 import pandas as pd
@@ -470,10 +479,99 @@ def financial_time_machine_page():
         xaxis_title='Years from Now',
         yaxis_title='Total Savings (J$)',
         height=500,
-        hovermode='x unified'
-    )
+        hovermode='x unified',
+        yaxis=dict(
+            tickformat=',.0f',
+            tickprefix='J
     
-    fig.update_yaxis(tickformat=',.0f', tickprefix='J$')
+    # ==========================================
+    # ACTIONABLE INSIGHTS
+    # ==========================================
+    st.markdown("---")
+    st.markdown("#### 💡 Your Action Plan")
+    
+    # Find best scenario that meets retirement goal
+    viable_scenarios = [s for s in scenarios if s['retirement_age'] and s['retirement_age'] <= target_retirement_age]
+    
+    if viable_scenarios:
+        best_scenario = min(viable_scenarios, key=lambda x: len(x['changes']))
+        
+        st.success(f"✅ Good news! You CAN retire by age {target_retirement_age} with the **{best_scenario['name']}**")
+        
+        st.markdown("**Recommended Actions:**")
+        for change in best_scenario['changes']:
+            st.markdown(f"✓ {change}")
+        
+        st.info(f"💰 This will save you an extra **J${best_scenario['monthly_savings'] - avg_monthly_savings:,.0f}/month**")
+    else:
+        st.warning(f"⚠️ Your current path won't reach your retirement goal by age {target_retirement_age}")
+        st.markdown("**Consider these options:**")
+        st.markdown(f"• Increase your retirement age to {scenarios[-1]['retirement_age']:.0f}")
+        st.markdown(f"• Reduce your retirement goal to J${scenarios[0]['monthly_savings'] * 12 * (target_retirement_age - current_age):,.0f}")
+        st.markdown(f"• Adopt the 🚀 Aggressive Path to retire earlier")
+    
+    # ==========================================
+    # SHARE YOUR TIMELINE
+    # ==========================================
+    st.markdown("---")
+    st.markdown("#### 📤 Share Your Progress")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("📸 Take Screenshot", use_container_width=True):
+            st.info("💡 Use your browser's screenshot tool to capture your timeline!")
+            st.caption("Tip: Share on social media to keep yourself accountable")
+    
+    with col2:
+        if st.button("📧 Email My Timeline", use_container_width=True):
+            from utils import send_email_alert
+            
+            email_body = f"""
+Dear {st.session_state.user['username']},
+
+Your Financial Time Machine Results:
+
+CURRENT SITUATION:
+• Monthly Income: J${avg_monthly_income:,.0f}
+• Monthly Spending: J${avg_monthly_spending:,.0f}
+• Monthly Savings: J${avg_monthly_savings:,.0f}
+
+YOUR THREE FUTURES:
+
+😟 CURRENT PATH:
+   - Monthly Savings: J${scenarios[0]['monthly_savings']:,.0f}
+   - 5-year savings: J${scenarios[0]['5_years']:,.0f}
+   - Retirement age: {scenarios[0]['retirement_age']:.0f if scenarios[0]['retirement_age'] else 'Never'}
+
+😊 OPTIMIZED PATH:
+   - Monthly Savings: J${scenarios[1]['monthly_savings']:,.0f}
+   - 5-year savings: J${scenarios[1]['5_years']:,.0f}
+   - Retirement age: {scenarios[1]['retirement_age']:.0f if scenarios[1]['retirement_age'] else 'Never'}
+
+🚀 AGGRESSIVE PATH:
+   - Monthly Savings: J${scenarios[2]['monthly_savings']:,.0f}
+   - 5-year savings: J${scenarios[2]['5_years']:,.0f}
+   - Retirement age: {scenarios[2]['retirement_age']:.0f if scenarios[2]['retirement_age'] else 'Never'}
+
+Keep building your future!
+
+- Finance Hub
+            """
+            
+            if send_email_alert(
+                st.session_state.user['email'],
+                "Your Financial Time Machine Results",
+                email_body
+            ):
+                st.success("✅ Email sent!")
+            else:
+                st.error("❌ Failed to send email")
+    
+    st.markdown("</div>", unsafe_allow_html=True)
+
+        )
+    )
     
     st.plotly_chart(fig, use_container_width=True)
     
