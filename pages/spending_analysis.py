@@ -30,8 +30,6 @@ import calendar
 from io import BytesIO
 
 
-# DIAGNOSTIC FUNCTION
-
 # HELPER FUNCTIONS
 def render_category_editor():
     """Render category keyword editor"""
@@ -661,26 +659,14 @@ def spending_analysis_page():
     """Main spending analysis page with flowing layout"""
 
     st.markdown("<div class='content-container'>", unsafe_allow_html=True)
-
-    # Check if diagnostic mode
-    if st.session_state.get('show_diagnostic', False):
-        file_diagnostic_page()
-        if st.button("← Back to Spending Analysis"):
-            st.session_state.show_diagnostic = False
-            st.rerun()
-        return  # Don't show the rest of the page
     
     # Header with back button
-    col1, col2, col3 = st.columns([3, 1, 1])
+    col1, col2 = st.columns([3, 1, 1])
     with col1:
         st.markdown("### 📊 Spending Analysis")
     with col2:
         if st.button("← Back to Dashboard", use_container_width=True):
             st.session_state.selected_feature = None
-            st.rerun()
-    with col3:
-        if st.button("🔍 Diagnostic", use_container_width=True):
-            st.session_state.show_diagnostic = True
             st.rerun()
     
     st.markdown("---")
