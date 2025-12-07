@@ -378,15 +378,28 @@ def render_analysis_section(data):
     # SMART MONTH/YEAR SELECTOR
     st.markdown("##### 📅 Select Analysis Period")
     
-    # Make sure we have the required columns
-    if 'Year' not in data.columns:
-        data['Year'] = pd.to_datetime(data['Date']).dt.year
-    if 'Month' not in data.columns:
-        data['Month'] = pd.to_datetime(data['Date']).dt.month
+    # Make sure we have the required columns - FIX ORDER
+    if 'Date' not in data.columns:
+        st.error("❌ No Date column found in data")
+        return
     
-    # CRITICAL FIX: Also ensure YearMonth exists
+    # Ensure Date is datetime
+    data['Date'] = pd.to_datetime(data['Date'], errors='coerce')
+    
+    # Create Year, Month, and YearMonth columns IN THIS ORDER
+    if 'Year' not in data.columns:
+        data['Year'] = data['Date'].dt.year
+    if 'Month' not in data.columns:
+        data['Month'] = data['Date'].dt.month
     if 'YearMonth' not in data.columns:
-        data['YearMonth'] = pd.to_datetime(data['Date']).dt.strftime('%Y-%m')
+        data['YearMonth'] = data['Date'].dt.strftime('%Y-%m')
+    
+    # Remove any rows with invalid dates
+    data = data.dropna(subset=['Date', 'Year', 'Month', 'YearMonth'])
+    
+    if data.empty:
+        st.error("❌ No valid data after date parsing")
+        return
     
     # Extract years from data
     available_years = sorted(data['Year'].unique())
@@ -394,6 +407,8 @@ def render_analysis_section(data):
     if not available_years:
         st.error("No valid years found in data")
         return
+    
+    st.success(f"✅ Loaded {len(data)} transactions from {len(data['YearMonth'].unique())} months")
     
     # Always create 3 columns for consistent layout
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -429,9 +444,6 @@ def render_analysis_section(data):
         st.warning(f"No data available for year {selected_year}")
         return
     
-    # DEBUG: Show what months we found
-    st.info(f"🔍 Found data for months: {available_months_nums}")
-    
     available_month_names = [calendar.month_name[m] for m in available_months_nums]
     
     # Determine selected months based on analysis type
@@ -440,7 +452,7 @@ def render_analysis_section(data):
             selected_month_names = st.multiselect(
                 "Select Months",
                 available_month_names,
-                default=available_month_names,  # CHANGED: Default to ALL available months
+                default=available_month_names,  # Default to ALL available months
                 key="selected_months_multi"
             )
         
@@ -469,18 +481,14 @@ def render_analysis_section(data):
         with col3:
             st.info(f"{len(selected_months)} months")
     
-    # DEBUG: Show what we're filtering for
-    st.success(f"✅ Analyzing months: {selected_month_names}")
-    
     # Filter data
     period_data = data[(data['Year'] == selected_year) & (data['Month'].isin(selected_months))]
     
     if period_data.empty:
         st.warning("No data available for selected period")
-        st.error(f"Tried to filter: Year={selected_year}, Months={selected_months}")
         return
     
-    st.success(f"📊 Found {len(period_data)} transactions")
+    st.success(f"📊 Analyzing {len(period_data)} transactions across {len(selected_months)} month(s)")
     
     # CASH FLOW CHARTS
     st.markdown("---")
@@ -504,7 +512,7 @@ def render_analysis_section(data):
         st.markdown("---")
         render_aggregate_analysis(data, selected_year, selected_months)
     
-    # EXPORT OPTIONS - STREAMLINED VERSION
+    # EXPORT OPTIONS
     st.markdown("---")
     st.markdown("#### 📥 Export Data")
     
@@ -555,7 +563,6 @@ def render_analysis_section(data):
                 
             except Exception as e:
                 st.error(f"❌ Error generating PDF: {e}")
-                
 
 def render_monthly_analysis(data, year_month, month_name):
     """Render detailed analysis for a specific month"""
