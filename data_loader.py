@@ -1,483 +1,259 @@
-# data_processing.py
+# data_loader.py
 """
-Data processing module - FIXED VERSION with better CSV handling
+Enhanced data loader with better debugging
 """
 
 import pandas as pd
-import pdfplumber
 from io import BytesIO
-import re
 import streamlit as st
-import json
-
-try:
-    from config import DEFAULT_CATEGORY_MAPPING
-except:
-    DEFAULT_CATEGORY_MAPPING = {
-        "Food": ["juici", "kfc", "restaurant", "burger"],
-        "Grocery": ["hi-lo", "supermarket", "progressive"],
-        "Utilities": ["jps", "nwc", "flow", "bill"],
-        "Transport": ["uber", "taxi", "gas"],
-        "Other": []
-    }
-
-try:
-    from database import get_user_preferences
-except:
-    def get_user_preferences(user_id):
-        return None
+import pdfplumber
+from functools import lru_cache
+from database import get_all_user_files
+from data_processing import (
+    process_csv,
+    process_pdf_ncb,
+    extract_from_pdf,
+    categorize_transactions
+)
 
 
-def parse_ncb_transaction_line(line, year):
-    """Parse NCB transaction line: DD/Mon DESCRIPTION AMOUNT BALANCE"""
-    pattern = r'(\d{2}/\w{3})\s+(.*?)\s+(-?[\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$'
-    match = re.search(pattern, line)
+@lru_cache(maxsize=1)
+def load_all_user_data(user_id):
+    """
+    Load and process all user files with improved detection
+    """
+    files = get_all_user_files(user_id)
     
-    if match:
+    if not files:
+        return pd.DataFrame()
+    
+    all_dataframes = []
+    
+    for file_info in files:
         try:
-            date_str = match.group(1)
-            description = match.group(2).strip()
-            amount_str = match.group(3).replace(',', '')
+            file_bytes = BytesIO(file_info['file_data'])
+            file_type = file_info['file_type'].lower()
+            filename = file_info.get('filename', 'unknown')
             
-            if not description or description.isspace():
-                return None
+            print(f"\n📂 Processing: {filename}")
             
-            full_date = f"{date_str}/{year}"
-            amount = float(amount_str)
+            # CSV Processing
+            if file_type == 'csv':
+                df = process_csv_with_fallback(file_bytes, filename)
             
-            # NCB format: negative = DEBIT, positive = CREDIT
-            if amount < 0:
-                category = 'Debit'
-                amount = abs(amount)
+            # PDF Processing
+            elif file_type == 'pdf':
+                df = process_pdf_enhanced(file_bytes, filename)
+            
             else:
-                category = 'Credit'
+                print(f"⚠️ Unsupported file type: {file_type}")
+                continue
             
-            if amount == 0 and description == '':
-                return None
-            
-            return {
-                'Date': full_date, 
-                'Description': description, 
-                'Amount': amount, 
-                'Category': category
-            }
+            # Validate and clean
+            if not df.empty:
+                df = validate_and_clean_dataframe(df, filename)
+                
+                if not df.empty:
+                    print(f"✅ Loaded {len(df)} transactions from {filename}")
+                    all_dataframes.append(df)
+                else:
+                    print(f"⚠️ No valid transactions after cleaning: {filename}")
+            else:
+                print(f"⚠️ Empty dataframe: {filename}")
+        
         except Exception as e:
-            return None
-    return None
-
-
-def process_pdf_ncb(file, debug=False):
-    """Process NCB PDF statement"""
-    try:
-        transactions = []
-        year = "2024"
-        
-        if isinstance(file, BytesIO):
-            pdf_file = file
-        else:
-            pdf_file = BytesIO(file.read()) if hasattr(file, 'read') else BytesIO(file)
-        
-        with pdfplumber.open(pdf_file) as pdf:
-            for page_num, page in enumerate(pdf.pages, 1):
-                text = page.extract_text()
-                if not text:
-                    continue
-                
-                # Extract year from first page
-                if page_num == 1:
-                    patterns = [
-                        r'P\.O\.,?\s*\d{2}-\d{2}-(\d{4})',
-                        r'(\d{4})-\d{2}-\d{2}',
-                        r'\b(20\d{2})\b'
-                    ]
-                    
-                    for pattern in patterns:
-                        year_match = re.search(pattern, text)
-                        if year_match:
-                            year = year_match.group(1)
-                            break
-                
-                for line in text.split('\n'):
-                    line = line.strip()
-                    
-                    if not line:
-                        continue
-                    
-                    # Skip header/footer lines
-                    skip_keywords = ['CONTINUED', 'END OF STATEMENT', 'JAMAICA', 'NATIONAL COMMERCIAL BANK',
-                                   'REGULAR SAVINGS', 'CURRENT ACCOUNT', 'SAVINGS ACCOUNT', 'STATEMENT',
-                                   'PAGE', 'MANDEVILLE', 'MANCHESTER', 'JMD', 'USD', 'P.O.',
-                                   'BALANCE', 'DATE', 'DESCRIPTION', 'WITHDRAWALS', 'DEPOSITS']
-                    
-                    if any(keyword in line.upper() for keyword in skip_keywords):
-                        continue
-                    
-                    # Skip customer info and addresses
-                    if re.match(r'^(MR|MRS|MS|DR|MISS)\s+[A-Z]', line):
-                        continue
-                    if re.search(r'^MA \d{2}-\d{2}', line):
-                        continue
-                    if re.search(r'^\d{9,}$', line):
-                        continue
-                    if line.isupper() and not any(c.isdigit() for c in line) and len(line.split()) <= 3:
-                        continue
-                    
-                    # Try to parse as transaction
-                    parsed = parse_ncb_transaction_line(line, year)
-                    if parsed and parsed['Amount'] > 0 and parsed['Description']:
-                        transactions.append(parsed)
-        
-        if not transactions:
-            return pd.DataFrame()
-        
-        df = pd.DataFrame(transactions)
-        df['Date'] = pd.to_datetime(df['Date'], format='%d/%b/%Y', errors='coerce')
-        df = df.dropna(subset=['Date'])
-        
-        # Remove duplicates
-        df = df.drop_duplicates(subset=['Date', 'Description', 'Amount'], keep='first')
-        
-        return df
-        
-    except Exception as e:
-        if debug:
-            st.error(f"NCB PDF Processing Error: {str(e)}")
+            print(f"❌ Error processing {filename}: {e}")
+            import traceback
+            traceback.print_exc()
+            continue
+    
+    if not all_dataframes:
         return pd.DataFrame()
+    
+    # Combine all data
+    result = pd.concat(all_dataframes, ignore_index=True)
+    
+    # Add date-based columns
+    if 'Date' in result.columns:
+        result['Date'] = pd.to_datetime(result['Date'], errors='coerce')
+        result = result.dropna(subset=['Date'])
+        result['Year'] = result['Date'].dt.year
+        result['Month'] = result['Date'].dt.month
+        result['Month-Name'] = result['Date'].dt.month_name()
+        result['Month-Year'] = result['Date'].dt.strftime('%B %Y')
+        result['YearMonth'] = result['Date'].dt.strftime('%Y-%m')
+    
+    # Remove duplicates across all files
+    result = result.drop_duplicates(subset=['Date', 'Description', 'Amount'], keep='first')
+    
+    print(f"\n✅ FINAL: {len(result)} total transactions loaded")
+    
+    return result
 
 
-def process_csv(file_bytes, encoding='utf-8'):
+def process_csv_with_fallback(file_bytes, filename):
     """
-    Process CSV file with proper column mapping and cleaning
-    FIXED: Now handles JMMB format correctly
+    Process CSV with multiple encoding attempts
     """
-    try:
-        # Read CSV with specified encoding
-        file_bytes.seek(0)
-        df = pd.read_csv(file_bytes, encoding=encoding)
-        
-        if df.empty:
-            print("   CSV is empty after reading")
-            return pd.DataFrame()
-        
-        print(f"   Read {len(df)} rows")
-        print(f"   Original columns: {list(df.columns)}")
-        
-        # Clean column names - remove quotes, extra spaces
-        df.columns = (df.columns.str.strip()
-                     .str.strip('"').str.strip("'")
-                     .str.lower()
-                     .str.replace(' ', '_'))
-        
-        print(f"   Cleaned columns: {list(df.columns)}")
-        
-        # Standardize column names
-        df = standardize_dataframe_columns(df)
-        
-        # Validate required columns exist
-        required = ['Date', 'Description', 'Amount']
-        missing = [col for col in required if col not in df.columns]
-        if missing:
-            print(f"   ERROR: Missing required columns: {missing}")
-            print(f"   Available columns: {list(df.columns)}")
-            return pd.DataFrame()
-        
-        print(f"   After standardization: {list(df.columns)}")
-        print(f"   Sample data:")
-        print(df[['Date', 'Description', 'Amount', 'Category']].head(3))
-        
-        # Categorize transactions
-        df = categorize_transactions(df)
-        
-        print(f"   After categorization:")
-        print(f"   - Total rows: {len(df)}")
-        print(f"   - Has Spending Category: {'Spending Category' in df.columns}")
-        if 'Spending Category' in df.columns:
-            print(f"   - Categories: {df['Spending Category'].unique()}")
-        
-        return df
-        
-    except Exception as e:
-        print(f"   CSV processing error: {e}")
-        import traceback
-        traceback.print_exc()
-        return pd.DataFrame()
-
-
-def extract_from_pdf(pdf_file):
-    """Main PDF extraction function"""
-    try:
-        with pdfplumber.open(pdf_file) as pdf:
-            first_page_text = pdf.pages[0].extract_text() if pdf.pages else ""
-            
-            if any(keyword in first_page_text.upper() for keyword in ['NCB', 'NATIONAL COMMERCIAL BANK', 'JAMAICA']):
-                pdf_file.seek(0)
-                return process_pdf_ncb(pdf_file)
-        
-        pdf_file.seek(0)
-        
-        data = []
-        with pdfplumber.open(pdf_file) as pdf:
-            for page in pdf.pages:
-                text = page.extract_text()
-                if not text:
-                    continue
-                
-                lines = text.split('\n')
-                for line in lines:
-                    parts = line.split()
-                    
-                    if len(parts) >= 3:
-                        try:
-                            date_str = parts[0]
-                            amount = None
-                            trans_type = None
-                            
-                            for i in range(len(parts)-1, -1, -1):
-                                part = parts[i]
-                                if part.upper() in ['CR', 'DR', 'CREDIT', 'DEBIT']:
-                                    trans_type = part.upper()
-                                    continue
-                                
-                                cleaned = part.replace('J$', '').replace('$', '').replace(',', '').replace('-', '').strip()
-                                try:
-                                    amount = float(cleaned)
-                                    amount_index = i
-                                    break
-                                except:
-                                    continue
-                            
-                            if amount is not None:
-                                description = ' '.join(parts[1:amount_index])
-                                
-                                if trans_type:
-                                    category = 'Credit' if trans_type in ['CR', 'CREDIT'] else 'Debit'
-                                else:
-                                    category = 'Debit'
-                                
-                                data.append({
-                                    'Date': date_str,
-                                    'Description': description,
-                                    'Amount': abs(amount),
-                                    'Category': category
-                                })
-                        except:
-                            continue
-        
-        if data:
-            return pd.DataFrame(data)
-        else:
-            return pd.DataFrame()
-            
-    except Exception as e:
-        st.error(f"PDF extraction error: {e}")
-        return pd.DataFrame()
-
-
-def standardize_dataframe_columns(df):
-    """
-    Standardize column names to: Date, Description, Amount, Category
-    FIXED: Better handling of TRANS_TYPE vs existing Category
-    """
-    df = df.copy()
+    encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
     
-    print(f"   [standardize] Input columns: {list(df.columns)}")
-    
-    # Check if we already have a valid Category column
-    has_valid_category = False
-    if 'Category' in df.columns:
-        unique_cats = df['Category'].dropna().unique()
-        print(f"   [standardize] Found Category column with values: {unique_cats}")
-        if any(str(cat).lower() in ['credit', 'debit'] for cat in unique_cats):
-            has_valid_category = True
-            original_category = df['Category'].copy()
-            print(f"   [standardize] Valid Category column exists - will preserve it")
-    
-    # Column mappings for standardization
-    column_mappings = {
-        'description': 'Description',
-        'desc': 'Description',
-        'transaction_description': 'Description',
-        'details': 'Description',
-        'narrative': 'Description',
-        'particulars': 'Description',
-        
-        'total_amount': 'Amount',  # Map total_amount FIRST (priority)
-        'amount': 'Amount',
-        'transaction_amount': 'Amount',
-        'value': 'Amount',
-        
-        'date': 'Date',
-        'trans_date': 'Date',
-        'transaction_date': 'Date',
-        'posting_date': 'Date',
-        'value_date': 'Date',
-    }
-    
-    # Only map trans_type if we don't have valid Category
-    if not has_valid_category:
-        column_mappings['trans_type'] = 'Category'
-        column_mappings['transaction_type'] = 'Category'
-        column_mappings['type'] = 'Category'
-    
-    # Apply mappings
-    df = df.rename(columns=column_mappings)
-    
-    print(f"   [standardize] After rename: {list(df.columns)}")
-    
-    # CRITICAL: Drop duplicate columns and extra JMMB columns
-    # Keep only the first occurrence of each column
-    df = df.loc[:, ~df.columns.duplicated()]
-    
-    # Drop JMMB-specific extra columns we don't need
-    columns_to_drop = ['commission', 'gct', 'total_amount']
-    df = df.drop(columns=[col for col in columns_to_drop if col in df.columns], errors='ignore')
-    
-    print(f"   [standardize] After dropping duplicates/extras: {list(df.columns)}")
-    
-    # Restore valid Category if it existed
-    if has_valid_category:
-        df['Category'] = original_category
-        print(f"   [standardize] Restored original Category column")
-    
-    # Ensure required columns exist
-    if 'Description' not in df.columns:
-        if len(df.columns) >= 2:
-            df['Description'] = df.iloc[:, 1].astype(str)
-        else:
-            df['Description'] = 'Unknown'
-    
-    if 'Date' not in df.columns:
-        if len(df.columns) >= 1:
-            df['Date'] = pd.to_datetime(df.iloc[:, 0], errors='coerce')
-        else:
-            df['Date'] = pd.Timestamp.now()
-    
-    # Handle Amount column
-    if 'Amount' not in df.columns:
-        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-        if numeric_cols:
-            df['Amount'] = df[numeric_cols[0]]
-        else:
-            df['Amount'] = 0.0
-    
-    # Clean Amount - THIS IS CRITICAL
-    def clean_amount(value):
+    for encoding in encodings:
         try:
-            if pd.isna(value):
-                return 0.0
+            print(f"   Trying encoding: {encoding}")
+            file_bytes.seek(0)
+            df = process_csv(file_bytes, encoding=encoding)
             
-            if isinstance(value, (int, float)):
-                return abs(float(value))  # Make absolute immediately
-            
-            value_str = str(value).strip()
-            # Remove currency symbols
-            value_str = value_str.replace('J$', '').replace('$', '').replace('JMD', '')
-            value_str = value_str.replace(' ', '').replace('\xa0', '')
-            value_str = value_str.replace(',', '')
-            
-            # Handle parentheses (negative)
-            if '(' in value_str and ')' in value_str:
-                value_str = value_str.replace('(', '').replace(')', '')
-            
-            # Remove any remaining non-numeric except decimal point and minus
-            value_str = ''.join(c for c in value_str if c.isdigit() or c in '.-')
-            
-            if not value_str or value_str in ['', '-', '+', '.']:
-                return 0.0
-            
-            return abs(float(value_str))  # Return absolute value
-            
-        except (ValueError, AttributeError) as e:
-            print(f"   [clean_amount] Error cleaning '{value}': {e}")
-            return 0.0
+            if not df.empty:
+                print(f"   ✅ Successfully processed with {encoding}")
+                return df
+        except Exception as e:
+            print(f"   ❌ Failed with {encoding}: {e}")
+            continue
     
-    df['Amount'] = df['Amount'].apply(clean_amount)
-    
-    print(f"   [standardize] Amount stats after cleaning:")
-    print(f"   - Min: {df['Amount'].min()}")
-    print(f"   - Max: {df['Amount'].max()}")
-    print(f"   - Count > 0: {(df['Amount'] > 0).sum()}")
-    
-    # Handle Category column
-    if 'Category' not in df.columns:
-        print(f"   [standardize] No Category column - checking for trans_type")
-        # Check if we have trans_type that wasn't mapped
-        if 'trans_type' in df.columns:
-            print(f"   [standardize] Found trans_type column")
-            df['Category'] = df['trans_type'].astype(str).str.lower().str.strip()
-            category_map = {
-                'deposit': 'Credit',
-                'withdrawal': 'Debit',
-                'credit': 'Credit',
-                'debit': 'Debit'
-            }
-            df['Category'] = df['Category'].map(category_map).fillna('Debit')
-            print(f"   [standardize] Mapped trans_type to Category: {df['Category'].unique()}")
+    print(f"   ❌ All encodings failed")
+    return pd.DataFrame()
+
+
+def process_pdf_enhanced(file_bytes, filename):
+    """
+    Enhanced PDF processing with better NCB detection
+    """
+    try:
+        file_bytes.seek(0)
+        
+        # Detect if it's NCB
+        is_ncb = detect_ncb_pdf(file_bytes)
+        
+        file_bytes.seek(0)
+        
+        if is_ncb:
+            print(f"   ✅ Detected as NCB PDF")
+            df = process_pdf_ncb(file_bytes, debug=False)
         else:
-            print(f"   [standardize] No trans_type found - defaulting to Debit")
-            df['Category'] = 'Debit'
-    else:
-        print(f"   [standardize] Category column exists: {df['Category'].unique()}")
-    
-    # Clean up Description
-    df['Description'] = df['Description'].fillna('Unknown')
-    df['Description'] = df['Description'].astype(str).str.strip()
-    
-    # Remove any lingering lowercase 'category' column
-    if 'category' in df.columns and 'Category' in df.columns:
-        df = df.drop(columns=['category'])
-    
-    print(f"   [standardize] Final columns: {list(df.columns)}")
-    print(f"   [standardize] Sample output:")
-    if len(df) > 0:
-        print(df[['Date', 'Description', 'Amount', 'Category']].head(3))
-    
-    return df
+            print(f"   ℹ️ Using generic PDF parser")
+            df = extract_from_pdf(file_bytes)
+        
+        return df
+        
+    except Exception as e:
+        print(f"   ❌ PDF processing error: {e}")
+        return pd.DataFrame()
 
 
-def categorize_transactions(df):
-    """Categorize transactions based on keywords"""
+def detect_ncb_pdf(file_bytes):
+    """
+    Robust NCB PDF detection - uses bank-specific identifiers only
+    """
+    try:
+        file_bytes.seek(0)
+        
+        with pdfplumber.open(file_bytes) as pdf:
+            if not pdf.pages:
+                return False
+            
+            first_page_text = pdf.pages[0].extract_text().upper()
+            
+            # Check for NCB-specific identifiers (not customer locations)
+            ncb_indicators = [
+                'NATIONAL COMMERCIAL BANK',
+                'NCB JAMAICA',
+                'WWW.JNCB.COM',
+                'REGULAR SAVINGS ACCOUNT',
+                'CURRENT ACCOUNT'
+            ]
+            
+            # Need at least 2 indicators
+            indicator_count = sum(1 for indicator in ncb_indicators if indicator in first_page_text)
+            
+            if indicator_count >= 2:
+                print(f"   NCB detected: {indicator_count} indicators found")
+                return True
+            
+            # Check for NCB-specific transaction pattern
+            # NCB uses: DD/Mon DESCRIPTION AMOUNT BALANCE (all on same line)
+            import re
+            ncb_pattern = r'\d{2}/[A-Z][a-z]{2}\s+.+?\s+-?[\d,]+\.\d{2}\s+[\d,]+\.\d{2}'
+            
+            if re.search(ncb_pattern, first_page_text):
+                print(f"   NCB detected: transaction pattern match")
+                return True
+            
+            print(f"   Not detected as NCB")
+            return False
+            
+    except Exception as e:
+        print(f"   Error detecting NCB: {e}")
+        return False
+
+
+def validate_and_clean_dataframe(df, filename):
+    """
+    Validate and clean dataframe with detailed logging
+    """
     if df.empty:
         return df
     
-    if 'Description' not in df.columns:
-        df['Spending Category'] = 'Other'
+    print(f"   [validate] Starting with {len(df)} rows")
+    print(f"   [validate] Columns: {list(df.columns)}")
+    
+    required_columns = ['Date', 'Description', 'Amount']
+    
+    # Check required columns exist
+    missing = [col for col in required_columns if col not in df.columns]
+    if missing:
+        print(f"   ❌ Missing columns: {missing}")
+        return pd.DataFrame()
+    
+    # Convert Date
+    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+    
+    # Remove invalid dates
+    before_date = len(df)
+    df = df.dropna(subset=['Date'])
+    if len(df) < before_date:
+        print(f"   🧹 Removed {before_date - len(df)} rows with invalid dates")
+    
+    # CRITICAL: Check amounts BEFORE filtering
+    print(f"   [validate] Amount column type: {df['Amount'].dtype}")
+    print(f"   [validate] Amount sample: {df['Amount'].head().tolist()}")
+    print(f"   [validate] Amount stats: min={df['Amount'].min()}, max={df['Amount'].max()}")
+    print(f"   [validate] Rows with Amount > 0: {(df['Amount'] > 0).sum()}")
+    
+    # Remove invalid amounts (zero or negative)
+    before_amount = len(df)
+    df = df[df['Amount'] > 0]
+    if len(df) < before_amount:
+        print(f"   🧹 Removed {before_amount - len(df)} rows with zero/negative amounts")
+    
+    if df.empty:
+        print(f"   ❌ No rows remaining after amount filter!")
         return df
     
-    category_keywords = DEFAULT_CATEGORY_MAPPING.copy()
+    # Remove invalid descriptions
+    before_desc = len(df)
+    df = df[df['Description'].notna()]
+    df = df[df['Description'].astype(str).str.strip() != '']
+    df = df[df['Description'].astype(str) != 'nan']
+    df = df[df['Description'].astype(str).str.len() > 2]
+    if len(df) < before_desc:
+        print(f"   🧹 Removed {before_desc - len(df)} rows with invalid descriptions")
     
-    try:
-        if 'user' in st.session_state and st.session_state.user:
-            prefs = get_user_preferences(st.session_state.user['id'])
-            if prefs and prefs.get('category_keywords'):
-                user_keywords = json.loads(prefs['category_keywords'])
-                for category, keywords in user_keywords.items():
-                    if keywords:
-                        category_keywords[category] = keywords
-    except Exception as e:
-        pass
+    # Ensure Category exists
+    if 'Category' not in df.columns:
+        print(f"   ⚠️ No Category column - adding default")
+        df['Category'] = 'Debit'
     
-    df['Spending Category'] = 'Other'
+    # Ensure Spending Category exists
+    if 'Spending Category' not in df.columns:
+        print(f"   ⚠️ No Spending Category - categorizing")
+        df = categorize_transactions(df)
     
-    for idx, row in df.iterrows():
-        description = str(row['Description']).lower()
-        
-        if row.get('Category') == 'Credit':
-            df.at[idx, 'Spending Category'] = 'Income'
-            continue
-        
-        categorized = False
-        for category, keywords in category_keywords.items():
-            if category == 'Other':
-                continue
-            
-            for keyword in keywords:
-                if keyword.lower() in description:
-                    df.at[idx, 'Spending Category'] = category
-                    categorized = True
-                    break
-            
-            if categorized:
-                break
+    print(f"   [validate] Final: {len(df)} rows")
     
     return df
+
+
+def clear_data_cache():
+    """Clear the cached data"""
+    load_all_user_data.cache_clear()
+    print("🔄 Data cache cleared")
