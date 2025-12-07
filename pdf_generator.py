@@ -200,6 +200,8 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
         # ==========================================
         # MONTHLY TREND CHART
         # ==========================================
+        # Add a new page for the chart to avoid overlap
+        pdf.add_page()
         pdf.section_title('Monthly Trends')
         
         # Create chart with explicit close to free memory
@@ -255,20 +257,18 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
             if os.path.exists(trend_chart_path) and os.path.getsize(trend_chart_path) > 0:
                 current_y = pdf.get_y()
                 pdf.image(trend_chart_path, x=15, y=current_y, w=180)
-                pdf.ln(100)  # Move down to avoid overlap with next section
             else:
                 pdf.set_font('Arial', 'I', 10)
                 pdf.cell(0, 10, '[Monthly trends chart - data visualization]', 0, 1, 'C')
-                pdf.ln(10)
         except Exception as e:
             print(f"Chart generation error: {e}")
             pdf.set_font('Arial', 'I', 10)
             pdf.cell(0, 10, '[Monthly trends chart - data visualization]', 0, 1, 'C')
-            pdf.ln(10)
         
         # ==========================================
         # AGGREGATE SPENDING DISTRIBUTION
         # ==========================================
+        # Add a new page for the pie chart
         pdf.add_page()
         pdf.section_title('Spending Distribution')
         
@@ -289,7 +289,10 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
             aggregate_summary = aggregate_summary.sort_values('Amount', ascending=False)
             
             # Create pie chart
-            fig, ax = plt.subplots(figsize=(9, 6), facecolor='white')
+            plt.clf()
+            plt.close('all')
+            
+            fig, ax = plt.subplots(figsize=(9, 6), facecolor='white', dpi=100)
             
             colors = ['#667eea', '#764ba2', '#f093fb', '#4facfe', 
                      '#43e97b', '#fa709a', '#fee140', '#30cfd0']
@@ -333,17 +336,22 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
             plt.tight_layout()
             
             pie_chart_path = os.path.join(temp_dir, 'pie_chart.png')
-            plt.savefig(pie_chart_path, bbox_inches='tight', dpi=150, facecolor='white')
-            plt.close()
             
-            # Add chart to PDF
-            if os.path.exists(pie_chart_path):
-                current_y = pdf.get_y()
-                pdf.image(pie_chart_path, x=25, y=current_y, w=160)
-                pdf.ln(105)  # Move down with extra spacing
-            else:
-                pdf.cell(0, 10, '[Chart could not be generated]', 0, 1, 'C')
-                pdf.ln(10)
+            try:
+                fig.savefig(pie_chart_path, format='png', bbox_inches='tight', dpi=150, facecolor='white')
+                plt.close(fig)
+                
+                # Verify file was created and has content
+                if os.path.exists(pie_chart_path) and os.path.getsize(pie_chart_path) > 0:
+                    current_y = pdf.get_y()
+                    pdf.image(pie_chart_path, x=25, y=current_y, w=160)
+                else:
+                    pdf.set_font('Arial', 'I', 10)
+                    pdf.cell(0, 10, '[Spending distribution chart - data visualization]', 0, 1, 'C')
+            except Exception as e:
+                print(f"Pie chart generation error: {e}")
+                pdf.set_font('Arial', 'I', 10)
+                pdf.cell(0, 10, '[Spending distribution chart - data visualization]', 0, 1, 'C')
             
             # ==========================================
             # SPENDING BREAKDOWN TABLE
