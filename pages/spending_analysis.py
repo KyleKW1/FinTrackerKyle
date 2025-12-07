@@ -161,23 +161,100 @@ def spending_analysis_page():
     render_category_editor()
     
     # DATA VISUALIZATION SECTION
-    st.markdown("---")
-    st.markdown("#### 📈 Spending Visualizations")
+# Replace the section in spending_analysis.py starting at "# DATA VISUALIZATION SECTION"
+
+# DATA VISUALIZATION SECTION
+st.markdown("---")
+st.markdown("#### 📈 Spending Visualizations")
+
+# Load data with detailed debugging
+with st.spinner("Loading your data..."):
+    data = load_all_user_data(st.session_state.user['id'])
     
-    # Load data
-    with st.spinner("Loading your data..."):
-        data = load_all_user_data(st.session_state.user['id'])
+    # DETAILED DEBUGGING
+    st.write("### 🔍 DEBUG INFO")
+    st.write(f"**Data loaded:** {not data.empty}")
+    
+    if not data.empty:
+        st.write(f"**Total rows:** {len(data)}")
+        st.write(f"**Columns:** {list(data.columns)}")
         
-        if data.empty:
-            st.warning("📊 No data available yet. Upload files above to see your spending analysis.")
+        # Check for required columns
+        required_cols = ['Date', 'Description', 'Amount', 'Spending Category']
+        missing_cols = [col for col in required_cols if col not in data.columns]
+        
+        if missing_cols:
+            st.error(f"❌ Missing columns: {missing_cols}")
         else:
-            # ✅ ADD YEAR AND MONTH COLUMNS (like Test3.py does)
-            if 'Year' not in data.columns and 'Date' in data.columns:
-                data['Year'] = pd.to_datetime(data['Date']).dt.year
-                if 'Month' not in data.columns and 'Date' in data.columns:
-                    data['Month'] = pd.to_datetime(data['Date']).dt.month
-                    #st.success(f"✅ Loaded {len(data)} transactions from {len(data['YearMonth'].unique())} months")
-                    render_analysis_section(data)
+            st.success(f"✅ All required columns present")
+        
+        # Check Date column
+        if 'Date' in data.columns:
+            st.write(f"**Date column type:** {data['Date'].dtype}")
+            st.write(f"**Sample dates:** {data['Date'].head(3).tolist()}")
+            
+            # Check for null dates
+            null_dates = data['Date'].isna().sum()
+            st.write(f"**Null dates:** {null_dates}")
+        
+        # Check if YearMonth exists
+        if 'YearMonth' in data.columns:
+            st.write(f"**Available months:** {sorted(data['YearMonth'].unique())}")
+        else:
+            st.warning("⚠️ YearMonth column missing - will create it")
+        
+        # Show sample data
+        with st.expander("📋 View Sample Data (first 5 rows)"):
+            st.dataframe(data.head())
+        
+        st.markdown("---")
+        
+        # NOW try to render
+        try:
+            # Ensure Date is datetime
+            if 'Date' in data.columns:
+                data['Date'] = pd.to_datetime(data['Date'], errors='coerce')
+                data = data.dropna(subset=['Date'])
+                
+                st.write(f"**After date parsing:** {len(data)} rows remain")
+                
+                # Create required columns
+                if 'Year' not in data.columns:
+                    data['Year'] = data['Date'].dt.year
+                if 'Month' not in data.columns:
+                    data['Month'] = data['Date'].dt.month
+                if 'YearMonth' not in data.columns:
+                    data['YearMonth'] = data['Date'].dt.strftime('%Y-%m')
+                
+                st.write(f"**Years found:** {sorted(data['Year'].unique())}")
+                st.write(f"**Months (YearMonth) found:** {sorted(data['YearMonth'].unique())}")
+                
+                # Check if Spending Category exists
+                if 'Spending Category' not in data.columns:
+                    st.error("❌ 'Spending Category' column is missing!")
+                    st.info("Attempting to categorize transactions...")
+                    from data_processing import categorize_transactions
+                    data = categorize_transactions(data)
+                    
+                    if 'Spending Category' in data.columns:
+                        st.success("✅ Categorization successful!")
+                    else:
+                        st.error("❌ Categorization failed!")
+                
+                st.success("✅ Data prepared successfully! Rendering visualizations...")
+                st.markdown("---")
+                
+                # Call the actual render function
+                render_analysis_section(data)
+            else:
+                st.error("❌ No Date column found in data")
+                
+        except Exception as e:
+            st.error(f"❌ Error during rendering: {e}")
+            import traceback
+            st.code(traceback.format_exc())
+    else:
+        st.warning("📊 No data available yet. Upload files above to see your spending analysis.")
     
     st.markdown("</div>", unsafe_allow_html=True)
 
