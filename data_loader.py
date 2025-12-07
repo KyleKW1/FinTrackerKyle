@@ -1,201 +1,266 @@
-# data_loader.py - FIXED VERSION
+# data_loader.py
 """
-Data loading module - loads and combines user files
-Optimized for performance with caching
+Enhanced data loader with better NCB detection and CSV processing
 """
 
 import pandas as pd
 from io import BytesIO
 import streamlit as st
+import pdfplumber
+from functools import lru_cache
 from database import get_all_user_files
 from data_processing import (
-    process_csv, 
-    process_pdf_ncb, 
+    process_csv,
+    process_pdf_ncb,
     extract_from_pdf,
     standardize_dataframe_columns,
     categorize_transactions
 )
-import pdfplumber
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@lru_cache(maxsize=1)
 def load_all_user_data(user_id):
     """
-    Load all user data with caching
-    Cache is cleared every 5 minutes or when explicitly cleared
+    Load and process all user files with improved detection
     """
     files = get_all_user_files(user_id)
     
     if not files:
         return pd.DataFrame()
     
-    all_data = []
-    processing_log = []  # Track what happens to each file
+    all_dataframes = []
     
     for file_info in files:
         try:
             file_bytes = BytesIO(file_info['file_data'])
-            filename = file_info.get('filename', '')
             file_type = file_info['file_type'].lower()
+            filename = file_info.get('filename', 'unknown')
             
-            processing_log.append(f"Processing: {filename}")
+            print(f"\n📂 Processing: {filename}")
             
-            # Process based on file type
-            if file_type == 'pdf':
-                df = process_pdf_file(file_bytes, filename)
-            elif file_type == 'csv':
-                df = process_csv(file_bytes)
+            # CSV Processing
+            if file_type == 'csv':
+                df = process_csv_enhanced(file_bytes, filename)
+            
+            # PDF Processing with better NCB detection
+            elif file_type == 'pdf':
+                df = process_pdf_enhanced(file_bytes, filename)
+            
             else:
-                processing_log.append(f"  ❌ Skipped (unknown type): {filename}")
+                print(f"⚠️ Unsupported file type: {file_type}")
                 continue
             
             # Validate and clean
             if not df.empty:
-                processing_log.append(f"  ✅ Initial rows: {len(df)}")
-                
-                df = standardize_dataframe_columns(df)
-                processing_log.append(f"  ✅ After standardize: {len(df)}")
-                
-                # CRITICAL FIX: Ensure categorization happens here
-                if 'Spending Category' not in df.columns:
-                    df = categorize_transactions(df)
-                
-                df = clean_dataframe(df)
-                processing_log.append(f"  ✅ After clean: {len(df)}")
+                df = validate_and_clean_dataframe(df, filename)
                 
                 if not df.empty:
-                    # Check for dates
-                    if 'Date' in df.columns:
-                        date_range = f"{df['Date'].min()} to {df['Date'].max()}"
-                        processing_log.append(f"  📅 Date range: {date_range}")
-                    
-                    all_data.append(df)
-                    processing_log.append(f"  ✅ Added to dataset")
+                    print(f"✅ Loaded {len(df)} transactions from {filename}")
+                    all_dataframes.append(df)
                 else:
-                    processing_log.append(f"  ❌ Empty after cleaning: {filename}")
+                    print(f"⚠️ No valid transactions after cleaning: {filename}")
             else:
-                processing_log.append(f"  ❌ No data extracted: {filename}")
-                    
+                print(f"⚠️ Empty dataframe: {filename}")
+        
         except Exception as e:
-            processing_log.append(f"  ❌ ERROR: {filename} - {str(e)}")
-            print(f"Error processing file {filename}: {e}")
+            print(f"❌ Error processing {filename}: {e}")
             continue
     
-    # Print processing log for debugging
-    print("\n=== FILE PROCESSING LOG ===")
-    for log_entry in processing_log:
-        print(log_entry)
-    print("===========================\n")
-    
-    if not all_data:
+    if not all_dataframes:
         return pd.DataFrame()
     
     # Combine all data
-    result = pd.concat(all_data, ignore_index=True)
-    print(f"Total combined rows: {len(result)}")
+    result = pd.concat(all_dataframes, ignore_index=True)
     
-    # Add date-based columns BEFORE any filtering
+    # Add date-based columns
     if 'Date' in result.columns:
         result['Date'] = pd.to_datetime(result['Date'], errors='coerce')
-        
-        # Count how many dates failed to parse
-        null_dates = result['Date'].isna().sum()
-        if null_dates > 0:
-            print(f"⚠️ WARNING: {null_dates} rows have invalid dates and will be removed")
-        
         result = result.dropna(subset=['Date'])
-        print(f"After removing invalid dates: {len(result)} rows")
-        
-        # Add time-based columns
+        result['Year'] = result['Date'].dt.year
+        result['Month'] = result['Date'].dt.month
         result['Month-Name'] = result['Date'].dt.month_name()
         result['Month-Year'] = result['Date'].dt.strftime('%B %Y')
         result['YearMonth'] = result['Date'].dt.strftime('%Y-%m')
-        result['Year'] = result['Date'].dt.year
-        result['Month'] = result['Date'].dt.month
-        
-        # Show what months we have
-        unique_months = sorted(result['YearMonth'].unique())
-        print(f"📅 Months in dataset: {unique_months}")
-        
-        # Show transaction count per month
-        month_counts = result.groupby('YearMonth').size()
-        print("\n📊 Transactions per month:")
-        for month, count in month_counts.items():
-            print(f"  {month}: {count} transactions")
     
-    # Remove duplicate columns
-    result = result.loc[:, ~result.columns.duplicated()]
+    # Remove duplicates across all files
+    result = result.drop_duplicates(subset=['Date', 'Description', 'Amount'], keep='first')
     
-    # CRITICAL FIX: Final check for Spending Category
-    if 'Spending Category' not in result.columns:
-        result = categorize_transactions(result)
-    
-    # Final cleanup - BE CAREFUL NOT TO REMOVE TOO MUCH
-    if 'Amount' in result.columns:
-        zero_amount = (result['Amount'] == 0).sum()
-        if zero_amount > 0:
-            print(f"⚠️ Removing {zero_amount} rows with zero amount")
-        result = result[result['Amount'] > 0]
-    
-    if 'Description' in result.columns:
-        empty_desc = result['Description'].isna().sum()
-        if empty_desc > 0:
-            print(f"⚠️ Removing {empty_desc} rows with empty description")
-        result = result[result['Description'].notna()]
-    
-    print(f"\n✅ FINAL DATASET: {len(result)} rows across {len(result['YearMonth'].unique())} months")
+    print(f"\n✅ FINAL: {len(result)} total transactions loaded")
     
     return result
 
 
-def process_pdf_file(file_bytes, filename):
-    """Process PDF file - detects type and routes to correct processor"""
-    # Check if it's NCB by filename
-    if 'ncb' in filename.lower():
-        return process_pdf_ncb(file_bytes)
-    
-    # Check by content
+def process_csv_enhanced(file_bytes, filename):
+    """
+    Enhanced CSV processing with better column detection
+    """
     try:
         file_bytes.seek(0)
-        with pdfplumber.open(file_bytes) as pdf:
-            first_page_text = pdf.pages[0].extract_text().lower()
-            if 'ncb' in first_page_text or 'national commercial bank' in first_page_text:
+        
+        # Try different encodings
+        encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
+        df = None
+        
+        for encoding in encodings:
+            try:
                 file_bytes.seek(0)
-                return process_pdf_ncb(file_bytes)
+                df = pd.read_csv(file_bytes, encoding=encoding)
+                print(f"   Successfully read CSV with {encoding} encoding")
+                break
+            except:
+                continue
+        
+        if df is None or df.empty:
+            print(f"   ❌ Could not read CSV")
+            return pd.DataFrame()
+        
+        print(f"   Original columns: {list(df.columns)}")
+        print(f"   Rows: {len(df)}")
+        
+        # Clean column names (remove quotes, extra spaces)
+        df.columns = df.columns.str.strip().str.strip('"').str.strip("'")
+        
+        # Standardize columns
+        df = standardize_dataframe_columns(df)
+        
+        # Validate required columns
+        if 'Date' not in df.columns or 'Amount' not in df.columns or 'Description' not in df.columns:
+            print(f"   ❌ Missing required columns after standardization")
+            print(f"   Available: {list(df.columns)}")
+            return pd.DataFrame()
+        
+        # Categorize
+        df = categorize_transactions(df)
+        
+        return df
+        
+    except Exception as e:
+        print(f"   ❌ CSV processing error: {e}")
+        return pd.DataFrame()
+
+
+def process_pdf_enhanced(file_bytes, filename):
+    """
+    Enhanced PDF processing with better NCB detection
+    """
+    try:
+        file_bytes.seek(0)
+        
+        # Detect if it's NCB by checking content
+        is_ncb = detect_ncb_pdf(file_bytes)
         
         file_bytes.seek(0)
-        return extract_from_pdf(file_bytes)
-    except:
+        
+        if is_ncb:
+            print(f"   ✅ Detected as NCB PDF")
+            df = process_pdf_ncb(file_bytes, debug=False)
+        else:
+            print(f"   ℹ️ Using generic PDF parser")
+            df = extract_from_pdf(file_bytes)
+        
+        return df
+        
+    except Exception as e:
+        print(f"   ❌ PDF processing error: {e}")
+        return pd.DataFrame()
+
+
+def detect_ncb_pdf(file_bytes):
+    """
+    Robust NCB PDF detection - checks multiple indicators
+    """
+    try:
         file_bytes.seek(0)
-        return extract_from_pdf(file_bytes)
+        
+        with pdfplumber.open(file_bytes) as pdf:
+            if not pdf.pages:
+                return False
+            
+            # Check first page
+            first_page_text = pdf.pages[0].extract_text().upper()
+            
+            # Check for NCB identifiers
+            ncb_indicators = [
+                'NATIONAL COMMERCIAL BANK',
+                'NCB',
+                'PRATVILLE P.O.',
+                'MANDEVILLE',
+                'MANCHESTER',
+                'REGULAR SAVINGS',
+                'CURRENT ACCOUNT'
+            ]
+            
+            indicator_count = sum(1 for indicator in ncb_indicators if indicator in first_page_text)
+            
+            # If 3+ indicators found, it's definitely NCB
+            if indicator_count >= 3:
+                return True
+            
+            # Also check for NCB transaction pattern
+            # NCB uses format: DD/Mon DESCRIPTION AMOUNT BALANCE
+            import re
+            ncb_pattern = r'\d{2}/[A-Z][a-z]{2}\s+.+?\s+-?[\d,]+\.\d{2}\s+[\d,]+\.\d{2}'
+            
+            if re.search(ncb_pattern, first_page_text):
+                return True
+            
+            return False
+            
+    except Exception as e:
+        print(f"   Error detecting NCB: {e}")
+        return False
 
 
-def clean_dataframe(df):
-    """Clean invalid rows from dataframe - BE CONSERVATIVE"""
+def validate_and_clean_dataframe(df, filename):
+    """
+    Validate and clean dataframe before adding to collection
+    """
     if df.empty:
         return df
     
-    initial_count = len(df)
+    required_columns = ['Date', 'Description', 'Amount']
     
-    # Remove rows with invalid amounts (but keep zero for now, remove later)
-    if 'Amount' in df.columns:
-        # Convert to numeric first
-        df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce')
-        df = df[df['Amount'].notna()]
+    # Check required columns exist
+    missing = [col for col in required_columns if col not in df.columns]
+    if missing:
+        print(f"   ❌ Missing columns: {missing}")
+        return pd.DataFrame()
     
-    # Remove rows with completely empty descriptions
-    if 'Description' in df.columns:
-        df = df[df['Description'].notna()]
-        df = df[~df['Description'].isin(['nan', 'NaN', 'None'])]
-        df = df[df['Description'].astype(str).str.strip() != '']
+    # Convert Date
+    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
     
-    removed_count = initial_count - len(df)
-    if removed_count > 0:
-        print(f"  Cleaned: removed {removed_count} invalid rows")
+    # Remove invalid dates
+    before_date = len(df)
+    df = df.dropna(subset=['Date'])
+    if len(df) < before_date:
+        print(f"   🧹 Removed {before_date - len(df)} rows with invalid dates")
+    
+    # Remove invalid amounts
+    before_amount = len(df)
+    df = df[df['Amount'] > 0]
+    if len(df) < before_amount:
+        print(f"   🧹 Removed {before_amount - len(df)} rows with zero/negative amounts")
+    
+    # Remove invalid descriptions
+    before_desc = len(df)
+    df = df[df['Description'].notna()]
+    df = df[df['Description'].astype(str).str.strip() != '']
+    df = df[df['Description'] != 'nan']
+    if len(df) < before_desc:
+        print(f"   🧹 Removed {before_desc - len(df)} rows with invalid descriptions")
+    
+    # Ensure Category exists
+    if 'Category' not in df.columns:
+        df['Category'] = 'Debit'
+    
+    # Ensure Spending Category exists
+    if 'Spending Category' not in df.columns:
+        df = categorize_transactions(df)
     
     return df
 
 
 def clear_data_cache():
-    """Clear the data cache - call this after file operations"""
-    load_all_user_data.clear()
+    """Clear the cached data"""
+    load_all_user_data.cache_clear()
+    print("🔄 Data cache cleared")
