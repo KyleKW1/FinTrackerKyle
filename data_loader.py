@@ -77,11 +77,16 @@ def load_all_user_data(user_id):
     if 'Date' in result.columns:
         result['Date'] = pd.to_datetime(result['Date'], errors='coerce')
         result = result.dropna(subset=['Date'])
-        result['Year'] = result['Date'].dt.year
-        result['Month'] = result['Date'].dt.month
+        
+        # Force Year to be integer type
+        result['Year'] = result['Date'].dt.year.astype(int)
+        result['Month'] = result['Date'].dt.month.astype(int)
         result['Month-Name'] = result['Date'].dt.month_name()
         result['Month-Year'] = result['Date'].dt.strftime('%B %Y')
         result['YearMonth'] = result['Date'].dt.strftime('%Y-%m')
+        
+        print(f"   [date columns] Years in data: {sorted(result['Year'].unique())}")
+        print(f"   [date columns] Date range: {result['Date'].min()} to {result['Date'].max()}")
     
     # Remove duplicates across all files
     result = result.drop_duplicates(subset=['Date', 'Description', 'Amount'], keep='first')
