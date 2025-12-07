@@ -652,11 +652,11 @@ def render_analysis_section(data):
         )
     
     with col2:
-        # ALWAYS show year selector, even if only one year
+        # ALWAYS show dropdown - never just text
         selected_year = st.selectbox(
-            "Select Year",
+            "Year",
             available_years,
-            index=len(available_years) - 1,  # Default to most recent
+            index=len(available_years) - 1,
             key="selected_year"
         )
     
