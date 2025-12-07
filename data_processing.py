@@ -1,383 +1,74 @@
 # data_processing.py
 """
-Data processing module - handles CSV and PDF parsing with enhanced extraction
+Data processing module - COPIED FROM TEST3.PY WORKING FUNCTIONS
 """
 
 import pandas as pd
 import pdfplumber
 from io import BytesIO
 import re
-from config import DEFAULT_CATEGORY_MAPPING
-from database import get_user_preferences
 import streamlit as st
 import json
 
+# You'll need to import these from your config/database files
+try:
+    from config import DEFAULT_CATEGORY_MAPPING
+except:
+    DEFAULT_CATEGORY_MAPPING = {
+        "Food": ["juici", "kfc", "restaurant", "burger"],
+        "Grocery": ["hi-lo", "supermarket", "progressive"],
+        "Utilities": ["jps", "nwc", "flow", "bill"],
+        "Transport": ["uber", "taxi", "gas"],
+        "Other": []
+    }
 
-def process_csv(file_bytes):
-    """Process CSV file and return DataFrame"""
-    try:
-        file_bytes.seek(0)
-        
-        # Try different encodings
-        encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
-        df = None
-        
-        for encoding in encodings:
-            try:
-                file_bytes.seek(0)
-                df = pd.read_csv(file_bytes, encoding=encoding)
-                break
-            except:
-                continue
-        
-        if df is None:
-            return pd.DataFrame()
-        
-        # Standardize columns FIRST
-        df = standardize_dataframe_columns(df)
-        
-        # Then categorize transactions
-        df = categorize_transactions(df)
-        
-        return df
-    except Exception as e:
-        print(f"Error processing CSV: {e}")
-        return pd.DataFrame()
-
-
-def extract_from_pdf(file_bytes):
-    """Enhanced PDF extraction with multiple strategies"""
-    try:
-        file_bytes.seek(0)
-        transactions = []
-        
-        with pdfplumber.open(file_bytes) as pdf:
-            for page in pdf.pages:
-                # Strategy 1: Try table extraction first
-                tables = page.extract_tables()
-                if tables:
-                    transactions.extend(extract_from_tables(tables))
-                
-                # Strategy 2: Try text extraction with multiple patterns
-                text = page.extract_text()
-                if text:
-                    transactions.extend(extract_from_text(text))
-        
-        if not transactions:
-            return pd.DataFrame()
-        
-        # Remove duplicates
-        df = pd.DataFrame(transactions)
-        df = df.drop_duplicates(subset=['Date', 'Description', 'Amount'])
-        
-        # ALWAYS categorize after creating DataFrame
-        df = categorize_transactions(df)
-        
-        return df
-    except Exception as e:
-        print(f"Error extracting from PDF: {e}")
-        return pd.DataFrame()
-
-def extract_from_tables(tables):
-    """Extract transactions from PDF tables"""
-    transactions = []
-    
-    for table in tables:
-        if not table or len(table) < 2:
-            continue
-        
-        # Try to identify header row
-        header_row = None
-        for i, row in enumerate(table[:3]):  # Check first 3 rows for headers
-            row_str = ' '.join([str(cell).lower() for cell in row if cell])
-            if any(word in row_str for word in ['date', 'description', 'amount', 'particulars', 'details']):
-                header_row = i
-                break
-        
-        if header_row is None:
-            header_row = 0
-        
-        headers = table[header_row]
-        
-        # Find column indices
-        date_idx = find_column_index(headers, ['date', 'trans date', 'posting date'])
-        desc_idx = find_column_index(headers, ['description', 'particulars', 'details', 'narrative'])
-        amount_idx = find_column_index(headers, ['amount', 'debit', 'credit', 'value'])
-        
-        if date_idx is None or desc_idx is None or amount_idx is None:
-            continue
-        
-        # Extract data rows
-        for row in table[header_row + 1:]:
-            try:
-                if len(row) <= max(date_idx, desc_idx, amount_idx):
-                    continue
-                
-                date_str = str(row[date_idx]).strip()
-                description = str(row[desc_idx]).strip()
-                amount_str = str(row[amount_idx]).strip()
-                
-                if not date_str or not description or not amount_str:
-                    continue
-                if date_str in ['None', 'nan', '']:
-                    continue
-                
-                # Parse date
-                date = parse_date(date_str)
-                if date is None:
-                    continue
-                
-                # Parse amount
-                amount = parse_amount(amount_str)
-                if amount <= 0:
-                    continue
-                
-                # Determine category
-                is_credit = any(word in description.lower() for word in 
-                              ['deposit', 'transfer in', 'refund', 'credit', 'salary', 'income'])
-                
-                transactions.append({
-                    'Date': date,
-                    'Description': description,
-                    'Amount': amount,
-                    'Category': 'Credit' if is_credit else 'Debit'
-                })
-            except:
-                continue
-    
-    return transactions
-
-def extract_from_text(text):
-    """Extract transactions from PDF text with multiple patterns"""
-    transactions = []
-    lines = text.split('\n')
-    
-    for line in lines:
-        line = line.strip()
-        if not line or len(line) < 10:
-            continue
-        
-        # Skip header lines
-        if any(word in line.lower() for word in ['statement', 'account', 'balance', 'page']):
-            continue
-        
-        # Pattern matching with multiple formats
-        patterns = [
-            # MM/DD/YYYY or DD/MM/YYYY with description and amount
-            r'(\d{1,2}[/-]\d{1,2}[/-]\d{4})\s+(.+?)\s+([\d,]+\.\d{2})(?:\s|$)',
-            # YYYY-MM-DD with description and amount
-            r'(\d{4}-\d{2}-\d{2})\s+(.+?)\s+([\d,]+\.\d{2})(?:\s|$)',
-            # DD-MMM-YYYY (15-Jan-2024)
-            r'(\d{1,2}-[A-Za-z]{3}-\d{4})\s+(.+?)\s+([\d,]+\.\d{2})(?:\s|$)',
-            # MMM DD, YYYY (Jan 15, 2024)
-            r'([A-Za-z]{3}\s+\d{1,2},\s+\d{4})\s+(.+?)\s+([\d,]+\.\d{2})(?:\s|$)',
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, line)
-            if match:
-                date_str, description, amount_str = match.groups()
-                
-                try:
-                    date = parse_date(date_str)
-                    if date is None:
-                        continue
-                    
-                    amount = parse_amount(amount_str)
-                    if amount <= 0:
-                        continue
-                    
-                    description = description.strip()
-                    if len(description) < 3:
-                        continue
-                    
-                    is_credit = any(word in description.lower() for word in 
-                                  ['deposit', 'transfer in', 'refund', 'credit', 'salary', 'income'])
-                    
-                    transactions.append({
-                        'Date': date,
-                        'Description': description,
-                        'Amount': amount,
-                        'Category': 'Credit' if is_credit else 'Debit'
-                    })
-                    break
-                except:
-                    continue
-    
-    return transactions
-
-
-def find_column_index(headers, possible_names):
-    """Find column index by matching possible header names"""
-    for i, header in enumerate(headers):
-        if not header:
-            continue
-        header_lower = str(header).lower().strip()
-        for name in possible_names:
-            if name in header_lower:
-                return i
-    return None
-
-
-def parse_date(date_str):
-    """Parse date string with multiple formats"""
-    date_str = str(date_str).strip()
-    
-    if not date_str or date_str in ['None', 'nan', '']:
+try:
+    from database import get_user_preferences
+except:
+    def get_user_preferences(user_id):
         return None
-    
-    formats = [
-        '%m/%d/%Y', '%d/%m/%Y',  # 01/15/2024 or 15/01/2024
-        '%Y-%m-%d',              # 2024-01-15
-        '%d-%b-%Y', '%d-%B-%Y',  # 15-Jan-2024 or 15-January-2024
-        '%b %d, %Y', '%B %d, %Y',# Jan 15, 2024 or January 15, 2024
-        '%m-%d-%Y', '%d-%m-%Y',  # 01-15-2024 or 15-01-2024
-    ]
-    
-    for fmt in formats:
-        try:
-            return pd.to_datetime(date_str, format=fmt)
-        except:
-            continue
-    
-    # Try pandas auto-detection as last resort
-    try:
-        date = pd.to_datetime(date_str)
-        # Validate year is reasonable (between 2000 and 2100)
-        if 2000 <= date.year <= 2100:
-            return date
-    except:
-        pass
-    
-    return None
-
-
-def parse_amount(amount_str):
-    """Parse amount string"""
-    try:
-        # Remove currency symbols, commas, and spaces
-        cleaned = str(amount_str).replace('$', '').replace(',', '').replace('J', '').replace(' ', '').strip()
-        
-        if not cleaned or cleaned in ['None', 'nan', '']:
-            return 0.0
-        
-        # Handle parentheses (negative)
-        if '(' in cleaned or ')' in cleaned:
-            cleaned = cleaned.replace('(', '').replace(')', '')
-            return abs(float(cleaned))
-        
-        # Handle minus sign - REMOVE IT
-        cleaned = cleaned.replace('-', '')
-        
-        return abs(float(cleaned))
-    except:
-        return 0.0
-
-
-def detect_ncb_pdf(file_bytes):
-    """
-    Reliable NCB PDF detection - works for ALL NCB branches
-    """
-    try:
-        file_bytes.seek(0)
-        with pdfplumber.open(file_bytes) as pdf:
-            if not pdf.pages:
-                return False
-            
-            text = pdf.pages[0].extract_text()
-            if not text:
-                return False
-            
-            text_upper = text.upper()
-            
-            # PRIMARY CHECK
-            if 'NATIONAL COMMERCIAL BANK' not in text_upper:
-                return False
-            
-            score = 3  # Already has bank name
-            
-            # Check for Jamaica location indicators
-            if any(indicator in text_upper for indicator in ['JAMAICA', 'JMD', 'J$']):
-                score += 2
-            
-            # Check for NCB account types
-            if any(acc in text_upper for acc in ['REGULAR SAVINGS', 'CURRENT ACCOUNT', 'SAVINGS ACCOUNT']):
-                score += 2
-            
-            # Check for DD/Mon date format
-            if re.search(r'\d{2}/[A-Z][a-z]{2,3}\b', text):
-                score += 2
-            
-            # Check for NCB transaction codes
-            ncb_codes = ['ELINK TRF', 'BPYMT', 'ABM TX FEE', 'POS PURCHASE', 
-                        'NCBCM ONLINE', 'BILL PAYMENT', 'E-LINK']
-            if sum(1 for code in ncb_codes if code in text_upper) >= 1:
-                score += 1
-            
-            is_ncb = score >= 5
-            return is_ncb
-            
-    except Exception as e:
-        return False
 
 
 def parse_ncb_transaction_line(line, year):
-    """Ultra-robust NCB transaction parser"""
+    """Parse NCB transaction line: DD/Mon DESCRIPTION AMOUNT BALANCE"""
+    pattern = r'(\d{2}/\w{3})\s+(.*?)\s+(-?[\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$'
+    match = re.search(pattern, line)
     
-    patterns = [
-        r'^(\d{2}/\w{3})\s+(.*?)\s+(-?[\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$',
-        r'^(\d{2}/\w{3})\s+(.*?)\s+(-?[\d,]+\.\d{2})\s+[\d,]+\.\d{2}\s*$',
-        r'^(\d{2}/\w{3})\s+(.*?)\s+(-?[\d,]+\.\d{2})\s*$',
-        r'(\d{2}/\w{3})\s+(.+?)\s+(-?[\d,]+\.\d{2})',
-        r'(\d{2}/[A-Za-z]{3})\s+(.+?)\s+([-\d,]+\.\d{2})',
-    ]
-    
-    for pattern in patterns:
-        match = re.search(pattern, line)
-        
-        if match:
-            try:
-                date_str = match.group(1).strip()
-                description = match.group(2).strip()
-                amount_str = match.group(3).strip().replace(',', '')
-                
-                if not description or len(description) < 2:
-                    continue
-                
-                if re.match(r'^[\d\s\.\,\-\/]+$', description):
-                    continue
-                
-                skip_words = ['balance', 'total', 'forward', 'brought', 'opening', 'closing']
-                if any(word in description.lower() for word in skip_words):
-                    continue
-                
-                amount = float(amount_str)
-                
-                if amount == 0:
-                    continue
-                
-                full_date = f"{date_str}/{year}"
-                
-                if amount < 0:
-                    category = 'Debit'
-                    amount = abs(amount)
-                else:
-                    category = 'Credit'
-                
-                return {
-                    'Date': full_date,
-                    'Description': description,
-                    'Amount': amount,
-                    'Category': category
-                }
-                
-            except (ValueError, IndexError, AttributeError):
-                continue
-    
+    if match:
+        try:
+            date_str = match.group(1)
+            description = match.group(2).strip()
+            amount_str = match.group(3).replace(',', '')
+            
+            if not description or description.isspace():
+                return None
+            
+            full_date = f"{date_str}/{year}"
+            amount = float(amount_str)
+            
+            # NCB format: negative = DEBIT, positive = CREDIT
+            if amount < 0:
+                category = 'Debit'
+                amount = abs(amount)
+            else:
+                category = 'Credit'
+            
+            if amount == 0 and description == '':
+                return None
+            
+            return {
+                'Date': full_date, 
+                'Description': description, 
+                'Amount': amount, 
+                'Category': category
+            }
+        except Exception as e:
+            return None
     return None
 
+
 def process_pdf_ncb(file, debug=False):
-    """IMPROVED NCB PDF processor"""
+    """Process NCB PDF statement - FROM TEST3.PY"""
     try:
         transactions = []
         year = "2024"
@@ -388,27 +79,24 @@ def process_pdf_ncb(file, debug=False):
             pdf_file = BytesIO(file.read()) if hasattr(file, 'read') else BytesIO(file)
         
         with pdfplumber.open(pdf_file) as pdf:
-            if pdf.pages:
-                first_page_text = pdf.pages[0].extract_text()
-                
-                year_patterns = [
-                    r'P\.?O\.?,?\s*\d{2}-\d{2}-(\d{4})',
-                    r'[A-Z\s]+,\s*JAMAICA.*?(\d{4})',
-                    r'\d{2}/[A-Za-z]{3}/(\d{4})',
-                    r'(\d{4})-\d{2}-\d{2}',
-                    r'\b(202[0-9])\b'
-                ]
-                
-                for pattern in year_patterns:
-                    year_match = re.search(pattern, first_page_text, re.IGNORECASE)
-                    if year_match:
-                        year = year_match.group(1) if year_match.lastindex else year_match.group(0)
-                        break
-            
             for page_num, page in enumerate(pdf.pages, 1):
                 text = page.extract_text()
                 if not text:
                     continue
+                
+                # Extract year from first page
+                if page_num == 1:
+                    patterns = [
+                        r'P\.O\.,?\s*\d{2}-\d{2}-(\d{4})',
+                        r'(\d{4})-\d{2}-\d{2}',
+                        r'\b(20\d{2})\b'
+                    ]
+                    
+                    for pattern in patterns:
+                        year_match = re.search(pattern, text)
+                        if year_match:
+                            year = year_match.group(1)
+                            break
                 
                 for line in text.split('\n'):
                     line = line.strip()
@@ -416,25 +104,28 @@ def process_pdf_ncb(file, debug=False):
                     if not line:
                         continue
                     
-                    exact_skip = [
-                        'CONTINUED', 'END OF STATEMENT', 'STATEMENT', 'PAGE',
-                        'DATE', 'DESCRIPTION', 'WITHDRAWALS', 'DEPOSITS', 'BALANCE'
-                    ]
+                    # Skip header/footer lines
+                    skip_keywords = ['CONTINUED', 'END OF STATEMENT', 'JAMAICA', 'NATIONAL COMMERCIAL BANK',
+                                   'REGULAR SAVINGS', 'CURRENT ACCOUNT', 'SAVINGS ACCOUNT', 'STATEMENT',
+                                   'PAGE', 'MANDEVILLE', 'MANCHESTER', 'JMD', 'USD', 'P.O.',
+                                   'BALANCE', 'DATE', 'DESCRIPTION', 'WITHDRAWALS', 'DEPOSITS']
                     
-                    if line.upper() in exact_skip:
-                        continue
-                    
-                    if re.match(r'^(MR|MRS|MS|DR|MISS)\s+[A-Z]', line.upper()):
-                        continue
-                    if re.match(r'^MA \d{2}-\d{2}', line):
-                        continue
-                    if line.upper() == 'NATIONAL COMMERCIAL BANK JAMAICA LIMITED':
-                        continue
-                    if re.match(r'^\d{9,}$', line):
+                    if any(keyword in line.upper() for keyword in skip_keywords):
                         continue
                     
+                    # Skip customer info and addresses
+                    if re.match(r'^(MR|MRS|MS|DR|MISS)\s+[A-Z]', line):
+                        continue
+                    if re.search(r'^MA \d{2}-\d{2}', line):
+                        continue
+                    if re.search(r'^\d{9,}$', line):
+                        continue
+                    if line.isupper() and not any(c.isdigit() for c in line) and len(line.split()) <= 3:
+                        continue
+                    
+                    # Try to parse as transaction
                     parsed = parse_ncb_transaction_line(line, year)
-                    if parsed and parsed['Amount'] > 0:
+                    if parsed and parsed['Amount'] > 0 and parsed['Description']:
                         transactions.append(parsed)
         
         if not transactions:
@@ -443,84 +134,222 @@ def process_pdf_ncb(file, debug=False):
         df = pd.DataFrame(transactions)
         df['Date'] = pd.to_datetime(df['Date'], format='%d/%b/%Y', errors='coerce')
         df = df.dropna(subset=['Date'])
+        
+        # Remove duplicates
         df = df.drop_duplicates(subset=['Date', 'Description', 'Amount'], keep='first')
         
         return df
         
     except Exception as e:
         if debug:
-            print(f"NCB PDF Error: {e}")
+            st.error(f"NCB PDF Processing Error: {str(e)}")
+        return pd.DataFrame()
+
+
+def process_csv(file_bytes):
+    """Process CSV file - FROM TEST3.PY"""
+    try:
+        df = pd.read_csv(file_bytes)
+        
+        if df.empty:
+            return pd.DataFrame()
+        
+        return df
+        
+    except Exception as e:
+        st.error(f"CSV processing error: {e}")
+        return pd.DataFrame()
+
+
+def extract_from_pdf(pdf_file):
+    """Main PDF extraction function - FROM TEST3.PY"""
+    try:
+        with pdfplumber.open(pdf_file) as pdf:
+            first_page_text = pdf.pages[0].extract_text() if pdf.pages else ""
+            
+            if any(keyword in first_page_text.upper() for keyword in ['NCB', 'NATIONAL COMMERCIAL BANK', 'JAMAICA']):
+                pdf_file.seek(0)
+                return process_pdf_ncb(pdf_file)
+        
+        pdf_file.seek(0)
+        
+        data = []
+        with pdfplumber.open(pdf_file) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text()
+                if not text:
+                    continue
+                
+                lines = text.split('\n')
+                for line in lines:
+                    parts = line.split()
+                    
+                    if len(parts) >= 3:
+                        try:
+                            date_str = parts[0]
+                            amount = None
+                            trans_type = None
+                            
+                            for i in range(len(parts)-1, -1, -1):
+                                part = parts[i]
+                                if part.upper() in ['CR', 'DR', 'CREDIT', 'DEBIT']:
+                                    trans_type = part.upper()
+                                    continue
+                                
+                                cleaned = part.replace('J$', '').replace('$', '').replace(',', '').replace('-', '').strip()
+                                try:
+                                    amount = float(cleaned)
+                                    amount_index = i
+                                    break
+                                except:
+                                    continue
+                            
+                            if amount is not None:
+                                description = ' '.join(parts[1:amount_index])
+                                
+                                if trans_type:
+                                    category = 'Credit' if trans_type in ['CR', 'CREDIT'] else 'Debit'
+                                else:
+                                    category = 'Debit'
+                                
+                                data.append({
+                                    'Date': date_str,
+                                    'Description': description,
+                                    'Amount': abs(amount),
+                                    'Category': category
+                                })
+                        except:
+                            continue
+        
+        if data:
+            return pd.DataFrame(data)
+        else:
+            return pd.DataFrame()
+            
+    except Exception as e:
+        st.error(f"PDF extraction error: {e}")
         return pd.DataFrame()
 
 
 def standardize_dataframe_columns(df):
-    """FIXED column standardization for JMMB CSV"""
-    if df.empty:
-        return df
+    """Standardize column names - FROM TEST3.PY"""
+    df = df.copy()
     
-    # Clean column names
-    df.columns = (df.columns.str.strip()
-                  .str.strip('"').str.strip("'")
-                  .str.lower()
-                  .str.replace(' ', '_'))
+    # Check if Category column already exists with valid values
+    has_valid_category = False
+    if 'Category' in df.columns:
+        unique_cats = df['Category'].unique()
+        if any(cat in ['Credit', 'Debit'] for cat in unique_cats):
+            has_valid_category = True
+            original_category = df['Category'].copy()
     
-    # Column mappings
     column_mappings = {
-        'trans_date': 'Date',
-        'transaction_date': 'Date',
-        'date': 'Date',
-        'details': 'Description',
         'description': 'Description',
+        'desc': 'Description',
+        'transaction description': 'Description',
+        'details': 'Description',
+        'narrative': 'Description',
         'particulars': 'Description',
+        
         'amount': 'Amount',
-        'total_amount': 'Amount',
-        'trans_type': 'Category',
-        'transaction_type': 'Category',
-        'type': 'Category'
+        'transaction amount': 'Amount',
+        'value': 'Amount',
+        'debit': 'Amount',
+        'credit': 'Amount',
+        
+        'date': 'Date',
+        'transaction date': 'Date',
+        'posting date': 'Date',
+        'value date': 'Date',
     }
     
+    # Only map 'type' if we don't already have valid Category
+    if not has_valid_category:
+        column_mappings.update({
+            'type': 'Category',
+            'transaction type': 'Category',
+            'trans type': 'Category',
+            'dr/cr': 'Category',
+        })
+    
+    df.columns = df.columns.str.lower().str.strip()
     df = df.rename(columns=column_mappings)
     
-    # Handle Category column - CRITICAL for JMMB
-    if 'Category' in df.columns:
-        # Convert to lowercase string
-        df['Category'] = df['Category'].astype(str).str.lower().str.strip()
-        
-        # Map Deposit/Withdrawal to Credit/Debit
-        category_map = {
-            'deposit': 'Credit',
-            'withdrawal': 'Debit',
-            'credit': 'Credit',
-            'debit': 'Debit'
-        }
-        df['Category'] = df['Category'].map(category_map).fillna('Debit')
-    else:
-        df['Category'] = 'Debit'
+    # Restore valid Category if it existed
+    if has_valid_category:
+        df['Category'] = original_category
     
-    # Handle Amount - REMOVE MINUS SIGNS
-    if 'Amount' in df.columns:
-        df['Amount'] = (df['Amount'].astype(str)
-                       .str.replace('$', '', regex=False)
-                       .str.replace('J', '', regex=False)
-                       .str.replace(',', '', regex=False)
-                       .str.replace('-', '', regex=False)  # REMOVE MINUS
-                       .str.strip())
-        df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').abs()
+    if 'Description' not in df.columns:
+        if len(df.columns) >= 2:
+            df['Description'] = df.iloc[:, 1].astype(str)
+        else:
+            df['Description'] = 'Unknown'
     
-    # Convert Date
-    if 'Date' in df.columns:
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+    if 'Date' not in df.columns:
+        if len(df.columns) >= 1:
+            df['Date'] = pd.to_datetime(df.iloc[:, 0], errors='coerce')
+        else:
+            df['Date'] = pd.Timestamp.now()
     
-    # Clean up
-    df = df.dropna(subset=['Date', 'Amount'])
-    df = df[df['Amount'] > 0]
+    # Handle Amount column
+    if 'Amount' not in df.columns:
+        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        if numeric_cols:
+            df['Amount'] = df[numeric_cols[0]]
+        else:
+            df['Amount'] = 0.0
     
-    if 'Description' in df.columns:
-        df = df[df['Description'].notna()]
-        df = df[df['Description'].astype(str).str.len() > 2]
+    # Clean Amount
+    def clean_amount(value):
+        try:
+            if pd.isna(value):
+                return 0.0
+            
+            if isinstance(value, (int, float)):
+                return float(value)
+            
+            value_str = str(value).strip()
+            value_str = value_str.replace('J$', '').replace('$', '').replace('JMD', '')
+            value_str = value_str.replace(' ', '').replace('\xa0', '')
+            value_str = value_str.replace(',', '')
+            
+            if '(' in value_str and ')' in value_str:
+                value_str = '-' + value_str.replace('(', '').replace(')', '')
+            
+            value_str = value_str.replace('-', '')
+            
+            return float(value_str) if value_str and value_str not in ['', '-', '+'] else 0.0
+            
+        except (ValueError, AttributeError):
+            return 0.0
+    
+    df['Amount'] = df['Amount'].apply(clean_amount)
+    
+    # Handle Category if doesn't exist or not valid
+    if 'Category' not in df.columns or not has_valid_category:
+        # Check if we have trans_type that wasn't mapped
+        if 'trans_type' in df.columns:
+            df['Category'] = df['trans_type'].str.lower().str.strip()
+            category_map = {
+                'deposit': 'Credit',
+                'withdrawal': 'Debit',
+                'credit': 'Credit',
+                'debit': 'Debit'
+            }
+            df['Category'] = df['Category'].map(category_map).fillna('Debit')
+        else:
+            df['Category'] = 'Debit'
+    
+    # Ensure Amount is positive
+    df['Amount'] = df['Amount'].abs()
+    
+    # Remove duplicate 'category' column
+    if 'category' in df.columns and 'Category' in df.columns:
+        df = df.drop(columns=['category'])
     
     return df
-    
+
+
 def categorize_transactions(df):
     """Categorize transactions based on keywords"""
     if df.empty:
@@ -541,7 +370,7 @@ def categorize_transactions(df):
                     if keywords:
                         category_keywords[category] = keywords
     except Exception as e:
-        print(f"Error loading user preferences: {e}")
+        pass
     
     df['Spending Category'] = 'Other'
     
