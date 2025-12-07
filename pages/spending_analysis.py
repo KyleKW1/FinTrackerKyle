@@ -345,6 +345,7 @@ def render_category_editor():
                     st.success("✅ Reset to defaults!")
                     clear_data_cache()
                     st.rerun()
+                    
 def render_other_transactions_viewer(data):
     """Render a viewer for transactions categorized as 'Other'"""
     
