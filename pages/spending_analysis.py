@@ -763,7 +763,7 @@ def render_analysis_section(data):
         st.error("❌ No transactions found for selected period")
         return
     
-    st.success(f"✅ Analyzing {len(period_data)} transactions across {len(selected_months)} month(s)")
+    #st.success(f"✅ Analyzing {len(period_data)} transactions across {len(selected_months)} month(s)")
     
     st.markdown("---")
     render_cash_flow_charts(data, selected_year, selected_months)
@@ -1061,7 +1061,7 @@ def spending_analysis_page():
                     from data_processing import categorize_transactions
                     data = categorize_transactions(data)
                 
-                st.success(f"✅ Loaded {len(data)} transactions from {len(data['YearMonth'].unique())} months")
+                #st.success(f"✅ Loaded {len(data)} transactions from {len(data['YearMonth'].unique())} months")
                 
                 # NOW render the analysis
                 render_analysis_section(data)
