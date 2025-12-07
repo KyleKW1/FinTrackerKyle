@@ -354,190 +354,195 @@ def parse_ncb_transaction_line(line, year):
     
     return None
 
-# Replace the process_pdf_ncb function in data_processing.py
-
-def process_pdf_ncb(file, debug=False):
+def process_pdf_ncb_improved(file, debug=False):
     """
-    Enhanced NCB PDF processor with better year detection
-    Extracts transactions from NCB bank statements
+    IMPROVED NCB PDF processor with better transaction detection
+    Key improvements:
+    1. Less aggressive skip keywords
+    2. Better year detection
+    3. More flexible pattern matching
+    4. Better debugging output
     """
     try:
         transactions = []
-        year = None
+        year = "2024"  # Default fallback
         
-        # Handle different input types
         if isinstance(file, BytesIO):
             pdf_file = file
         else:
             pdf_file = BytesIO(file.read()) if hasattr(file, 'read') else BytesIO(file)
         
-        pdf_file.seek(0)
-        
         with pdfplumber.open(pdf_file) as pdf:
-            if not pdf.pages:
-                print("  ❌ PDF has no pages!")
-                return pd.DataFrame()
-            
-            # ENHANCED YEAR DETECTION - Check first 3 pages
-            for page_num in range(min(3, len(pdf.pages))):
-                page = pdf.pages[page_num]
-                text = page.extract_text()
+            # STEP 1: Extract year from first page
+            if pdf.pages:
+                first_page_text = pdf.pages[0].extract_text()
                 
-                if not text:
-                    continue
+                if debug:
+                    print(f"\n=== FIRST PAGE PREVIEW ===")
+                    print(first_page_text[:500])
                 
-                # Try multiple year detection patterns
+                # Try multiple year patterns
                 year_patterns = [
-                    # Pattern 1: P.O. date line (most reliable for NCB)
-                    r'P\.?O\.?,?\s*\d{2}-\d{2}-(\d{4})',  # "P.O., 28-02-2025"
-                    r'PRATVILLE P\.O\.,\s*\d{2}-\d{2}-(\d{4})',  # Full line
-                    
-                    # Pattern 2: Statement header date
-                    r'MA\s+\d{2}-\d{2}/\d+.*?(\d{4})',
-                    
-                    # Pattern 3: Transaction dates with full year
-                    r'\d{2}/[A-Za-z]{3}/(\d{4})',  # 03/Apr/2025
-                    
-                    # Pattern 4: Any ISO-like date
-                    r'(\d{4})-\d{2}-\d{2}',
-                    
-                    # Pattern 5: Statement period line
-                    r'Statement.*?(\d{4})',
-                    r'Period.*?(\d{4})',
-                    
-                    # Pattern 6: Generic 4-digit year that looks like a year
-                    r'\b(202[0-9])\b',
+                    r'P\.?O\.?,?\s*\d{2}-\d{2}-(\d{4})',  # P.O. address
+                    r'PRATVILLE.*?(\d{4})',               # Pratville line
+                    r'\d{2}/[A-Za-z]{3}/(\d{4})',         # Date in transactions
+                    r'(\d{4})-\d{2}-\d{2}',               # ISO date
+                    r'\b(202[0-9])\b'                     # Any 2020-2029
                 ]
                 
                 for pattern in year_patterns:
-                    matches = re.findall(pattern, text, re.IGNORECASE)
-                    if matches:
-                        # Handle tuple results from groups
-                        potential_year = matches[0][-1] if isinstance(matches[0], tuple) else matches[0]
-                        
-                        # Validate it's a reasonable year
-                        if len(potential_year) == 4 and potential_year.startswith('202'):
-                            year = potential_year
-                            print(f"  📅 Detected year: {year}")
-                            break
-                
-                if year:
-                    break
-            
-            # If still no year, try one more aggressive search
-            if not year:
-                print("  ⚠️ Standard patterns failed, trying aggressive search...")
-                for page_num in range(min(3, len(pdf.pages))):
-                    page = pdf.pages[page_num]
-                    text = page.extract_text()
-                    
-                    # Look for ANY occurrence of 2024 or 2025
-                    all_years = re.findall(r'\b(202[4-5])\b', text)
-                    if all_years:
-                        year = all_years[0]
-                        print(f"  📅 Found year (aggressive): {year}")
+                    year_match = re.search(pattern, first_page_text, re.IGNORECASE)
+                    if year_match:
+                        year = year_match.group(1) if year_match.lastindex else year_match.group(0)
+                        if debug:
+                            print(f"✅ Year detected: {year} (pattern: {pattern})")
                         break
+                
+                if not year or year == "2024":
+                    if debug:
+                        print(f"⚠️ Using default year: {year}")
             
-            # Last resort - use current year
-            if not year:
-                from datetime import datetime
-                year = str(datetime.now().year)
-                print(f"  ⚠️ Could not detect year, using current year: {year}")
-            
-            # TRANSACTION EXTRACTION
+            # STEP 2: Process each page
             for page_num, page in enumerate(pdf.pages, 1):
                 text = page.extract_text()
-                
                 if not text:
                     continue
                 
-                lines = text.split('\n')
+                if debug and page_num == 1:
+                    print(f"\n=== PAGE {page_num} LINES ===")
                 
-                for line in lines:
+                for line_num, line in enumerate(text.split('\n'), 1):
                     line = line.strip()
                     
-                    if not line or len(line) < 10:
+                    if not line:
                         continue
                     
-                    # Skip header/footer lines
-                    line_upper = line.upper()
-                    skip_keywords = [
-                        'CONTINUED', 'END OF STATEMENT', 'STATEMENT',
-                        'NATIONAL COMMERCIAL BANK', 'JAMAICA', 'NCB',
-                        'REGULAR SAVINGS', 'CURRENT ACCOUNT', 'SAVINGS ACCOUNT',
-                        'PAGE', 'MANDEVILLE', 'MANCHESTER', 
-                        'JMD', 'USD', 'P.O.', 'P.O BOX', 'PRATVILLE',
-                        'BALANCE', '---', '===',
-                        'DATE', 'DESCRIPTION', 'WITHDRAWALS', 'DEPOSITS',
-                        'OPENING', 'CLOSING', 'BROUGHT FORWARD', 'CARRIED FORWARD',
-                        'TOTAL', 'SERVICE CHARGE', 'WTAX', 'INT.PD'
+                    # IMPROVED: Only skip if line is EXACTLY a header/footer
+                    # Don't skip if it contains transaction data
+                    
+                    # These are EXACT matches for header/footer lines
+                    exact_skip = [
+                        'CONTINUED',
+                        'END OF STATEMENT',
+                        'STATEMENT',
+                        'PAGE',
+                        'DATE',
+                        'DESCRIPTION',
+                        'WITHDRAWALS',
+                        'DEPOSITS',
+                        'BALANCE'
                     ]
                     
-                    if any(keyword in line_upper for keyword in skip_keywords):
+                    # Skip if line is ONLY these keywords (not mixed with data)
+                    if line.upper() in exact_skip:
                         continue
                     
-                    # Skip customer info
-                    if re.match(r'^(MR|MRS|MS|DR|MISS)\s+[A-Z\s]+$', line_upper):
+                    # Skip address lines (customer info)
+                    if re.match(r'^(MR|MRS|MS|DR|MISS)\s+[A-Z]', line.upper()):
                         continue
-                    if re.match(r'^MA\s+\d{2}-\d{2}/\d+$', line):
+                    if re.match(r'^MA \d{2}-\d{2}', line):
                         continue
+                    
+                    # Skip if it's JUST the bank name
+                    if line.upper() == 'NATIONAL COMMERCIAL BANK JAMAICA LIMITED':
+                        continue
+                    
+                    # Skip account numbers (just numbers)
                     if re.match(r'^\d{9,}$', line):
                         continue
-                    if re.search(r'^[A-Z\s]{15,}$', line_upper) and not any(c.isdigit() for c in line):
-                        continue
                     
-                    # Try to parse as transaction
-                    parsed = parse_ncb_transaction_line(line, year)
+                    # IMPORTANT: Don't skip lines that have transaction patterns
+                    # Pattern: DD/Mon DESCRIPTION AMOUNT BALANCE
+                    transaction_pattern = r'(\d{2}/\w{3})\s+(.*?)\s+(-?[\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$'
+                    match = re.search(transaction_pattern, line)
                     
-                    if parsed and parsed['Amount'] > 0 and len(parsed['Description']) >= 3:
-                        transactions.append(parsed)
+                    if match:
+                        try:
+                            date_str = match.group(1)
+                            description = match.group(2).strip()
+                            amount_str = match.group(3).replace(',', '')
+                            
+                            # Skip if description is empty or just whitespace
+                            if not description or description.isspace():
+                                if debug:
+                                    print(f"  Line {line_num}: SKIPPED (empty description)")
+                                continue
+                            
+                            # Create full date
+                            full_date = f"{date_str}/{year}"
+                            amount = float(amount_str)
+                            
+                            # NCB format: negative = debit, positive = credit
+                            if amount < 0:
+                                category = 'Debit'
+                                amount = abs(amount)
+                            else:
+                                category = 'Credit'
+                            
+                            # Skip zero amounts
+                            if amount == 0:
+                                if debug:
+                                    print(f"  Line {line_num}: SKIPPED (zero amount)")
+                                continue
+                            
+                            transaction = {
+                                'Date': full_date,
+                                'Description': description,
+                                'Amount': amount,
+                                'Category': category
+                            }
+                            
+                            transactions.append(transaction)
+                            
+                            if debug and page_num == 1 and len(transactions) <= 5:
+                                print(f"  Line {line_num}: ✅ {date_str} | {description[:30]:30s} | {amount:10.2f} | {category}")
+                        
+                        except Exception as e:
+                            if debug:
+                                print(f"  Line {line_num}: ERROR parsing - {e}")
+                            continue
         
-        # Create DataFrame
+        # STEP 3: Create DataFrame
         if not transactions:
-            print(f"  ❌ No valid transactions extracted!")
+            if debug:
+                print(f"\n❌ NO TRANSACTIONS FOUND")
             return pd.DataFrame()
         
-        print(f"  ✅ Extracted {len(transactions)} raw transactions")
+        if debug:
+            print(f"\n✅ EXTRACTED {len(transactions)} TRANSACTIONS")
         
         df = pd.DataFrame(transactions)
         
-        # Parse dates
+        # Convert dates
         df['Date'] = pd.to_datetime(df['Date'], format='%d/%b/%Y', errors='coerce')
-        
-        null_dates = df['Date'].isna().sum()
-        if null_dates > 0:
-            print(f"  ⚠️ {null_dates} transactions had invalid dates")
-        
         df = df.dropna(subset=['Date'])
-        
-        if df.empty:
-            print(f"  ❌ All transactions had invalid dates!")
-            return pd.DataFrame()
         
         # Remove duplicates
         before_dedup = len(df)
         df = df.drop_duplicates(subset=['Date', 'Description', 'Amount'], keep='first')
         after_dedup = len(df)
         
-        if before_dedup > after_dedup:
-            print(f"  🧹 Removed {before_dedup - after_dedup} duplicate transactions")
+        if debug and before_dedup > after_dedup:
+            print(f"🗑️ Removed {before_dedup - after_dedup} duplicates")
         
-        print(f"  ✅ Final count: {len(df)} transactions")
-        
-        if len(df) > 0:
-            credit_count = len(df[df['Category'] == 'Credit'])
-            debit_count = len(df[df['Category'] == 'Debit'])
-            print(f"  📊 {credit_count} Credits | {debit_count} Debits")
-            print(f"  📅 Date range: {df['Date'].min().strftime('%Y-%m-%d')} to {df['Date'].max().strftime('%Y-%m-%d')}")
+        if debug:
+            print(f"\n📊 FINAL: {len(df)} transactions")
+            if len(df) > 0:
+                credit_count = len(df[df['Category'] == 'Credit'])
+                debit_count = len(df[df['Category'] == 'Debit'])
+                print(f"   Credits: {credit_count} | Debits: {debit_count}")
         
         return df
         
     except Exception as e:
-        print(f"  ❌ NCB PDF Processing Error: {str(e)}")
-        import traceback
-        print(traceback.format_exc())
+        if debug:
+            print(f"\n❌ EXCEPTION: {e}")
+            import traceback
+            traceback.print_exc()
         return pd.DataFrame()
-        
+
+
+
 def standardize_dataframe_columns(df):
     """Standardize column names across different formats"""
     if df.empty:
