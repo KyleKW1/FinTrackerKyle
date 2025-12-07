@@ -110,22 +110,22 @@ def render_sidebar():
     with st.sidebar:
         # Logo/Brand
         st.markdown("""
-            <div style='text-align: center; padding: 2rem 1rem 1rem 1rem;'>
-                <div style='font-size: 3rem; margin-bottom: 0.5rem;'>💼</div>
-                <h2 style='margin: 0; font-size: 1.5rem; font-weight: 700;'>Finance Hub</h2>
+            <div style='text-align: center; padding: 1.5rem 1rem 1rem 1rem;'>
+                <div style='font-size: 2.5rem; margin-bottom: 0.5rem;'>💼</div>
+                <h2 style='margin: 0; font-size: 1.3rem; font-weight: 700; color: white;'>Finance Hub</h2>
             </div>
         """, unsafe_allow_html=True)
         
-        st.markdown("---")
+        st.markdown("<div style='margin: 1rem 0; border-top: 1px solid rgba(255,255,255,0.2);'></div>", unsafe_allow_html=True)
         
         # User info card
         st.markdown(f"""
-            <div style='background: rgba(255,255,255,0.1); border-radius: 12px; padding: 1rem; margin-bottom: 1rem;'>
-                <div style='display: flex; align-items: center; margin-bottom: 0.5rem;'>
-                    <div style='font-size: 2rem; margin-right: 0.75rem;'>👤</div>
-                    <div>
-                        <div style='font-weight: 600; font-size: 1.1rem;'>{st.session_state.user['username']}</div>
-                        <div style='font-size: 0.85rem; opacity: 0.8;'>{st.session_state.user['email']}</div>
+            <div style='background: rgba(255,255,255,0.1); border-radius: 10px; padding: 0.75rem; margin-bottom: 1rem;'>
+                <div style='display: flex; align-items: center;'>
+                    <div style='font-size: 1.8rem; margin-right: 0.6rem;'>👤</div>
+                    <div style='flex: 1; min-width: 0;'>
+                        <div style='font-weight: 600; font-size: 0.95rem; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{st.session_state.user['username']}</div>
+                        <div style='font-size: 0.75rem; opacity: 0.8; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{st.session_state.user['email']}</div>
                     </div>
                 </div>
             </div>
@@ -133,12 +133,12 @@ def render_sidebar():
         
         if st.session_state.user.get('last_login'):
             last_login = str(st.session_state.user['last_login'])
-            st.caption(f"🕐 Last login: {last_login[:19]}")
+            st.markdown(f"<div style='font-size: 0.7rem; color: rgba(255,255,255,0.6); text-align: center; margin-bottom: 1rem;'>🕐 Last login: {last_login[:19]}</div>", unsafe_allow_html=True)
         
-        st.markdown("---")
+        st.markdown("<div style='margin: 1rem 0; border-top: 1px solid rgba(255,255,255,0.2);'></div>", unsafe_allow_html=True)
         
         # Quick Actions
-        st.markdown("##### ⚡ Quick Actions")
+        st.markdown("<div style='color: white; font-weight: 600; font-size: 0.85rem; margin-bottom: 0.5rem; padding: 0 0.5rem;'>⚡ QUICK ACTIONS</div>", unsafe_allow_html=True)
         
         if st.button("📊 Analysis", use_container_width=True, key="sidebar_analysis"):
             st.session_state.selected_feature = 'analysis'
@@ -156,13 +156,13 @@ def render_sidebar():
             st.session_state.selected_feature = None
             st.rerun()
         
-        st.markdown("---")
+        st.markdown("<div style='margin: 1rem 0; border-top: 1px solid rgba(255,255,255,0.2);'></div>", unsafe_allow_html=True)
         
         # Settings (collapsed by default)
-        with st.expander("⚙️ Settings"):
+        with st.expander("⚙️ Settings", expanded=False):
             render_settings_compact()
         
-        st.markdown("---")
+        st.markdown("<div style='margin: 1rem 0; border-top: 1px solid rgba(255,255,255,0.2);'></div>", unsafe_allow_html=True)
         
         # Logout button
         if st.button("🚪 Logout", use_container_width=True, type="primary"):
