@@ -8,43 +8,71 @@ from data_loader import load_all_user_data
 from utils import calculate_monthly_stats, calculate_percentage_change
 
 
-def dashboard_page():
-    """Render main dashboard"""
-    # Header
-    st.markdown(f"""
-        <div style='text-align: center; padding: 2rem 0 1rem 0;'>
-            <h1 style='font-size: 3rem; font-weight: 700; color: white; margin-bottom: 0.5rem;'>
-                💼 Finance Hub Dashboard
-            </h1>
-            <p style='font-size: 1.25rem; color: rgba(255, 255, 255, 0.9);'>
-                Welcome back, {st.session_state.user['username']}! Your financial command center
-            </p>
-        </div>
-    """, unsafe_allow_html=True)
+def display_feature_selection():
+    """Display feature selection cards"""
+    # First row - existing features
+    col1, col2, col3 = st.columns(3)
     
-    # Load and display stats
-    display_quick_stats()
+    with col1:
+        st.markdown("""
+            <div class="feature-card">
+                <div class="feature-icon">📊</div>
+                <div class="feature-title">Spending Analysis</div>
+                <div class="feature-desc">Upload statements and analyze your spending patterns with detailed insights</div>
+            </div>
+        """, unsafe_allow_html=True)
+        if st.button("Open Analysis", key="btn_analysis", use_container_width=True):
+            st.session_state.selected_feature = 'analysis'
+            st.rerun()
     
-    # Feature selection
-    if 'selected_feature' not in st.session_state or st.session_state.selected_feature is None:
-        display_feature_selection()
-    else:
-        # Render selected feature
-        if st.session_state.selected_feature == 'analysis':
-            from .spending_analysis import spending_analysis_page
-            spending_analysis_page()
-        elif st.session_state.selected_feature == 'planner':
-            # Check if sub-feature is selected
-            if 'selected_sub_feature' in st.session_state and st.session_state.selected_sub_feature == 'possible_savings':
-                from .possible_savings import possible_savings_page
-                possible_savings_page()
-            else:
-                from .budget_planner import budget_planner_page
-                budget_planner_page()
-        elif st.session_state.selected_feature == 'network':
-            from .network_analysis import network_analysis_page
-            network_analysis_page()
-
+    with col2:
+        st.markdown("""
+            <div class="feature-card">
+                <div class="feature-icon">📅</div>
+                <div class="feature-title">Budget Planner</div>
+                <div class="feature-desc">Create and manage your monthly budgets efficiently</div>
+            </div>
+        """, unsafe_allow_html=True)
+        if st.button("Open Planner", key="btn_planner", use_container_width=True):
+            st.session_state.selected_feature = 'planner'
+            st.rerun()
+    
+    with col3:
+        st.markdown("""
+            <div class="feature-card">
+                <div class="feature-icon">🌐</div>
+                <div class="feature-title">Network Analysis</div>
+                <div class="feature-desc">Visualize transaction patterns and relationships</div>
+            </div>
+        """, unsafe_allow_html=True)
+        if st.button("Open Network", key="btn_network", use_container_width=True):
+            st.session_state.selected_feature = 'network'
+            st.rerun()
+    
+    # SECOND ROW - ADD TIME MACHINE (centered)
+    st.markdown("<br/>", unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("""
+            <div class="feature-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                 border: 3px solid gold; box-shadow: 0 8px 16px rgba(102, 126, 234, 0.4);">
+                <div class="feature-icon" style="font-size: 4rem;">🔮</div>
+                <div class="feature-title" style="color: white; font-size: 1.5rem;">Financial Time Machine</div>
+                <div class="feature-desc" style="color: rgba(255,255,255,0.95); font-size: 1rem;">
+                    ⭐ NEW! See your financial future based on today's decisions. 
+                    Visualize 3 possible paths and when you'll retire.
+                </div>
+                <div style="background: rgba(255,255,255,0.2); padding: 0.5rem; border-radius: 8px; 
+                     margin-top: 1rem; color: white; font-weight: 600;">
+                    🚀 Revolutionary Feature - Never Done Before!
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+        if st.button("🔮 Launch Time Machine", key="btn_timemachine", use_container_width=True, type="primary"):
+            st.session_state.selected_feature = 'timemachine'
+            st.rerun()
 
 def display_quick_stats():
     """Display quick statistics cards"""
