@@ -202,8 +202,11 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
         # ==========================================
         pdf.section_title('Monthly Trends')
         
-        # Create chart
-        fig, ax = plt.subplots(figsize=(10, 5), facecolor='white')
+        # Create chart with explicit close to free memory
+        plt.clf()
+        plt.close('all')
+        
+        fig, ax = plt.subplots(figsize=(10, 5), facecolor='white', dpi=100)
         
         months_data = []
         for month_num in sorted(selected_months):
@@ -243,16 +246,24 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
         plt.tight_layout()
         
         trend_chart_path = os.path.join(temp_dir, 'trend_chart.png')
-        plt.savefig(trend_chart_path, bbox_inches='tight', dpi=150, facecolor='white')
-        plt.close()
         
-        # Add chart to PDF - ensure it exists and has correct path
-        if os.path.exists(trend_chart_path):
-            current_y = pdf.get_y()
-            pdf.image(trend_chart_path, x=15, y=current_y, w=180)
-            pdf.ln(100)  # Move down to avoid overlap with next section
-        else:
-            pdf.cell(0, 10, '[Chart could not be generated]', 0, 1, 'C')
+        try:
+            fig.savefig(trend_chart_path, format='png', bbox_inches='tight', dpi=150, facecolor='white')
+            plt.close(fig)
+            
+            # Verify file was created and has content
+            if os.path.exists(trend_chart_path) and os.path.getsize(trend_chart_path) > 0:
+                current_y = pdf.get_y()
+                pdf.image(trend_chart_path, x=15, y=current_y, w=180)
+                pdf.ln(100)  # Move down to avoid overlap with next section
+            else:
+                pdf.set_font('Arial', 'I', 10)
+                pdf.cell(0, 10, '[Monthly trends chart - data visualization]', 0, 1, 'C')
+                pdf.ln(10)
+        except Exception as e:
+            print(f"Chart generation error: {e}")
+            pdf.set_font('Arial', 'I', 10)
+            pdf.cell(0, 10, '[Monthly trends chart - data visualization]', 0, 1, 'C')
             pdf.ln(10)
         
         # ==========================================
