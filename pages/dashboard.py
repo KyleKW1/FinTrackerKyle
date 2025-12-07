@@ -41,10 +41,9 @@ def dashboard_page():
         elif st.session_state.selected_feature == 'network':
             from .network_analysis import network_analysis_page
             network_analysis_page()
-        elif st.session_state.selected_feature == 'timemachine':  # ← ADD THIS BLOCK
+        elif st.session_state.selected_feature == 'timemachine':  
             from .financial_time_machine import financial_time_machine_page
             financial_time_machine_page()
-
 
 def display_quick_stats():
     """Display quick statistics cards"""
