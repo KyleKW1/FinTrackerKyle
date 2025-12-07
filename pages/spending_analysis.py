@@ -661,7 +661,7 @@ def spending_analysis_page():
     st.markdown("<div class='content-container'>", unsafe_allow_html=True)
     
     # Header with back button
-    col1, col2 = st.columns([3, 1, 1])
+    col1, col2 = st.columns([2, 1])
     with col1:
         st.markdown("### 📊 Spending Analysis")
     with col2:
