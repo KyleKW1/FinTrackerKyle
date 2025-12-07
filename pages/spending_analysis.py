@@ -602,19 +602,212 @@ def display_pagination_controls(total_files, page_size):
 # MAIN PAGE FUNCTION - DEFINED LAST
 
 def spending_analysis_page():
+
+    
     """Main spending analysis page with flowing layout"""
     st.markdown("<div class='content-container'>", unsafe_allow_html=True)
+
+    # Check if diagnostic mode
+    if st.session_state.get('show_diagnostic', False):
+        file_diagnostic_page()
+        if st.button("← Back to Spending Analysis"):
+            st.session_state.show_diagnostic = False
+            st.rerun()
+        return  # Don't show the rest of the page
     
     # Header with back button
-    col1, col2 = st.columns([3, 1])
+    col1, col2, col3 = st.columns([3, 1])
     with col1:
         st.markdown("### 📊 Spending Analysis")
     with col2:
         if st.button("← Back to Dashboard", use_container_width=True):
             st.session_state.selected_feature = None
             st.rerun()
+    with col3:  # Add a third column
+        if st.button("🔍 Diagnostic", use_container_width=True):
+            st.session_state.show_diagnostic = True
+            st.rerun()
+
+
     
     st.markdown("---")
+    
+    def file_diagnostic_page():
+    """Comprehensive file processing diagnostic"""
+    st.title("🔍 File Processing Diagnostic Tool")
+    
+    st.info("This will show you exactly what's happening with each uploaded file")
+    
+    connection = create_connection()
+    if not connection:
+        st.error("Cannot connect to database")
+        return
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """SELECT id, filename, file_type, file_data, upload_date 
+               FROM user_files 
+               WHERE user_id = %s 
+               ORDER BY filename""",
+            (st.session_state.user['id'],)
+        )
+        files = cursor.fetchall()
+        cursor.close()
+        connection.close()
+        
+        st.success(f"📁 Found {len(files)} files in database")
+        
+        # Summary table data
+        summary_data = []
+        
+        for idx, file_info in enumerate(files):
+            filename = file_info['filename']
+            
+            st.markdown("---")
+            with st.expander(f"📄 {idx+1}. {filename}", expanded=True):
+                
+                try:
+                    file_bytes = BytesIO(file_info['file_data'])
+                    file_size = len(file_info['file_data'])
+                    
+                    st.write(f"**File Info:**")
+                    st.write(f"- Upload date: {file_info['upload_date']}")
+                    st.write(f"- File size: {file_size:,} bytes")
+                    st.write(f"- File type: {file_info['file_type']}")
+                    
+                    # Extract text from first page
+                    file_bytes.seek(0)
+                    with pdfplumber.open(file_bytes) as pdf:
+                        st.write(f"- Pages: {len(pdf.pages)}")
+                        
+                        first_page_text = pdf.pages[0].extract_text()
+                        
+                        # Show first 40 lines
+                        st.write("**📄 First 40 lines of PDF:**")
+                        lines = first_page_text.split('\n')[:40]
+                        st.code('\n'.join(f"{i:3d}: {line}" for i, line in enumerate(lines, 1)))
+                        
+                        # Year detection
+                        st.write("**🔍 Year Detection Test:**")
+                        
+                        year_patterns = [
+                            (r'P\.?O\.?,?\s*\d{2}-\d{2}-(\d{4})', 'P.O. address line'),
+                            (r'PRATVILLE P\.O\.,\s*\d{2}-\d{2}-(\d{4})', 'PRATVILLE line'),
+                            (r'\d{2}/[A-Za-z]{3}/(\d{4})', 'Transaction date'),
+                            (r'(\d{4})-\d{2}-\d{2}', 'ISO date'),
+                            (r'\b(202[0-9])\b', 'Any 202X year'),
+                        ]
+                        
+                        year_found = None
+                        for pattern, desc in year_patterns:
+                            matches = re.findall(pattern, first_page_text, re.IGNORECASE)
+                            if matches:
+                                year_found = matches[0][-1] if isinstance(matches[0], tuple) else matches[0]
+                                st.success(f"✅ Found year: **{year_found}** (pattern: {desc})")
+                                st.caption(f"Matches: {matches[:3]}")
+                                break
+                        
+                        if not year_found:
+                            st.error("❌ Could NOT detect year with any pattern!")
+                        
+                        # Transaction pattern detection
+                        st.write("**🔍 Transaction Line Detection:**")
+                        
+                        transaction_patterns = [
+                            r'\d{2}/[A-Za-z]{3}\s+.+?\s+-?[\d,]+\.\d{2}\s+[\d,]+\.\d{2}',
+                            r'\d{2}/[A-Za-z]{3}\s+.+?\s+-?[\d,]+\.\d{2}',
+                        ]
+                        
+                        found_transactions = []
+                        for line in lines:
+                            for pattern in transaction_patterns:
+                                if re.search(pattern, line):
+                                    found_transactions.append(line)
+                                    break
+                        
+                        if found_transactions:
+                            st.success(f"✅ Found {len(found_transactions)} potential transaction lines")
+                            st.write("**First 5 transaction lines:**")
+                            for i, txn in enumerate(found_transactions[:5], 1):
+                                st.code(f"{i}. {txn}")
+                        else:
+                            st.error("❌ Could NOT find ANY transaction patterns!")
+                    
+                    # Actually try to process it
+                    st.write("**📊 Processing Result:**")
+                    file_bytes.seek(0)
+                    df = process_pdf_ncb(file_bytes, debug=True)
+                    
+                    if df.empty:
+                        st.error(f"❌ **FAILED** - Extracted 0 transactions")
+                        summary_data.append({
+                            'Filename': filename,
+                            'Status': '❌ FAILED',
+                            'Transactions': 0,
+                            'Year': year_found or 'Not detected',
+                            'Issue': 'No transactions extracted'
+                        })
+                    else:
+                        st.success(f"✅ **SUCCESS** - Extracted {len(df)} transactions")
+                        st.write(f"**Date range:** {df['Date'].min()} to {df['Date'].max()}")
+                        
+                        # Show sample
+                        st.write("**Sample transactions:**")
+                        st.dataframe(df[['Date', 'Description', 'Amount', 'Category']].head(10))
+                        
+                        # Show month distribution
+                        df['YearMonth'] = df['Date'].dt.strftime('%Y-%m')
+                        month_dist = df['YearMonth'].value_counts().sort_index()
+                        st.write("**Transactions by month:**")
+                        for month, count in month_dist.items():
+                            st.caption(f"  • {month}: {count} transactions")
+                        
+                        summary_data.append({
+                            'Filename': filename,
+                            'Status': '✅ SUCCESS',
+                            'Transactions': len(df),
+                            'Year': year_found or 'Auto',
+                            'Date Range': f"{df['Date'].min().strftime('%Y-%m-%d')} to {df['Date'].max().strftime('%Y-%m-%d')}"
+                        })
+                    
+                except Exception as e:
+                    st.error(f"❌ Error: {e}")
+                    import traceback
+                    st.code(traceback.format_exc())
+                    
+                    summary_data.append({
+                        'Filename': filename,
+                        'Status': '❌ ERROR',
+                        'Transactions': 0,
+                        'Year': 'N/A',
+                        'Issue': str(e)
+                    })
+        
+        # Final Summary
+        st.markdown("---")
+        st.markdown("## 📊 Processing Summary")
+        
+        summary_df = pd.DataFrame(summary_data)
+        st.dataframe(summary_df, use_container_width=True)
+        
+        success_count = len([r for r in summary_data if r['Status'] == '✅ SUCCESS'])
+        failed_count = len([r for r in summary_data if r['Status'].startswith('❌')])
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("✅ Successful Files", success_count)
+        with col2:
+            st.metric("❌ Failed Files", failed_count)
+        
+        if failed_count > 0:
+            st.warning("⚠️ Some files failed to process. Review the details above to see what went wrong.")
+        
+    except Exception as e:
+        st.error(f"Diagnostic error: {e}")
+        import traceback
+        st.code(traceback.format_exc())
+        
     
     # FILE UPLOAD SECTION
     st.markdown("#### 📁 Upload Bank Statements")
