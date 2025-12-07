@@ -1,7 +1,6 @@
 # pages/__init__.py
 """
 Pages module - exports all page rendering functions
-TEMPORARY VERSION - Time Machine disabled until syntax error is fixed
 """
 
 # Use relative imports (. means current package)
@@ -25,6 +24,18 @@ except ImportError as e:
             st.session_state.selected_feature = None
             st.rerun()
 
+# Import financial time machine
+try:
+    from .financial_time_machine import financial_time_machine_page
+except ImportError as e:
+    print(f"Warning: financial_time_machine not available: {e}")
+    
+    def financial_time_machine_page():
+        import streamlit as st
+        st.error("⚠️ Financial Time Machine not available")
+        if st.button("← Back to Dashboard"):
+            st.session_state.selected_feature = None
+            st.rerun()
 
 # Export all functions
 __all__ = [
@@ -32,5 +43,5 @@ __all__ = [
     'register_page', 
     'dashboard_page',
     'spending_analysis_page',
-    'financial_time_machine_page',  # Placeholder version
+    'financial_time_machine_page',
 ]
