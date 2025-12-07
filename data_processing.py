@@ -354,7 +354,7 @@ def parse_ncb_transaction_line(line, year):
     
     return None
 
-def process_pdf_ncb_improved(file, debug=False):
+def process_pdf_ncb(file, debug=False):
     """
     IMPROVED NCB PDF processor with better transaction detection
     Key improvements:
