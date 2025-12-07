@@ -620,6 +620,22 @@ def render_analysis_section(data):
     if data.empty:
         st.error("❌ No data to analyze")
         return
+        
+        # DEBUG - Show what's actually in the data
+    st.write("### 🔍 DEBUG INFO")
+    st.write(f"**Total rows:** {len(data)}")
+    st.write(f"**Columns:** {list(data.columns)}")
+    st.write(f"**Date column dtype:** {data['Date'].dtype}")
+    st.write(f"**Sample dates:** {data['Date'].head(10).tolist()}")
+    st.write(f"**Year column dtype:** {data['Year'].dtype if 'Year' in data.columns else 'NOT FOUND'}")
+    st.write(f"**Unique years:** {sorted(data['Year'].unique()) if 'Year' in data.columns else 'NO YEAR COLUMN'}")
+    st.write(f"**Date min:** {data['Date'].min()}")
+    st.write(f"**Date max:** {data['Date'].max()}")
+    
+    # Show first few rows
+    st.write("**Sample data:**")
+    st.dataframe(data[['Date', 'Year', 'Month', 'Description', 'Amount']].head(10))
+    st.markdown("---")
     
     st.markdown("##### 📅 Select Analysis Period")
     
