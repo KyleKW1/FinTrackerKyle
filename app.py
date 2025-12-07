@@ -264,6 +264,175 @@ def render_alerts():
                     else:
                         st.error("❌ Failed to send email")
 
+# Add this temporarily to your app.py or create a diagnostic page
+"""
+DIAGNOSTIC PAGE - Add this to see what's happening with your data
+"""
+
+import streamlit as st
+import pandas as pd
+from data_loader import load_all_user_data
+from database import get_all_user_files
+
+def diagnostic_page():
+    """Debug page to see what's happening with data loading"""
+    st.title("🔍 Data Diagnostic Tool")
+    
+    if st.button("🔄 Refresh Data (Clear Cache)"):
+        from data_loader import clear_data_cache
+        clear_data_cache()
+        st.success("Cache cleared! Reload the page.")
+        st.rerun()
+    
+    st.markdown("---")
+    
+    # Check files in database
+    st.subheader("📁 Files in Database")
+    files = get_all_user_files(st.session_state.user['id'])
+    
+    if not files:
+        st.error("No files found in database!")
+        return
+    
+    st.success(f"Found {len(files)} files in database")
+    
+    for idx, file_info in enumerate(files):
+        with st.expander(f"📄 File {idx+1}: {file_info.get('filename', 'Unknown')}"):
+            st.write(f"**Type:** {file_info['file_type']}")
+            st.write(f"**Size:** {len(file_info['file_data'])} bytes")
+            
+            # Try to process this specific file
+            try:
+                from io import BytesIO
+                from data_processing import process_csv, process_pdf_ncb, extract_from_pdf, standardize_dataframe_columns
+                
+                file_bytes = BytesIO(file_info['file_data'])
+                filename = file_info.get('filename', '')
+                file_type = file_info['file_type'].lower()
+                
+                if file_type == 'pdf':
+                    if 'ncb' in filename.lower():
+                        df = process_pdf_ncb(file_bytes)
+                    else:
+                        df = extract_from_pdf(file_bytes)
+                elif file_type == 'csv':
+                    df = process_csv(file_bytes)
+                else:
+                    st.error("Unknown file type")
+                    continue
+                
+                if df.empty:
+                    st.error("❌ No data extracted from this file")
+                else:
+                    st.success(f"✅ Extracted {len(df)} rows")
+                    
+                    # Standardize
+                    df = standardize_dataframe_columns(df)
+                    st.info(f"After standardization: {len(df)} rows")
+                    
+                    # Check for Date column
+                    if 'Date' in df.columns:
+                        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+                        valid_dates = df['Date'].notna().sum()
+                        st.write(f"**Valid dates:** {valid_dates}/{len(df)}")
+                        
+                        if valid_dates > 0:
+                            df_with_dates = df.dropna(subset=['Date'])
+                            df_with_dates['YearMonth'] = df_with_dates['Date'].dt.strftime('%Y-%m')
+                            df_with_dates['Year'] = df_with_dates['Date'].dt.year
+                            df_with_dates['Month'] = df_with_dates['Date'].dt.month
+                            
+                            st.write(f"**Date range:** {df_with_dates['Date'].min()} to {df_with_dates['Date'].max()}")
+                            
+                            # Show months
+                            unique_months = sorted(df_with_dates['YearMonth'].unique())
+                            st.write(f"**Months in this file:** {unique_months}")
+                            
+                            # Show sample data
+                            st.write("**Sample data:**")
+                            st.dataframe(df_with_dates[['Date', 'Description', 'Amount', 'YearMonth']].head(10))
+                    else:
+                        st.error("❌ No Date column found!")
+                        st.write("Columns:", list(df.columns))
+                        st.dataframe(df.head(5))
+                        
+            except Exception as e:
+                st.error(f"Error processing file: {e}")
+                import traceback
+                st.code(traceback.format_exc())
+    
+    st.markdown("---")
+    
+    # Load combined data
+    st.subheader("📊 Combined Dataset")
+    
+    try:
+        data = load_all_user_data(st.session_state.user['id'])
+        
+        if data.empty:
+            st.error("❌ Combined dataset is EMPTY!")
+            st.warning("Check the processing logs above to see where data is being lost.")
+        else:
+            st.success(f"✅ Combined dataset has {len(data)} rows")
+            
+            # Check for required columns
+            st.write("**Columns in dataset:**")
+            st.write(list(data.columns))
+            
+            # Check dates
+            if 'Date' in data.columns:
+                st.write(f"**Date range:** {data['Date'].min()} to {data['Date'].max()}")
+            else:
+                st.error("❌ No Date column in combined data!")
+            
+            # Check for Year/Month columns
+            if 'Year' in data.columns:
+                years = sorted(data['Year'].unique())
+                st.write(f"**Years:** {years}")
+            else:
+                st.error("❌ No Year column!")
+            
+            if 'Month' in data.columns:
+                months = sorted(data['Month'].unique())
+                st.write(f"**Month numbers:** {months}")
+            else:
+                st.error("❌ No Month column!")
+            
+            if 'YearMonth' in data.columns:
+                year_months = sorted(data['YearMonth'].unique())
+                st.write(f"**Year-Months:** {year_months}")
+                
+                # Count per month
+                st.write("**Transactions per month:**")
+                month_counts = data.groupby('YearMonth').size().reset_index(name='Count')
+                st.dataframe(month_counts)
+            else:
+                st.error("❌ No YearMonth column!")
+            
+            # Show sample
+            st.write("**Sample of combined data:**")
+            display_cols = ['Date', 'Description', 'Amount']
+            if 'YearMonth' in data.columns:
+                display_cols.append('YearMonth')
+            if 'Year' in data.columns:
+                display_cols.append('Year')
+            if 'Month' in data.columns:
+                display_cols.append('Month')
+            
+            available_cols = [col for col in display_cols if col in data.columns]
+            st.dataframe(data[available_cols].head(20))
+            
+    except Exception as e:
+        st.error(f"Error loading combined data: {e}")
+        import traceback
+        st.code(traceback.format_exc())
+
+
+# Add this to your dashboard or create a temporary button to access it
+if st.session_state.authenticated:
+    if st.sidebar.button("🔍 Open Diagnostic Tool"):
+        diagnostic_page()
+
 
 if __name__ == "__main__":
     main()
