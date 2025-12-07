@@ -1,4 +1,4 @@
-# pages/dashboard.py
+# app_pages/dashboard.py
 
 import streamlit as st
 from data_loader import load_all_user_data
@@ -117,24 +117,24 @@ def dashboard_page():
     
     # Feature selection section
     if 'selected_feature' not in st.session_state or st.session_state.selected_feature is None:
-        display_feature_selection(data)  # Pass data to the function
+        display_feature_selection(data)
     else:
-        # Render selected feature
+        # Render selected feature - UPDATED IMPORTS
         if st.session_state.selected_feature == 'analysis':
-            from .spending_analysis import spending_analysis_page
+            from app_pages.spending_analysis import spending_analysis_page
             spending_analysis_page()
         elif st.session_state.selected_feature == 'planner':
             if 'selected_sub_feature' in st.session_state and st.session_state.selected_sub_feature == 'possible_savings':
-                from .possible_savings import possible_savings_page
+                from app_pages.possible_savings import possible_savings_page
                 possible_savings_page()
             else:
-                from .budget_planner import budget_planner_page
+                from app_pages.budget_planner import budget_planner_page
                 budget_planner_page()
         elif st.session_state.selected_feature == 'network':
-            from .network_analysis import network_analysis_page
+            from app_pages.network_analysis import network_analysis_page
             network_analysis_page()
         elif st.session_state.selected_feature == 'timemachine':  
-            from .financial_time_machine import financial_time_machine_page
+            from app_pages.financial_time_machine import financial_time_machine_page
             financial_time_machine_page()
 
 
