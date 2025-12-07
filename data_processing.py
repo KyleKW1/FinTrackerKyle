@@ -149,7 +149,6 @@ def extract_from_tables(tables):
     
     return transactions
 
-
 def extract_from_text(text):
     """Extract transactions from PDF text with multiple patterns"""
     transactions = []
