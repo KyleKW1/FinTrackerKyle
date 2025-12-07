@@ -14,7 +14,7 @@ import json
 
 
 def process_csv(file_bytes):
-    """Process CSV file and return DataFrame - FIXED VERSION"""
+    """Process CSV file and return DataFrame"""
     try:
         file_bytes.seek(0)
         
@@ -26,35 +26,22 @@ def process_csv(file_bytes):
             try:
                 file_bytes.seek(0)
                 df = pd.read_csv(file_bytes, encoding=encoding)
-                print(f"   ✅ CSV loaded with {encoding} encoding: {len(df)} rows")
                 break
-            except Exception as e:
-                print(f"   ❌ Failed with {encoding}: {e}")
+            except:
                 continue
         
         if df is None:
-            print("   ❌ Could not load CSV with any encoding")
             return pd.DataFrame()
         
-        print(f"   📊 Original columns: {list(df.columns)}")
-        print(f"   📊 Original shape: {df.shape}")
-        
-        # Standardize columns
+        # Standardize columns FIRST
         df = standardize_dataframe_columns(df)
         
-        print(f"   📊 After standardization: {df.shape}")
-        print(f"   📊 Standardized columns: {list(df.columns)}")
-        
-        # Categorize transactions - ALWAYS call this
+        # Then categorize transactions
         df = categorize_transactions(df)
-        
-        print(f"   ✅ Final result: {len(df)} transactions")
         
         return df
     except Exception as e:
-        print(f"❌ Error processing CSV: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"Error processing CSV: {e}")
         return pd.DataFrame()
 
 
@@ -279,7 +266,7 @@ def parse_amount(amount_str):
             cleaned = cleaned.replace('(', '').replace(')', '')
             return abs(float(cleaned))
         
-        # Handle minus sign
+        # Handle minus sign - REMOVE IT
         cleaned = cleaned.replace('-', '')
         
         return abs(float(cleaned))
@@ -290,7 +277,6 @@ def parse_amount(amount_str):
 def detect_ncb_pdf(file_bytes):
     """
     Reliable NCB PDF detection - works for ALL NCB branches
-    Returns True if the PDF is from National Commercial Bank Jamaica
     """
     try:
         file_bytes.seek(0)
@@ -298,18 +284,16 @@ def detect_ncb_pdf(file_bytes):
             if not pdf.pages:
                 return False
             
-            # Get first page text
             text = pdf.pages[0].extract_text()
             if not text:
                 return False
             
             text_upper = text.upper()
             
-            # PRIMARY CHECK: Must have NCB bank name (this alone is pretty definitive)
+            # PRIMARY CHECK
             if 'NATIONAL COMMERCIAL BANK' not in text_upper:
                 return False
             
-            # SECONDARY CHECKS: Confirm it's an NCB statement format
             score = 3  # Already has bank name
             
             # Check for Jamaica location indicators
@@ -320,53 +304,35 @@ def detect_ncb_pdf(file_bytes):
             if any(acc in text_upper for acc in ['REGULAR SAVINGS', 'CURRENT ACCOUNT', 'SAVINGS ACCOUNT']):
                 score += 2
             
-            # Check for DD/Mon date format (e.g., 04/Aug, 15/Jan)
+            # Check for DD/Mon date format
             if re.search(r'\d{2}/[A-Z][a-z]{2,3}\b', text):
                 score += 2
             
-            # Check for NCB-specific transaction codes
+            # Check for NCB transaction codes
             ncb_codes = ['ELINK TRF', 'BPYMT', 'ABM TX FEE', 'POS PURCHASE', 
                         'NCBCM ONLINE', 'BILL PAYMENT', 'E-LINK']
             if sum(1 for code in ncb_codes if code in text_upper) >= 1:
                 score += 1
             
-            # Decision: If we have NCB bank name + any other indicator, it's NCB
             is_ncb = score >= 5
-            
-            print(f"   NCB Detection: {'✅ YES' if is_ncb else '❌ NO'} (Score: {score}/10)")
             return is_ncb
             
     except Exception as e:
-        print(f"   NCB Detection Error: {e}")
         return False
 
 
 def parse_ncb_transaction_line(line, year):
-    """
-    Ultra-robust NCB transaction parser
-    Handles multiple NCB statement formats
-    """
+    """Ultra-robust NCB transaction parser"""
     
-    # PATTERN SET 1: Standard format with balance
-    # Format: DD/Mon DESCRIPTION AMOUNT BALANCE
     patterns = [
-        # Pattern 1a: Standard with clear spacing
         r'^(\d{2}/\w{3})\s+(.*?)\s+(-?[\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$',
-        
-        # Pattern 1b: With extra whitespace
         r'^(\d{2}/\w{3})\s+(.*?)\s+(-?[\d,]+\.\d{2})\s+[\d,]+\.\d{2}\s*$',
-        
-        # Pattern 2: Without balance column (some months don't show it)
         r'^(\d{2}/\w{3})\s+(.*?)\s+(-?[\d,]+\.\d{2})\s*$',
-        
-        # Pattern 3: Looser matching (catches edge cases)
         r'(\d{2}/\w{3})\s+(.+?)\s+(-?[\d,]+\.\d{2})',
-        
-        # Pattern 4: Very loose - just date, text, and number
         r'(\d{2}/[A-Za-z]{3})\s+(.+?)\s+([-\d,]+\.\d{2})',
     ]
     
-    for pattern_idx, pattern in enumerate(patterns):
+    for pattern in patterns:
         match = re.search(pattern, line)
         
         if match:
@@ -375,29 +341,23 @@ def parse_ncb_transaction_line(line, year):
                 description = match.group(2).strip()
                 amount_str = match.group(3).strip().replace(',', '')
                 
-                # Validation checks
                 if not description or len(description) < 2:
                     continue
                 
-                # Skip if description is just numbers or dates
                 if re.match(r'^[\d\s\.\,\-\/]+$', description):
                     continue
                 
-                # Skip common non-transaction text
                 skip_words = ['balance', 'total', 'forward', 'brought', 'opening', 'closing']
                 if any(word in description.lower() for word in skip_words):
                     continue
                 
-                # Parse amount
                 amount = float(amount_str)
                 
                 if amount == 0:
                     continue
                 
-                # Build full date
                 full_date = f"{date_str}/{year}"
                 
-                # Determine category (NCB uses negative for debits)
                 if amount < 0:
                     category = 'Debit'
                     amount = abs(amount)
@@ -411,16 +371,13 @@ def parse_ncb_transaction_line(line, year):
                     'Category': category
                 }
                 
-            except (ValueError, IndexError, AttributeError) as e:
-                # Try next pattern
+            except (ValueError, IndexError, AttributeError):
                 continue
     
     return None
 
 def process_pdf_ncb(file, debug=False):
-    """
-    IMPROVED NCB PDF processor with better transaction detection
-    """
+    """IMPROVED NCB PDF processor"""
     try:
         transactions = []
         year = "2024"
@@ -431,7 +388,6 @@ def process_pdf_ncb(file, debug=False):
             pdf_file = BytesIO(file.read()) if hasattr(file, 'read') else BytesIO(file)
         
         with pdfplumber.open(pdf_file) as pdf:
-            # Extract year from first page
             if pdf.pages:
                 first_page_text = pdf.pages[0].extract_text()
                 
@@ -449,7 +405,6 @@ def process_pdf_ncb(file, debug=False):
                         year = year_match.group(1) if year_match.lastindex else year_match.group(0)
                         break
             
-            # Process each page
             for page_num, page in enumerate(pdf.pages, 1):
                 text = page.extract_text()
                 if not text:
@@ -461,7 +416,6 @@ def process_pdf_ncb(file, debug=False):
                     if not line:
                         continue
                     
-                    # Skip exact header/footer matches
                     exact_skip = [
                         'CONTINUED', 'END OF STATEMENT', 'STATEMENT', 'PAGE',
                         'DATE', 'DESCRIPTION', 'WITHDRAWALS', 'DEPOSITS', 'BALANCE'
@@ -470,7 +424,6 @@ def process_pdf_ncb(file, debug=False):
                     if line.upper() in exact_skip:
                         continue
                     
-                    # Skip address lines
                     if re.match(r'^(MR|MRS|MS|DR|MISS)\s+[A-Z]', line.upper()):
                         continue
                     if re.match(r'^MA \d{2}-\d{2}', line):
@@ -480,7 +433,6 @@ def process_pdf_ncb(file, debug=False):
                     if re.match(r'^\d{9,}$', line):
                         continue
                     
-                    # Try to parse transaction
                     parsed = parse_ncb_transaction_line(line, year)
                     if parsed and parsed['Amount'] > 0:
                         transactions.append(parsed)
@@ -502,23 +454,17 @@ def process_pdf_ncb(file, debug=False):
 
 
 def standardize_dataframe_columns(df):
-    """ULTRA-ROBUST column standardization - FIXED for your CSV"""
+    """FIXED column standardization for JMMB CSV"""
     if df.empty:
-        print("   ⚠️ DataFrame is empty")
         return df
     
-    print(f"   🔍 Input columns: {list(df.columns)}")
-    print(f"   🔍 Input shape: {df.shape}")
-    
-    # Clean column names (remove quotes, spaces, make lowercase)
+    # Clean column names
     df.columns = (df.columns.str.strip()
                   .str.strip('"').str.strip("'")
                   .str.lower()
                   .str.replace(' ', '_'))
     
-    print(f"   🔍 Cleaned columns: {list(df.columns)}")
-    
-    # Comprehensive mappings
+    # Column mappings
     column_mappings = {
         'trans_date': 'Date',
         'transaction_date': 'Date',
@@ -528,8 +474,6 @@ def standardize_dataframe_columns(df):
         'particulars': 'Description',
         'amount': 'Amount',
         'total_amount': 'Amount',
-        'debit': 'Amount',
-        'credit': 'Amount',
         'trans_type': 'Category',
         'transaction_type': 'Category',
         'type': 'Category'
@@ -537,70 +481,43 @@ def standardize_dataframe_columns(df):
     
     df = df.rename(columns=column_mappings)
     
-    print(f"   🔍 After mapping: {list(df.columns)}")
-    
-    # Handle Category column
+    # Handle Category column - CRITICAL for JMMB
     if 'Category' in df.columns:
-        print(f"   🔍 Category values before: {df['Category'].unique()}")
-        # Convert Deposit/Withdrawal to Credit/Debit
+        # Convert to lowercase string
+        df['Category'] = df['Category'].astype(str).str.lower().str.strip()
+        
+        # Map Deposit/Withdrawal to Credit/Debit
         category_map = {
             'deposit': 'Credit',
             'withdrawal': 'Debit',
             'credit': 'Credit',
             'debit': 'Debit'
         }
-        df['Category'] = df['Category'].astype(str).str.lower().str.strip().map(category_map)
-        # Fill any NaN with 'Debit' as default
-        df['Category'] = df['Category'].fillna('Debit')
-        print(f"   🔍 Category values after: {df['Category'].unique()}")
+        df['Category'] = df['Category'].map(category_map).fillna('Debit')
     else:
-        print("   ⚠️ No Category column, adding default 'Debit'")
         df['Category'] = 'Debit'
     
-    # Ensure Amount is numeric and positive
+    # Handle Amount - REMOVE MINUS SIGNS
     if 'Amount' in df.columns:
-        print(f"   🔍 Amount sample before: {df['Amount'].head()}")
         df['Amount'] = (df['Amount'].astype(str)
                        .str.replace('$', '', regex=False)
                        .str.replace('J', '', regex=False)
                        .str.replace(',', '', regex=False)
+                       .str.replace('-', '', regex=False)  # REMOVE MINUS
                        .str.strip())
         df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').abs()
-        print(f"   🔍 Amount sample after: {df['Amount'].head()}")
-        print(f"   🔍 Amount stats: min={df['Amount'].min()}, max={df['Amount'].max()}")
     
     # Convert Date
     if 'Date' in df.columns:
-        print(f"   🔍 Date sample before: {df['Date'].head()}")
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-        print(f"   🔍 Date sample after: {df['Date'].head()}")
-        print(f"   🔍 Date nulls: {df['Date'].isna().sum()}")
     
-    # Clean up - CRITICAL SECTION
-    print(f"   🔍 Before cleanup: {len(df)} rows")
-    
-    original_count = len(df)
-    
-    # Remove rows with invalid dates or amounts
+    # Clean up
     df = df.dropna(subset=['Date', 'Amount'])
-    print(f"   🔍 After dropna Date/Amount: {len(df)} rows (removed {original_count - len(df)})")
-    
-    original_count = len(df)
     df = df[df['Amount'] > 0]
-    print(f"   🔍 After Amount > 0 filter: {len(df)} rows (removed {original_count - len(df)})")
     
-    # Check for Description column
     if 'Description' in df.columns:
-        original_count = len(df)
-        # Make sure Description is not null and has length > 2
         df = df[df['Description'].notna()]
         df = df[df['Description'].astype(str).str.len() > 2]
-        print(f"   🔍 After Description filter: {len(df)} rows (removed {original_count - len(df)})")
-    else:
-        print("   ⚠️ No Description column found!")
-    
-    print(f"   ✅ Final shape: {df.shape}")
-    print(f"   ✅ Final columns: {list(df.columns)}")
     
     return df
     
