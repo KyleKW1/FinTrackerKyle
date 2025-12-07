@@ -25,36 +25,6 @@ except ImportError as e:
             st.session_state.selected_feature = None
             st.rerun()
 
-# TEMPORARY: Create placeholder for Time Machine (don't import the broken file)
-def financial_time_machine_page():
-    """Placeholder for Time Machine while we fix syntax errors"""
-    import streamlit as st
-    
-    st.markdown("<div class='content-container'>", unsafe_allow_html=True)
-    
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        st.markdown("### 🔮 Financial Time Machine")
-    with col2:
-        if st.button("← Back to Dashboard", use_container_width=True):
-            st.session_state.selected_feature = None
-            st.rerun()
-    
-    st.markdown("---")
-    
-    st.warning("⚠️ Financial Time Machine temporarily disabled")
-    st.info("There's a syntax error in pages/financial_time_machine.py that needs to be fixed")
-    
-    st.markdown("### 🔧 How to Fix:")
-    st.markdown("""
-    1. Delete the file: `pages/financial_time_machine.py`
-    2. Create a new empty file with that name
-    3. Copy the code from the minimal test version (Artifact #10)
-    4. Save and redeploy
-    5. Once that works, replace with the full version
-    """)
-    
-    st.markdown("</div>", unsafe_allow_html=True)
 
 # Export all functions
 __all__ = [
