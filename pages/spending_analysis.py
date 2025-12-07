@@ -384,6 +384,10 @@ def render_analysis_section(data):
     if 'Month' not in data.columns:
         data['Month'] = pd.to_datetime(data['Date']).dt.month
     
+    # CRITICAL FIX: Also ensure YearMonth exists
+    if 'YearMonth' not in data.columns:
+        data['YearMonth'] = pd.to_datetime(data['Date']).dt.strftime('%Y-%m')
+    
     # Extract years from data
     available_years = sorted(data['Year'].unique())
     
@@ -425,6 +429,9 @@ def render_analysis_section(data):
         st.warning(f"No data available for year {selected_year}")
         return
     
+    # DEBUG: Show what months we found
+    st.info(f"🔍 Found data for months: {available_months_nums}")
+    
     available_month_names = [calendar.month_name[m] for m in available_months_nums]
     
     # Determine selected months based on analysis type
@@ -433,7 +440,7 @@ def render_analysis_section(data):
             selected_month_names = st.multiselect(
                 "Select Months",
                 available_month_names,
-                default=[available_month_names[-1]] if available_month_names else [],
+                default=available_month_names,  # CHANGED: Default to ALL available months
                 key="selected_months_multi"
             )
         
@@ -462,12 +469,18 @@ def render_analysis_section(data):
         with col3:
             st.info(f"{len(selected_months)} months")
     
+    # DEBUG: Show what we're filtering for
+    st.success(f"✅ Analyzing months: {selected_month_names}")
+    
     # Filter data
     period_data = data[(data['Year'] == selected_year) & (data['Month'].isin(selected_months))]
     
     if period_data.empty:
         st.warning("No data available for selected period")
+        st.error(f"Tried to filter: Year={selected_year}, Months={selected_months}")
         return
+    
+    st.success(f"📊 Found {len(period_data)} transactions")
     
     # CASH FLOW CHARTS
     st.markdown("---")
@@ -478,6 +491,7 @@ def render_analysis_section(data):
     st.markdown("##### 📅 Monthly Analysis")
     
     if len(selected_months) > 0:
+        # Create tabs for ONLY the months that have data
         tabs = st.tabs([f"📊 {calendar.month_name[m]}" for m in sorted(selected_months)])
         
         for idx, month_num in enumerate(sorted(selected_months)):
@@ -541,6 +555,7 @@ def render_analysis_section(data):
                 
             except Exception as e:
                 st.error(f"❌ Error generating PDF: {e}")
+                
 
 def render_monthly_analysis(data, year_month, month_name):
     """Render detailed analysis for a specific month"""
