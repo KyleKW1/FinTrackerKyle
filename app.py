@@ -29,7 +29,7 @@ def main():
     # Initialize session state
     #init_session_state()
     if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
+        st.session_state.authenticated = False
     if 'user' not in st.session_state:
         st.session_state.user = None
     if 'page' not in st.session_state:
