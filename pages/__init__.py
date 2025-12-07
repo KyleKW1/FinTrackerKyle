@@ -1,7 +1,5 @@
-# pages/__init__.py
-
-
-# Import core pages that exist
+# app_pages/__init__.py
+# Import all page functions
 from .auth_pages import login_page, register_page
 from .dashboard import dashboard_page
 from .spending_analysis import spending_analysis_page
