@@ -487,15 +487,15 @@ def diagnostic_page():
         st.code(traceback.format_exc())
 
 
-# Add this to your dashboard or create a temporary button to access it
-if st.session_state.authenticated:
-    if st.sidebar.button("🔍 Open Diagnostic Tool"):
-        diagnostic_page()
-
-# Add this to your dashboard or create a temporary button to access it
-if st.session_state.authenticated:
-    if st.sidebar.button("🔍 Open Diagnostic Tool"):
-        diagnostic_page()
+    # Add this to your dashboard or create a temporary button to access it
+    if st.session_state.authenticated:
+        if st.sidebar.button("🔍 Open Diagnostic Tool"):
+            diagnostic_page()
+    
+    # Add this to your dashboard or create a temporary button to access it
+    if st.session_state.authenticated:
+        if st.sidebar.button("🔍 Open Diagnostic Tool"):
+            diagnostic_page()
 
 
 if __name__ == "__main__":
