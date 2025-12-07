@@ -1,6 +1,6 @@
 # data_loader.py
 """
-Enhanced data loader with better NCB detection and CSV processing
+Enhanced data loader with better debugging
 """
 
 import pandas as pd
@@ -13,7 +13,6 @@ from data_processing import (
     process_csv,
     process_pdf_ncb,
     extract_from_pdf,
-    standardize_dataframe_columns,
     categorize_transactions
 )
 
@@ -40,9 +39,9 @@ def load_all_user_data(user_id):
             
             # CSV Processing
             if file_type == 'csv':
-                df = process_csv_enhanced(file_bytes, filename)
+                df = process_csv_with_fallback(file_bytes, filename)
             
-            # PDF Processing with better NCB detection
+            # PDF Processing
             elif file_type == 'pdf':
                 df = process_pdf_enhanced(file_bytes, filename)
             
@@ -64,6 +63,8 @@ def load_all_user_data(user_id):
         
         except Exception as e:
             print(f"❌ Error processing {filename}: {e}")
+            import traceback
+            traceback.print_exc()
             continue
     
     if not all_dataframes:
@@ -90,53 +91,27 @@ def load_all_user_data(user_id):
     return result
 
 
-def process_csv_enhanced(file_bytes, filename):
+def process_csv_with_fallback(file_bytes, filename):
     """
-    Enhanced CSV processing with better column detection
+    Process CSV with multiple encoding attempts
     """
-    try:
-        file_bytes.seek(0)
-        
-        # Try different encodings
-        encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
-        df = None
-        
-        for encoding in encodings:
-            try:
-                file_bytes.seek(0)
-                df = pd.read_csv(file_bytes, encoding=encoding)
-                print(f"   Successfully read CSV with {encoding} encoding")
-                break
-            except:
-                continue
-        
-        if df is None or df.empty:
-            print(f"   ❌ Could not read CSV")
-            return pd.DataFrame()
-        
-        print(f"   Original columns: {list(df.columns)}")
-        print(f"   Rows: {len(df)}")
-        
-        # Clean column names (remove quotes, extra spaces)
-        df.columns = df.columns.str.strip().str.strip('"').str.strip("'")
-        
-        # Standardize columns
-        df = standardize_dataframe_columns(df)
-        
-        # Validate required columns
-        if 'Date' not in df.columns or 'Amount' not in df.columns or 'Description' not in df.columns:
-            print(f"   ❌ Missing required columns after standardization")
-            print(f"   Available: {list(df.columns)}")
-            return pd.DataFrame()
-        
-        # Categorize
-        df = categorize_transactions(df)
-        
-        return df
-        
-    except Exception as e:
-        print(f"   ❌ CSV processing error: {e}")
-        return pd.DataFrame()
+    encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
+    
+    for encoding in encodings:
+        try:
+            print(f"   Trying encoding: {encoding}")
+            file_bytes.seek(0)
+            df = process_csv(file_bytes, encoding=encoding)
+            
+            if not df.empty:
+                print(f"   ✅ Successfully processed with {encoding}")
+                return df
+        except Exception as e:
+            print(f"   ❌ Failed with {encoding}: {e}")
+            continue
+    
+    print(f"   ❌ All encodings failed")
+    return pd.DataFrame()
 
 
 def process_pdf_enhanced(file_bytes, filename):
@@ -146,7 +121,7 @@ def process_pdf_enhanced(file_bytes, filename):
     try:
         file_bytes.seek(0)
         
-        # Detect if it's NCB by checking content
+        # Detect if it's NCB
         is_ncb = detect_ncb_pdf(file_bytes)
         
         file_bytes.seek(0)
@@ -167,7 +142,7 @@ def process_pdf_enhanced(file_bytes, filename):
 
 def detect_ncb_pdf(file_bytes):
     """
-    Robust NCB PDF detection - checks multiple indicators
+    Robust NCB PDF detection - uses bank-specific identifiers only
     """
     try:
         file_bytes.seek(0)
@@ -176,34 +151,34 @@ def detect_ncb_pdf(file_bytes):
             if not pdf.pages:
                 return False
             
-            # Check first page
             first_page_text = pdf.pages[0].extract_text().upper()
             
-            # Check for NCB identifiers
+            # Check for NCB-specific identifiers (not customer locations)
             ncb_indicators = [
                 'NATIONAL COMMERCIAL BANK',
-                'NCB',
-                'PRATVILLE P.O.',
-                'MANDEVILLE',
-                'MANCHESTER',
-                'REGULAR SAVINGS',
+                'NCB JAMAICA',
+                'WWW.JNCB.COM',
+                'REGULAR SAVINGS ACCOUNT',
                 'CURRENT ACCOUNT'
             ]
             
+            # Need at least 2 indicators
             indicator_count = sum(1 for indicator in ncb_indicators if indicator in first_page_text)
             
-            # If 3+ indicators found, it's definitely NCB
-            if indicator_count >= 3:
+            if indicator_count >= 2:
+                print(f"   NCB detected: {indicator_count} indicators found")
                 return True
             
-            # Also check for NCB transaction pattern
-            # NCB uses format: DD/Mon DESCRIPTION AMOUNT BALANCE
+            # Check for NCB-specific transaction pattern
+            # NCB uses: DD/Mon DESCRIPTION AMOUNT BALANCE (all on same line)
             import re
             ncb_pattern = r'\d{2}/[A-Z][a-z]{2}\s+.+?\s+-?[\d,]+\.\d{2}\s+[\d,]+\.\d{2}'
             
             if re.search(ncb_pattern, first_page_text):
+                print(f"   NCB detected: transaction pattern match")
                 return True
             
+            print(f"   Not detected as NCB")
             return False
             
     except Exception as e:
@@ -213,10 +188,13 @@ def detect_ncb_pdf(file_bytes):
 
 def validate_and_clean_dataframe(df, filename):
     """
-    Validate and clean dataframe before adding to collection
+    Validate and clean dataframe with detailed logging
     """
     if df.empty:
         return df
+    
+    print(f"   [validate] Starting with {len(df)} rows")
+    print(f"   [validate] Columns: {list(df.columns)}")
     
     required_columns = ['Date', 'Description', 'Amount']
     
@@ -235,27 +213,42 @@ def validate_and_clean_dataframe(df, filename):
     if len(df) < before_date:
         print(f"   🧹 Removed {before_date - len(df)} rows with invalid dates")
     
-    # Remove invalid amounts
+    # CRITICAL: Check amounts BEFORE filtering
+    print(f"   [validate] Amount column type: {df['Amount'].dtype}")
+    print(f"   [validate] Amount sample: {df['Amount'].head().tolist()}")
+    print(f"   [validate] Amount stats: min={df['Amount'].min()}, max={df['Amount'].max()}")
+    print(f"   [validate] Rows with Amount > 0: {(df['Amount'] > 0).sum()}")
+    
+    # Remove invalid amounts (zero or negative)
     before_amount = len(df)
     df = df[df['Amount'] > 0]
     if len(df) < before_amount:
         print(f"   🧹 Removed {before_amount - len(df)} rows with zero/negative amounts")
     
+    if df.empty:
+        print(f"   ❌ No rows remaining after amount filter!")
+        return df
+    
     # Remove invalid descriptions
     before_desc = len(df)
     df = df[df['Description'].notna()]
     df = df[df['Description'].astype(str).str.strip() != '']
-    df = df[df['Description'] != 'nan']
+    df = df[df['Description'].astype(str) != 'nan']
+    df = df[df['Description'].astype(str).str.len() > 2]
     if len(df) < before_desc:
         print(f"   🧹 Removed {before_desc - len(df)} rows with invalid descriptions")
     
     # Ensure Category exists
     if 'Category' not in df.columns:
+        print(f"   ⚠️ No Category column - adding default")
         df['Category'] = 'Debit'
     
     # Ensure Spending Category exists
     if 'Spending Category' not in df.columns:
+        print(f"   ⚠️ No Spending Category - categorizing")
         df = categorize_transactions(df)
+    
+    print(f"   [validate] Final: {len(df)} rows")
     
     return df
 
