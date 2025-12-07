@@ -154,6 +154,10 @@ def process_csv(file_bytes):
         if df.empty:
             return pd.DataFrame()
         
+        # CRITICAL: Standardize and categorize
+        df = standardize_dataframe_columns(df)
+        df = categorize_transactions(df)
+        
         return df
         
     except Exception as e:
