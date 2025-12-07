@@ -359,6 +359,48 @@ def render_monthly_analysis(data, year_month, month_name):
         summary_display['Amount'] = summary_display['Amount'].apply(lambda x: f"J${x:,.2f}")
         summary_display['Percentage'] = summary_display['Percentage'].apply(lambda x: f"{x:.1f}%")
         st.dataframe(summary_display, use_container_width=True, hide_index=True)
+        
+        # ADD DROPDOWN FOR "OTHER" TRANSACTIONS
+        other_row = summary[summary['Spending Category'] == 'Other']
+        if not other_row.empty:
+            other_amount = other_row['Amount'].iloc[0]
+            other_pct = other_row['Percentage'].iloc[0]
+            
+            with st.expander(f"🔍 View 'Other' Transactions (J${other_amount:,.2f} - {other_pct:.1f}%)", expanded=False):
+                st.caption("These transactions weren't matched to any category. Review them below and add keywords in the category editor to auto-categorize.")
+                
+                # Get all "Other" transactions for this month
+                other_transactions = month_data[month_data['Spending Category'] == 'Other'].copy()
+                
+                if not other_transactions.empty:
+                    # Show summary by merchant
+                    st.markdown("**Most Common Merchants:**")
+                    merchant_summary = other_transactions.groupby('Description').agg({
+                        'Amount': ['sum', 'count']
+                    }).reset_index()
+                    merchant_summary.columns = ['Description', 'Total Amount', 'Count']
+                    merchant_summary = merchant_summary.sort_values('Total Amount', ascending=False).head(10)
+                    
+                    for _, row in merchant_summary.iterrows():
+                        st.markdown(f"""
+                            <div style='background: #fee2e2; padding: 0.5rem; border-radius: 6px; margin-bottom: 0.5rem; border-left: 3px solid #ef4444;'>
+                                <div style='font-weight: 600; color: #991b1b;'>{row['Description'][:50]}</div>
+                                <div style='color: #7f1d1d; font-size: 0.85rem;'>
+                                    {int(row['Count'])} transaction(s) • J${row['Total Amount']:,.2f}
+                                </div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                    
+                    # Full transaction list
+                    with st.expander("📋 All 'Other' Transactions", expanded=False):
+                        other_display = other_transactions[['Date', 'Description', 'Amount']].copy()
+                        other_display = other_display.sort_values('Amount', ascending=False)
+                        other_display['Date'] = other_display['Date'].dt.strftime('%Y-%m-%d')
+                        other_display['Amount'] = other_display['Amount'].apply(lambda x: f"J${x:,.2f}")
+                        st.dataframe(other_display, use_container_width=True, hide_index=True, height=300)
+                else:
+                    st.info("No 'Other' transactions found")
+
 
 
 def render_aggregate_analysis(data, selected_year, selected_months):
@@ -435,6 +477,47 @@ def render_aggregate_analysis(data, selected_year, selected_months):
     breakdown_display['Amount'] = breakdown_display['Amount'].apply(lambda x: f"J${x:,.2f}")
     breakdown_display['Percentage'] = breakdown_display['Percentage'].apply(lambda x: f"{x:.1f}%")
     st.dataframe(breakdown_display, use_container_width=True, hide_index=True)
+    
+    # ADD DROPDOWN FOR "OTHER" TRANSACTIONS IN AGGREGATE VIEW
+    other_row = aggregate_spending[aggregate_spending['Spending Category'] == 'Other']
+    if not other_row.empty:
+        other_amount = other_row['Amount'].iloc[0]
+        other_pct = other_row['Percentage'].iloc[0]
+        
+        with st.expander(f"🔍 View 'Other' Transactions (J${other_amount:,.2f} - {other_pct:.1f}%)", expanded=False):
+            st.caption("These transactions weren't matched to any category. Review them below and add keywords in the category editor to auto-categorize.")
+            
+            # Get all "Other" transactions for the selected period
+            other_transactions = period_data[period_data['Spending Category'] == 'Other'].copy()
+            
+            if not other_transactions.empty:
+                # Show summary by merchant
+                st.markdown("**Most Common Merchants:**")
+                merchant_summary = other_transactions.groupby('Description').agg({
+                    'Amount': ['sum', 'count']
+                }).reset_index()
+                merchant_summary.columns = ['Description', 'Total Amount', 'Count']
+                merchant_summary = merchant_summary.sort_values('Total Amount', ascending=False).head(15)
+                
+                for _, row in merchant_summary.iterrows():
+                    st.markdown(f"""
+                        <div style='background: #fee2e2; padding: 0.5rem; border-radius: 6px; margin-bottom: 0.5rem; border-left: 3px solid #ef4444;'>
+                            <div style='font-weight: 600; color: #991b1b;'>{row['Description'][:60]}</div>
+                            <div style='color: #7f1d1d; font-size: 0.85rem;'>
+                                {int(row['Count'])} transaction(s) • J${row['Total Amount']:,.2f}
+                            </div>
+                        </div>
+                    """, unsafe_allow_html=True)
+                
+                # Full transaction list
+                with st.expander("📋 All 'Other' Transactions", expanded=False):
+                    other_display = other_transactions[['Date', 'Description', 'Amount']].copy()
+                    other_display = other_display.sort_values('Amount', ascending=False)
+                    other_display['Date'] = other_display['Date'].dt.strftime('%Y-%m-%d')
+                    other_display['Amount'] = other_display['Amount'].apply(lambda x: f"J${x:,.2f}")
+                    st.dataframe(other_display, use_container_width=True, hide_index=True, height=400)
+            else:
+                st.info("No 'Other' transactions found")
     
 
 def render_analysis_section(data):
@@ -784,14 +867,6 @@ def spending_analysis_page():
     # CATEGORY CUSTOMIZATION SECTION
     st.markdown("---")
     render_category_editor()
-    
-    # Load data to check for "Other" transactions
-    try:
-        temp_data = load_all_user_data(st.session_state.user['id'])
-        if not temp_data.empty:
-            render_other_transactions_viewer(temp_data)
-    except:
-        pass  # Silently skip if data can't be loaded
     
     # DATA VISUALIZATION SECTION
     st.markdown("---")
