@@ -125,12 +125,9 @@ def display_quick_stats():
 
 
 def display_feature_selection():
-    """Display feature selection cards - UPDATED WITH TIME MACHINE"""
-    
-    # ========================================
-    # FIRST ROW - EXISTING 3 FEATURES
-    # ========================================
-    col1, col2, col3 = st.columns(3)
+    """Display feature selection cards"""
+    # First row - 4 features
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         st.markdown("""
@@ -168,31 +165,14 @@ def display_feature_selection():
             st.session_state.selected_feature = 'network'
             st.rerun()
     
-    # ========================================
-    # SECOND ROW - TIME MACHINE (CENTERED)
-    # ========================================
-    st.markdown("<br/>", unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
-    with col2:
+    with col4:
         st.markdown("""
-            <div class="feature-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                 border: 3px solid gold; box-shadow: 0 8px 16px rgba(102, 126, 234, 0.4);">
-                <div class="feature-icon" style="font-size: 4rem;">🔮</div>
-                <div class="feature-title" style="color: white; font-size: 1.5rem;">Financial Time Machine</div>
-                <div class="feature-desc" style="color: rgba(255,255,255,0.95); font-size: 1rem;">
-                    ⭐ NEW! See your financial future based on today's decisions. 
-                    Visualize 3 possible paths and when you'll retire.
-                </div>
-                <div style="background: rgba(255,255,255,0.2); padding: 0.5rem; border-radius: 8px; 
-                     margin-top: 1rem; color: white; font-weight: 600;">
-                    🚀 Revolutionary Feature - Never Done Before!
-                </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔮</div>
+                <div class="feature-title">Time Machine <span style="color: #667eea;">⭐ NEW</span></div>
+                <div class="feature-desc">See your financial future based on today's decisions</div>
             </div>
         """, unsafe_allow_html=True)
-        
-        if st.button("🔮 Launch Time Machine", key="btn_timemachine", 
-                     use_container_width=True, type="primary"):
+        if st.button("Open Time Machine", key="btn_timemachine", use_container_width=True):
             st.session_state.selected_feature = 'timemachine'
             st.rerun()
