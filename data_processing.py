@@ -14,7 +14,7 @@ import json
 
 
 def process_csv(file_bytes):
-    """Process CSV file and return DataFrame"""
+    """Process CSV file and return DataFrame - FIXED VERSION"""
     try:
         file_bytes.seek(0)
         
@@ -26,22 +26,35 @@ def process_csv(file_bytes):
             try:
                 file_bytes.seek(0)
                 df = pd.read_csv(file_bytes, encoding=encoding)
+                print(f"   ✅ CSV loaded with {encoding} encoding: {len(df)} rows")
                 break
-            except:
+            except Exception as e:
+                print(f"   ❌ Failed with {encoding}: {e}")
                 continue
         
         if df is None:
+            print("   ❌ Could not load CSV with any encoding")
             return pd.DataFrame()
+        
+        print(f"   📊 Original columns: {list(df.columns)}")
+        print(f"   📊 Original shape: {df.shape}")
         
         # Standardize columns
         df = standardize_dataframe_columns(df)
         
+        print(f"   📊 After standardization: {df.shape}")
+        print(f"   📊 Standardized columns: {list(df.columns)}")
+        
         # Categorize transactions - ALWAYS call this
         df = categorize_transactions(df)
         
+        print(f"   ✅ Final result: {len(df)} transactions")
+        
         return df
     except Exception as e:
-        print(f"Error processing CSV: {e}")
+        print(f"❌ Error processing CSV: {e}")
+        import traceback
+        traceback.print_exc()
         return pd.DataFrame()
 
 
@@ -276,8 +289,8 @@ def parse_amount(amount_str):
 
 def detect_ncb_pdf(file_bytes):
     """
-    Score-based NCB detection - generalized for all branches
-    Works for NCB statements from any branch in Jamaica
+    Reliable NCB PDF detection - works for ALL NCB branches
+    Returns True if the PDF is from National Commercial Bank Jamaica
     """
     try:
         file_bytes.seek(0)
@@ -285,60 +298,43 @@ def detect_ncb_pdf(file_bytes):
             if not pdf.pages:
                 return False
             
-            # Extract text from first page
+            # Get first page text
             text = pdf.pages[0].extract_text()
             if not text:
                 return False
-                
-            text = text.upper()
-            score = 0
             
-            # Primary identifier - CRITICAL (3 points)
-            if 'NATIONAL COMMERCIAL BANK' in text:
-                score += 3
+            text_upper = text.upper()
             
-            # Check for NCB-specific account types (1 point)
-            account_types = [
-                'REGULAR SAVINGS', 'CURRENT ACCOUNT', 'SAVINGS ACCOUNT', 
-                'CHEQUING', 'NCB ACCOUNT', 'STUDENT ACCOUNT'
-            ]
-            if any(acc_type in text for acc_type in account_types):
-                score += 1
+            # PRIMARY CHECK: Must have NCB bank name (this alone is pretty definitive)
+            if 'NATIONAL COMMERCIAL BANK' not in text_upper:
+                return False
             
-            # Check for NCB date format (DD/Mon pattern, e.g., 15/Jan) (2 points)
-            if re.search(r'\d{2}/[A-Z][a-z]{2}\s', text):
+            # SECONDARY CHECKS: Confirm it's an NCB statement format
+            score = 3  # Already has bank name
+            
+            # Check for Jamaica location indicators
+            if any(indicator in text_upper for indicator in ['JAMAICA', 'JMD', 'J$']):
                 score += 2
             
-            # Check for NCB-specific transaction codes (1-2 points)
-            ncb_keywords = [
-                'ELINK TRF', 'BPYMT', 'ABM TX FEE', 'POS PURCHASE', 
-                'ATM WITHDRAWAL', 'BILL PAYMENT', 'BILLPAY', 'E-LINK'
-            ]
-            keyword_matches = sum(1 for kw in ncb_keywords if kw in text)
-            if keyword_matches >= 2:
+            # Check for NCB account types
+            if any(acc in text_upper for acc in ['REGULAR SAVINGS', 'CURRENT ACCOUNT', 'SAVINGS ACCOUNT']):
                 score += 2
-            elif keyword_matches >= 1:
+            
+            # Check for DD/Mon date format (e.g., 04/Aug, 15/Jan)
+            if re.search(r'\d{2}/[A-Z][a-z]{2,3}\b', text):
+                score += 2
+            
+            # Check for NCB-specific transaction codes
+            ncb_codes = ['ELINK TRF', 'BPYMT', 'ABM TX FEE', 'POS PURCHASE', 
+                        'NCBCM ONLINE', 'BILL PAYMENT', 'E-LINK']
+            if sum(1 for code in ncb_codes if code in text_upper) >= 1:
                 score += 1
             
-            # Check for Jamaica-specific patterns (1 point)
-            jamaica_indicators = ['JAMAICA', 'JMD', 'J$', 'JA ']
-            if any(indicator in text for indicator in jamaica_indicators):
-                score += 1
+            # Decision: If we have NCB bank name + any other indicator, it's NCB
+            is_ncb = score >= 5
             
-            # Check for statement-specific headers (1 point)
-            if 'STATEMENT' in text and 'ACCOUNT' in text:
-                score += 1
-            
-            # Check for NCB branch patterns - any branch (1 point)
-            # Look for typical branch address format
-            if re.search(r'[A-Z\s]+,\s*JAMAICA', text):
-                score += 1
-            
-            print(f"   NCB Detection Score: {score}/12")
-            
-            # Threshold: need at least 4 points to confirm NCB
-            # This ensures we need multiple indicators, not just one
-            return score >= 4
+            print(f"   NCB Detection: {'✅ YES' if is_ncb else '❌ NO'} (Score: {score}/10)")
+            return is_ncb
             
     except Exception as e:
         print(f"   NCB Detection Error: {e}")
@@ -505,51 +501,106 @@ def process_pdf_ncb(file, debug=False):
         return pd.DataFrame()
 
 
-
 def standardize_dataframe_columns(df):
-    """ULTRA-ROBUST column standardization"""
+    """ULTRA-ROBUST column standardization - FIXED for your CSV"""
     if df.empty:
+        print("   ⚠️ DataFrame is empty")
         return df
     
-    # Clean column names (remove quotes, spaces)
-    df.columns = (df.columns.str.strip().str.strip('"').str.strip("'")
-                  .str.lower().str.replace(' ', '_'))
+    print(f"   🔍 Input columns: {list(df.columns)}")
+    print(f"   🔍 Input shape: {df.shape}")
+    
+    # Clean column names (remove quotes, spaces, make lowercase)
+    df.columns = (df.columns.str.strip()
+                  .str.strip('"').str.strip("'")
+                  .str.lower()
+                  .str.replace(' ', '_'))
+    
+    print(f"   🔍 Cleaned columns: {list(df.columns)}")
     
     # Comprehensive mappings
     column_mappings = {
-        'trans_date': 'Date', 'transaction_date': 'Date', 'date': 'Date',
-        'details': 'Description', 'description': 'Description', 'particulars': 'Description',
-        'amount': 'Amount', 'total_amount': 'Amount', 'debit': 'Amount', 'credit': 'Amount',
-        'trans_type': 'Category', 'transaction_type': 'Category', 'type': 'Category'
+        'trans_date': 'Date',
+        'transaction_date': 'Date',
+        'date': 'Date',
+        'details': 'Description',
+        'description': 'Description',
+        'particulars': 'Description',
+        'amount': 'Amount',
+        'total_amount': 'Amount',
+        'debit': 'Amount',
+        'credit': 'Amount',
+        'trans_type': 'Category',
+        'transaction_type': 'Category',
+        'type': 'Category'
     }
     
     df = df.rename(columns=column_mappings)
     
-    # JMMB: Convert Deposit/Withdrawal to Credit/Debit
+    print(f"   🔍 After mapping: {list(df.columns)}")
+    
+    # Handle Category column
     if 'Category' in df.columns:
-        category_map = {'deposit': 'Credit', 'withdrawal': 'Debit'}
-        df['Category'] = df['Category'].astype(str).str.lower().map(category_map).fillna('Debit')
+        print(f"   🔍 Category values before: {df['Category'].unique()}")
+        # Convert Deposit/Withdrawal to Credit/Debit
+        category_map = {
+            'deposit': 'Credit',
+            'withdrawal': 'Debit',
+            'credit': 'Credit',
+            'debit': 'Debit'
+        }
+        df['Category'] = df['Category'].astype(str).str.lower().str.strip().map(category_map)
+        # Fill any NaN with 'Debit' as default
+        df['Category'] = df['Category'].fillna('Debit')
+        print(f"   🔍 Category values after: {df['Category'].unique()}")
+    else:
+        print("   ⚠️ No Category column, adding default 'Debit'")
+        df['Category'] = 'Debit'
     
     # Ensure Amount is numeric and positive
     if 'Amount' in df.columns:
+        print(f"   🔍 Amount sample before: {df['Amount'].head()}")
         df['Amount'] = (df['Amount'].astype(str)
-                       .str.replace('$', '').str.replace('J', '').str.replace(',', '')
+                       .str.replace('$', '', regex=False)
+                       .str.replace('J', '', regex=False)
+                       .str.replace(',', '', regex=False)
                        .str.strip())
         df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').abs()
+        print(f"   🔍 Amount sample after: {df['Amount'].head()}")
+        print(f"   🔍 Amount stats: min={df['Amount'].min()}, max={df['Amount'].max()}")
     
     # Convert Date
     if 'Date' in df.columns:
+        print(f"   🔍 Date sample before: {df['Date'].head()}")
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        print(f"   🔍 Date sample after: {df['Date'].head()}")
+        print(f"   🔍 Date nulls: {df['Date'].isna().sum()}")
     
-    # Add Category if missing
-    if 'Category' not in df.columns:
-        df['Category'] = 'Debit'
+    # Clean up - CRITICAL SECTION
+    print(f"   🔍 Before cleanup: {len(df)} rows")
     
-    # Clean up
+    original_count = len(df)
+    
+    # Remove rows with invalid dates or amounts
     df = df.dropna(subset=['Date', 'Amount'])
+    print(f"   🔍 After dropna Date/Amount: {len(df)} rows (removed {original_count - len(df)})")
+    
+    original_count = len(df)
     df = df[df['Amount'] > 0]
+    print(f"   🔍 After Amount > 0 filter: {len(df)} rows (removed {original_count - len(df)})")
+    
+    # Check for Description column
     if 'Description' in df.columns:
+        original_count = len(df)
+        # Make sure Description is not null and has length > 2
+        df = df[df['Description'].notna()]
         df = df[df['Description'].astype(str).str.len() > 2]
+        print(f"   🔍 After Description filter: {len(df)} rows (removed {original_count - len(df)})")
+    else:
+        print("   ⚠️ No Description column found!")
+    
+    print(f"   ✅ Final shape: {df.shape}")
+    print(f"   ✅ Final columns: {list(df.columns)}")
     
     return df
     
