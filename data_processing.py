@@ -1,6 +1,6 @@
 # data_processing.py
 """
-Data processing module - FIXED VERSION with better CSV handling
+Data processing module - Fixed version with better CSV handling
 """
 
 import pandas as pd
@@ -301,7 +301,7 @@ def standardize_dataframe_columns(df):
         'narrative': 'Description',
         'particulars': 'Description',
         
-        'total_amount': 'Amount',  # Map total_amount FIRST (priority)
+        'total_amount': 'Amount',  # Map total_amount FIRST (priority for JMMB)
         'amount': 'Amount',
         'transaction_amount': 'Amount',
         'value': 'Amount',
@@ -323,6 +323,16 @@ def standardize_dataframe_columns(df):
     df = df.rename(columns=column_mappings)
     
     print(f"   [standardize] After rename: {list(df.columns)}")
+    
+    # CRITICAL: Drop duplicate columns and extra JMMB columns
+    # Keep only the first occurrence of each column
+    df = df.loc[:, ~df.columns.duplicated()]
+    
+    # Drop JMMB-specific extra columns we don't need
+    columns_to_drop = ['commission', 'gct', 'total_amount']
+    df = df.drop(columns=[col for col in columns_to_drop if col in df.columns], errors='ignore')
+    
+    print(f"   [standardize] After dropping duplicates/extras: {list(df.columns)}")
     
     # Restore valid Category if it existed
     if has_valid_category:
