@@ -785,6 +785,14 @@ def spending_analysis_page():
     st.markdown("---")
     render_category_editor()
     
+    # Load data to check for "Other" transactions
+    try:
+        temp_data = load_all_user_data(st.session_state.user['id'])
+        if not temp_data.empty:
+            render_other_transactions_viewer(temp_data)
+    except:
+        pass  # Silently skip if data can't be loaded
+    
     # DATA VISUALIZATION SECTION
     st.markdown("---")
     st.markdown("#### 📈 Spending Visualizations")
