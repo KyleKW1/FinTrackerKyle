@@ -1,4 +1,4 @@
-# app_pages/dashboard.py
+# pages/dashboard.py
 
 import streamlit as st
 from data_loader import load_all_user_data
@@ -117,24 +117,24 @@ def dashboard_page():
     
     # Feature selection section
     if 'selected_feature' not in st.session_state or st.session_state.selected_feature is None:
-        display_feature_selection(data)
+        display_feature_selection(data)  # Pass data to the function
     else:
-        # Render selected feature - UPDATED IMPORTS
+        # Render selected feature
         if st.session_state.selected_feature == 'analysis':
-            from app_pages.spending_analysis import spending_analysis_page
+            from .spending_analysis import spending_analysis_page
             spending_analysis_page()
         elif st.session_state.selected_feature == 'planner':
             if 'selected_sub_feature' in st.session_state and st.session_state.selected_sub_feature == 'possible_savings':
-                from app_pages.possible_savings import possible_savings_page
+                from .possible_savings import possible_savings_page
                 possible_savings_page()
             else:
-                from app_pages.budget_planner import budget_planner_page
+                from .budget_planner import budget_planner_page
                 budget_planner_page()
         elif st.session_state.selected_feature == 'network':
-            from app_pages.network_analysis import network_analysis_page
+            from .network_analysis import network_analysis_page
             network_analysis_page()
         elif st.session_state.selected_feature == 'timemachine':  
-            from app_pages.financial_time_machine import financial_time_machine_page
+            from .financial_time_machine import financial_time_machine_page
             financial_time_machine_page()
 
 
@@ -328,3 +328,4 @@ def display_feature_selection(data):
                 """, unsafe_allow_html=True)
         except Exception as e:
             pass
+
