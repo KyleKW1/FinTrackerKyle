@@ -686,19 +686,14 @@ def standardize_dataframe_columns(df):
     return df
     
 def categorize_transactions(df):
-    """
-    Categorize transactions based on keywords
-    This function MUST always add a 'Spending Category' column
-    """
+    """Categorize transactions based on keywords"""
     if df.empty:
         return df
     
-    # Ensure Description column exists
     if 'Description' not in df.columns:
         df['Spending Category'] = 'Other'
         return df
     
-    # Get user preferences or use defaults
     category_keywords = DEFAULT_CATEGORY_MAPPING.copy()
     
     try:
@@ -706,32 +701,26 @@ def categorize_transactions(df):
             prefs = get_user_preferences(st.session_state.user['id'])
             if prefs and prefs.get('category_keywords'):
                 user_keywords = json.loads(prefs['category_keywords'])
-                # Merge user keywords with defaults (user keywords take priority)
                 for category, keywords in user_keywords.items():
-                    if keywords:  # Only update if user has keywords for this category
+                    if keywords:
                         category_keywords[category] = keywords
     except Exception as e:
-        print(f"Error loading user preferences, using defaults: {e}")
+        print(f"Error loading user preferences: {e}")
     
-    # Initialize spending category column
     df['Spending Category'] = 'Other'
     
-    # Categorize each transaction
     for idx, row in df.iterrows():
         description = str(row['Description']).lower()
         
-        # Check if it's income/credit first
         if row.get('Category') == 'Credit':
             df.at[idx, 'Spending Category'] = 'Income'
             continue
         
-        # Check each category's keywords
         categorized = False
         for category, keywords in category_keywords.items():
-            if category == 'Other':  # Skip 'Other' category
+            if category == 'Other':
                 continue
             
-            # Check if any keyword matches
             for keyword in keywords:
                 if keyword.lower() in description:
                     df.at[idx, 'Spending Category'] = category
@@ -740,7 +729,5 @@ def categorize_transactions(df):
             
             if categorized:
                 break
-        
-        # If not categorized, it remains 'Other'
     
     return df
