@@ -301,10 +301,10 @@ def standardize_dataframe_columns(df):
         'narrative': 'Description',
         'particulars': 'Description',
         
+        'total_amount': 'Amount',  # Map total_amount FIRST (priority)
         'amount': 'Amount',
         'transaction_amount': 'Amount',
         'value': 'Amount',
-        'total_amount': 'Amount',
         
         'date': 'Date',
         'trans_date': 'Date',
