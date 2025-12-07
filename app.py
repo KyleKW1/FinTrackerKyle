@@ -1,6 +1,6 @@
 # app.py
 """
-Main application entry point - CLEAN VERSION
+Main application entry point - FIXED VERSION
 Handles routing and page rendering
 """
 
@@ -8,8 +8,8 @@ import streamlit as st
 from config import APP_TITLE, APP_ICON
 from auth import logout
 from styles import apply_custom_styles
-from app_pages.auth_pages import login_page, register_page  # Changed from pages. to app_pages.
-from app_pages.dashboard import dashboard_page  # Changed from pages. to app_pages.
+from pages.auth_pages import login_page, register_page  # FIXED: Changed back to pages.
+from pages.dashboard import dashboard_page  # FIXED: Changed back to pages.
 from password_reset import forgot_password_page, reset_password_page
 from database import get_user_preferences, save_user_preferences
 from data_loader import clear_data_cache
