@@ -1,5 +1,5 @@
 """
-pdf_generator.py - COMPLETE FILE (FIXED DECIMAL ISSUE)
+pdf_generator.py - COMPLETE FILE (FIXED DECIMAL + CHART DISPLAY ISSUES)
 Professional PDF Report Generation for Finance Hub
 """
 
@@ -62,7 +62,6 @@ class FinancePDF(FPDF):
     def section_title(self, title, icon=''):
         self.set_font('Arial', 'B', 16)
         self.set_text_color(102, 126, 234)
-        # Don't use emoji icons - Arial doesn't support them
         self.cell(0, 10, title, 0, 1, 'L')
         self.set_text_color(0, 0, 0)
         self.ln(2)
@@ -196,7 +195,8 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
         # ==========================================
         pdf.section_title('Monthly Trends')
         
-        fig, ax = plt.subplots(figsize=(12, 6), facecolor='white')
+        # Create chart
+        fig, ax = plt.subplots(figsize=(10, 5), facecolor='white')
         
         months_data = []
         for month_num in sorted(selected_months):
@@ -221,12 +221,12 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
         ax.bar([i + width for i in x], df_trends['Savings'], width, 
                label='Savings', color='#3b82f6', alpha=0.8)
         
-        ax.set_xlabel('Month', fontsize=12, weight='bold')
-        ax.set_ylabel('Amount (J$)', fontsize=12, weight='bold')
-        ax.set_title('Monthly Cash Flow Comparison', fontsize=14, weight='bold', pad=20)
+        ax.set_xlabel('Month', fontsize=11, weight='bold')
+        ax.set_ylabel('Amount (J$)', fontsize=11, weight='bold')
+        ax.set_title('Monthly Cash Flow Comparison', fontsize=13, weight='bold', pad=15)
         ax.set_xticks(x)
-        ax.set_xticklabels(df_trends['Month'])
-        ax.legend(fontsize=11)
+        ax.set_xticklabels(df_trends['Month'], rotation=45, ha='right')
+        ax.legend(fontsize=10, loc='upper left')
         ax.grid(axis='y', alpha=0.3, linestyle='--')
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'J${x:,.0f}'))
         
@@ -236,11 +236,16 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
         plt.tight_layout()
         
         trend_chart_path = os.path.join(temp_dir, 'trend_chart.png')
-        plt.savefig(trend_chart_path, bbox_inches='tight', dpi=200, facecolor='white')
+        plt.savefig(trend_chart_path, bbox_inches='tight', dpi=150, facecolor='white')
         plt.close()
         
-        pdf.image(trend_chart_path, x=10, w=190)
-        pdf.ln(5)
+        # Add chart to PDF - ensure it exists and has correct path
+        if os.path.exists(trend_chart_path):
+            current_y = pdf.get_y()
+            pdf.image(trend_chart_path, x=15, y=current_y, w=180)
+            pdf.ln(95)  # Move down to avoid overlap
+        else:
+            pdf.cell(0, 10, '[Chart could not be generated]', 0, 1, 'C')
         
         # ==========================================
         # AGGREGATE SPENDING DISTRIBUTION
@@ -265,44 +270,60 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
             aggregate_summary = aggregate_summary.sort_values('Amount', ascending=False)
             
             # Create pie chart
-            fig, ax = plt.subplots(figsize=(10, 6), facecolor='white')
+            fig, ax = plt.subplots(figsize=(9, 6), facecolor='white')
             
             colors = ['#667eea', '#764ba2', '#f093fb', '#4facfe', 
                      '#43e97b', '#fa709a', '#fee140', '#30cfd0']
             
+            # Only show top 8 categories, group rest as "Other"
+            if len(aggregate_summary) > 8:
+                top_8 = aggregate_summary.head(8)
+                other_amount = aggregate_summary.iloc[8:]['Amount'].sum()
+                display_data = pd.concat([
+                    top_8,
+                    pd.DataFrame([{'Spending Category': 'Other (grouped)', 'Amount': other_amount}])
+                ])
+            else:
+                display_data = aggregate_summary
+            
             wedges, texts, autotexts = ax.pie(
-                aggregate_summary['Amount'], 
-                labels=aggregate_summary['Spending Category'],
+                display_data['Amount'], 
+                labels=display_data['Spending Category'],
                 autopct='%1.1f%%',
                 startangle=90,
-                colors=colors[:len(aggregate_summary)],
-                textprops={'fontsize': 11, 'weight': 'bold'},
+                colors=colors[:len(display_data)],
+                textprops={'fontsize': 9, 'weight': 'bold'},
                 pctdistance=0.85
             )
             
             for autotext in autotexts:
                 autotext.set_color('white')
-                autotext.set_fontsize(10)
+                autotext.set_fontsize(9)
                 autotext.set_weight('bold')
             
             for text in texts:
-                text.set_fontsize(10)
+                text.set_fontsize(8)
                 text.set_weight('bold')
             
             centre_circle = plt.Circle((0, 0), 0.70, fc='white')
             ax.add_artist(centre_circle)
             
-            ax.set_title(f'Total Spending Distribution - {period_label}', 
-                        fontsize=14, weight='bold', pad=20)
+            ax.set_title(f'Total Spending Distribution', 
+                        fontsize=12, weight='bold', pad=15)
             
             plt.tight_layout()
             
             pie_chart_path = os.path.join(temp_dir, 'pie_chart.png')
-            plt.savefig(pie_chart_path, bbox_inches='tight', dpi=200, facecolor='white')
+            plt.savefig(pie_chart_path, bbox_inches='tight', dpi=150, facecolor='white')
             plt.close()
             
-            pdf.image(pie_chart_path, x=10, w=190)
-            pdf.ln(5)
+            # Add chart to PDF
+            if os.path.exists(pie_chart_path):
+                current_y = pdf.get_y()
+                pdf.image(pie_chart_path, x=25, y=current_y, w=160)
+                pdf.ln(100)  # Move down
+            else:
+                pdf.cell(0, 10, '[Chart could not be generated]', 0, 1, 'C')
             
             # ==========================================
             # SPENDING BREAKDOWN TABLE
@@ -397,8 +418,10 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
                 pdf.set_text_color(0, 0, 0)
         
     finally:
+        # Clean up temporary files
         shutil.rmtree(temp_dir, ignore_errors=True)
     
+    # Output PDF
     output = pdf.output(dest='S')
     if isinstance(output, bytes):
         return output
@@ -414,20 +437,16 @@ def create_comprehensive_pdf(data, selected_year, selected_months, analysis_type
 def create_pdf_with_charts(month_data, selected_month, summary, comparison, 
                           month_income, month_spending, month_savings, SAVINGS_GOAL):
     """Legacy function - redirects to comprehensive PDF"""
-    # This is kept for any old code that might call it
-    # Extract year and month from the data
     if not month_data.empty and 'Year' in month_data.columns and 'Month' in month_data.columns:
         selected_year = month_data['Year'].iloc[0]
         selected_months = [month_data['Month'].iloc[0]]
         
-        # Reconstruct the full data (we only have month_data)
-        # For now, just use the month_data as the full dataset
         return create_comprehensive_pdf(
             data=month_data,
             selected_year=selected_year,
             selected_months=selected_months,
             analysis_type=selected_month,
-            user_id=1  # Default user
+            user_id=1
         )
     else:
         raise ValueError("Invalid month data provided")
