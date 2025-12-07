@@ -161,64 +161,23 @@ def spending_analysis_page():
     render_category_editor()
     
     # DATA VISUALIZATION SECTION
-# Replace the section in spending_analysis.py starting at "# DATA VISUALIZATION SECTION"
-
-# DATA VISUALIZATION SECTION
-st.markdown("---")
-st.markdown("#### 📈 Spending Visualizations")
-
-# Load data with detailed debugging
-with st.spinner("Loading your data..."):
-    data = load_all_user_data(st.session_state.user['id'])
+        # DATA VISUALIZATION SECTION
+    st.markdown("---")
+    st.markdown("#### 📈 Spending Visualizations")
     
-    # DETAILED DEBUGGING
-    st.write("### 🔍 DEBUG INFO")
-    st.write(f"**Data loaded:** {not data.empty}")
-    
-    if not data.empty:
-        st.write(f"**Total rows:** {len(data)}")
-        st.write(f"**Columns:** {list(data.columns)}")
+    # Load data
+    with st.spinner("Loading your data..."):
+        data = load_all_user_data(st.session_state.user['id'])
         
-        # Check for required columns
-        required_cols = ['Date', 'Description', 'Amount', 'Spending Category']
-        missing_cols = [col for col in required_cols if col not in data.columns]
-        
-        if missing_cols:
-            st.error(f"❌ Missing columns: {missing_cols}")
+        if data.empty:
+            st.warning("📊 No data available yet. Upload files above to see your spending analysis.")
         else:
-            st.success(f"✅ All required columns present")
-        
-        # Check Date column
-        if 'Date' in data.columns:
-            st.write(f"**Date column type:** {data['Date'].dtype}")
-            st.write(f"**Sample dates:** {data['Date'].head(3).tolist()}")
-            
-            # Check for null dates
-            null_dates = data['Date'].isna().sum()
-            st.write(f"**Null dates:** {null_dates}")
-        
-        # Check if YearMonth exists
-        if 'YearMonth' in data.columns:
-            st.write(f"**Available months:** {sorted(data['YearMonth'].unique())}")
-        else:
-            st.warning("⚠️ YearMonth column missing - will create it")
-        
-        # Show sample data
-        with st.expander("📋 View Sample Data (first 5 rows)"):
-            st.dataframe(data.head())
-        
-        st.markdown("---")
-        
-        # NOW try to render
-        try:
-            # Ensure Date is datetime
+            # Ensure Date is datetime and create required columns
             if 'Date' in data.columns:
                 data['Date'] = pd.to_datetime(data['Date'], errors='coerce')
                 data = data.dropna(subset=['Date'])
                 
-                st.write(f"**After date parsing:** {len(data)} rows remain")
-                
-                # Create required columns
+                # Create required columns if missing
                 if 'Year' not in data.columns:
                     data['Year'] = data['Date'].dt.year
                 if 'Month' not in data.columns:
@@ -226,127 +185,195 @@ with st.spinner("Loading your data..."):
                 if 'YearMonth' not in data.columns:
                     data['YearMonth'] = data['Date'].dt.strftime('%Y-%m')
                 
-                st.write(f"**Years found:** {sorted(data['Year'].unique())}")
-                st.write(f"**Months (YearMonth) found:** {sorted(data['YearMonth'].unique())}")
-                
-                # Check if Spending Category exists
+                # Ensure Spending Category exists
                 if 'Spending Category' not in data.columns:
-                    st.error("❌ 'Spending Category' column is missing!")
-                    st.info("Attempting to categorize transactions...")
                     from data_processing import categorize_transactions
                     data = categorize_transactions(data)
-                    
-                    if 'Spending Category' in data.columns:
-                        st.success("✅ Categorization successful!")
-                    else:
-                        st.error("❌ Categorization failed!")
                 
-                st.success("✅ Data prepared successfully! Rendering visualizations...")
-                st.markdown("---")
+                st.success(f"✅ Loaded {len(data)} transactions from {len(data['YearMonth'].unique())} months")
                 
-                # Call the actual render function
+                # NOW render the analysis
                 render_analysis_section(data)
             else:
                 st.error("❌ No Date column found in data")
-                
-        except Exception as e:
-            st.error(f"❌ Error during rendering: {e}")
-            import traceback
-            st.code(traceback.format_exc())
-    else:
-        st.warning("📊 No data available yet. Upload files above to see your spending analysis.")
     
     st.markdown("</div>", unsafe_allow_html=True)
 
 
-
-
-def render_category_editor():
-    """Render category keyword editor"""
-    with st.expander("🏷️ Customize Spending Categories", expanded=False):
-        st.markdown("**Edit keywords to customize how transactions are categorized**")
-        st.caption("Add keywords separated by commas. Transactions matching these keywords will be assigned to the category.")
-        
-        # Load current preferences
-        prefs = get_user_preferences(st.session_state.user['id'])
-        if prefs and prefs.get('category_keywords'):
-            current_keywords = json.loads(prefs['category_keywords'])
+def render_analysis_section(data):
+    """Render the main analysis section"""
+    
+    # VALIDATION: Check we have data
+    if data.empty:
+        st.error("❌ No data to analyze")
+        return
+    
+    st.markdown("##### 📅 Select Analysis Period")
+    
+    # VALIDATION: Ensure all required columns exist
+    required_columns = ['Date', 'Year', 'Month', 'YearMonth', 'Amount', 'Spending Category']
+    missing_columns = [col for col in required_columns if col not in data.columns]
+    
+    if missing_columns:
+        st.error(f"❌ Missing required columns: {missing_columns}")
+        return
+    
+    # Get available years
+    available_years = sorted(data['Year'].dropna().unique())
+    if len(available_years) == 0:
+        st.error("❌ No valid years found in data")
+        return
+    
+    # Layout
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col1:
+        analysis_type = st.selectbox(
+            "Period Type",
+            ["Specific Months", "Last 3 Months", "Last 6 Months", "All Time"],
+            key="analysis_type"
+        )
+    
+    with col2:
+        if len(available_years) > 1:
+            selected_year = st.selectbox(
+                "Select Year",
+                available_years,
+                index=len(available_years) - 1,
+                key="selected_year"
+            )
         else:
-            current_keywords = DEFAULT_CATEGORY_MAPPING.copy()
+            selected_year = int(available_years[0])
+            st.info(f"📅 Year: {selected_year}")
+    
+    # Get available months for selected year
+    year_data = data[data['Year'] == selected_year]
+    available_months_nums = sorted([int(m) for m in year_data['Month'].dropna().unique()])
+    
+    if len(available_months_nums) == 0:
+        st.error(f"❌ No data found for year {selected_year}")
+        return
+    
+    # Month names
+    available_month_names = [calendar.month_name[m] for m in available_months_nums]
+    
+    # Determine selected months
+    if analysis_type == "Specific Months":
+        with col3:
+            selected_month_names = st.multiselect(
+                "Select Months",
+                available_month_names,
+                default=available_month_names,
+                key="selected_months_multi"
+            )
         
-        # Create editable fields for each category
-        updated_keywords = {}
+        if not selected_month_names:
+            st.warning("⚠️ Please select at least one month")
+            return
         
-        col1, col2 = st.columns(2)
+        month_names_full = [calendar.month_name[i] for i in range(1, 13)]
+        selected_months = [month_names_full.index(name) + 1 for name in selected_month_names]
+    
+    elif analysis_type == "Last 3 Months":
+        selected_months = available_months_nums[-3:] if len(available_months_nums) >= 3 else available_months_nums
+        with col3:
+            st.info(f"{len(selected_months)} months")
+    
+    elif analysis_type == "Last 6 Months":
+        selected_months = available_months_nums[-6:] if len(available_months_nums) >= 6 else available_months_nums
+        with col3:
+            st.info(f"{len(selected_months)} months")
+    
+    else:  # All Time
+        selected_months = available_months_nums
+        with col3:
+            st.info(f"{len(selected_months)} months")
+    
+    # Filter data for selected period
+    period_data = data[(data['Year'] == selected_year) & (data['Month'].isin(selected_months))]
+    
+    if period_data.empty:
+        st.error("❌ No transactions found for selected period")
+        return
+    
+    st.success(f"✅ Analyzing {len(period_data)} transactions across {len(selected_months)} month(s)")
+    
+    # ==========================================
+    # RENDER SECTIONS
+    # ==========================================
+    
+    # CASH FLOW CHARTS
+    st.markdown("---")
+    render_cash_flow_charts(data, selected_year, selected_months)
+    
+    # MONTHLY ANALYSIS TABS
+    st.markdown("---")
+    st.markdown("##### 📅 Monthly Analysis")
+    
+    if len(selected_months) > 0:
+        tabs = st.tabs([f"📊 {calendar.month_name[m]}" for m in sorted(selected_months)])
         
-        categories = list(DEFAULT_CATEGORY_MAPPING.keys())
-        mid_point = len(categories) // 2
-        
-        with col1:
-            for category in categories[:mid_point]:
-                if category == 'Other':
-                    continue
-                keywords_str = ', '.join(current_keywords.get(category, []))
-                new_keywords = st.text_area(
-                    f"**{category}**",
-                    value=keywords_str,
-                    height=80,
-                    key=f"cat_{category}",
-                    help=f"Keywords for {category} category"
-                )
-                updated_keywords[category] = [k.strip() for k in new_keywords.split(',') if k.strip()]
-        
-        with col2:
-            for category in categories[mid_point:]:
-                if category == 'Other':
-                    continue
-                keywords_str = ', '.join(current_keywords.get(category, []))
-                new_keywords = st.text_area(
-                    f"**{category}**",
-                    value=keywords_str,
-                    height=80,
-                    key=f"cat_{category}",
-                    help=f"Keywords for {category} category"
-                )
-                updated_keywords[category] = [k.strip() for k in new_keywords.split(',') if k.strip()]
-        
-        updated_keywords['Other'] = []  # Other is always empty
-        
-        # Save button
-        col1, col2, col3 = st.columns([1, 1, 2])
-        
-        with col1:
-            if st.button("💾 Save Categories", use_container_width=True):
-                # Get current budgets and savings goal
-                budgets = json.loads(prefs['monthly_budgets']) if prefs and prefs.get('monthly_budgets') else DEFAULT_BUDGETS
-                savings_goal = prefs.get('savings_goal', DEFAULT_SAVINGS_GOAL) if prefs else DEFAULT_SAVINGS_GOAL
+        for idx, month_num in enumerate(sorted(selected_months)):
+            with tabs[idx]:
+                year_month = f"{selected_year}-{month_num:02d}"
+                render_monthly_analysis(data, year_month, calendar.month_name[month_num])
+    
+    # AGGREGATE ANALYSIS
+    if len(selected_months) > 1:
+        st.markdown("---")
+        render_aggregate_analysis(data, selected_year, selected_months)
+    
+    # EXPORT OPTIONS
+    st.markdown("---")
+    st.markdown("#### 📥 Export Data")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        export_format = st.radio(
+            "Format",
+            options=["Excel", "PDF Report"],
+            horizontal=True,
+            label_visibility="collapsed"
+        )
+    
+    with col2:
+        if export_format == "Excel":
+            excel_data = export_to_excel(period_data)
+            st.download_button(
+                label="📥 Download Excel",
+                data=excel_data,
+                file_name=f"transactions_{selected_year}_{analysis_type.replace(' ', '_')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                type="primary"
+            )
+        else:
+            try:
+                from pdf_generator import create_comprehensive_pdf
                 
-                if save_user_preferences(
-                    st.session_state.user['id'],
-                    updated_keywords,
-                    budgets,
-                    savings_goal
-                ):
-                    st.success("✅ Categories saved! Refreshing data...")
-                    clear_data_cache()
-                    st.rerun()
-                else:
-                    st.error("❌ Failed to save")
-        
-        with col2:
-            if st.button("🔄 Reset to Defaults", use_container_width=True):
-                budgets = json.loads(prefs['monthly_budgets']) if prefs and prefs.get('monthly_budgets') else DEFAULT_BUDGETS
-                savings_goal = prefs.get('savings_goal', DEFAULT_SAVINGS_GOAL) if prefs else DEFAULT_SAVINGS_GOAL
+                pdf_bytes = create_comprehensive_pdf(
+                    data=data,
+                    selected_year=int(selected_year),
+                    selected_months=[int(m) for m in selected_months],
+                    analysis_type=analysis_type,
+                    user_id=st.session_state.user['id']
+                )
                 
-                if save_user_preferences(
-                    st.session_state.user['id'],
-                    DEFAULT_CATEGORY_MAPPING,
-                    budgets,
-                    savings_goal
-                ):
-                    st.success("✅ Reset to defaults!")
-                    clear_data_cache()
-                    st.rerun()
+                period_label = f"{analysis_type}_{selected_year}".replace(" ", "_")
+                
+                st.download_button(
+                    label="📥 Download PDF",
+                    data=pdf_bytes,
+                    file_name=f"Finance_Report_{period_label}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    type="primary"
+                )
+                
+            except Exception as e:
+                st.error(f"❌ Error generating PDF: {e}")
+
 
 def render_cash_flow_charts(data, selected_year, selected_months):
     """Render cash flow visualization charts"""
@@ -448,198 +475,6 @@ def render_cash_flow_charts(data, selected_year, selected_months):
     
     with col4:
         st.metric("Avg Monthly Savings", f"J${avg_savings:,.0f}")
-        
-
-def render_analysis_section(data):
-    """Render the main analysis section"""
-    # SMART MONTH/YEAR SELECTOR
-    st.markdown("##### 📅 Select Analysis Period")
-    
-    # Make sure we have the required columns - FIX ORDER
-    if 'Date' not in data.columns:
-        st.error("❌ No Date column found in data")
-        return
-    
-    # Ensure Date is datetime
-    data['Date'] = pd.to_datetime(data['Date'], errors='coerce')
-    
-    # Create Year, Month, and YearMonth columns IN THIS ORDER
-    if 'Year' not in data.columns:
-        data['Year'] = data['Date'].dt.year
-    if 'Month' not in data.columns:
-        data['Month'] = data['Date'].dt.month
-    if 'YearMonth' not in data.columns:
-        data['YearMonth'] = data['Date'].dt.strftime('%Y-%m')
-    
-    # Remove any rows with invalid dates
-    data = data.dropna(subset=['Date', 'Year', 'Month', 'YearMonth'])
-    
-    if data.empty:
-        st.error("❌ No valid data after date parsing")
-        return
-    
-    # Extract years from data
-    available_years = sorted(data['Year'].unique())
-    
-    if not available_years:
-        st.error("No valid years found in data")
-        return
-    
-    st.success(f"✅ Loaded {len(data)} transactions from {len(data['YearMonth'].unique())} months")
-    
-    # Always create 3 columns for consistent layout
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
-    with col1:
-        analysis_type = st.selectbox(
-            "Period Type",
-            ["Specific Months", "Last 3 Months", "Last 6 Months", "All Time"],
-            key="analysis_type"
-        )
-    
-    with col2:
-        # Year selector (only if multiple years)
-        if len(available_years) > 1:
-            selected_year = st.selectbox(
-                "Select Year",
-                available_years,
-                index=len(available_years) - 1,  # Default to most recent year
-                key="selected_year"
-            )
-        else:
-            selected_year = available_years[0]
-            st.info(f"📅 Showing data for {selected_year}")
-    
-    # Month names
-    month_names = [calendar.month_name[i] for i in range(1, 13)]
-    
-    # Get available months for selected year
-    year_data = data[data['Year'] == selected_year]
-    available_months_nums = sorted(year_data['Month'].unique())
-    
-    if not available_months_nums:
-        st.warning(f"No data available for year {selected_year}")
-        return
-    
-    available_month_names = [calendar.month_name[m] for m in available_months_nums]
-    
-    # Determine selected months based on analysis type
-    if analysis_type == "Specific Months":
-        with col3:
-            selected_month_names = st.multiselect(
-                "Select Months",
-                available_month_names,
-                default=available_month_names,  # Default to ALL available months
-                key="selected_months_multi"
-            )
-        
-        if not selected_month_names:
-            st.warning("Please select at least one month")
-            return
-        
-        # Convert back to month numbers
-        selected_months = [month_names.index(name) + 1 for name in selected_month_names]
-    
-    elif analysis_type == "Last 3 Months":
-        selected_months = available_months_nums[-3:] if len(available_months_nums) >= 3 else available_months_nums
-        selected_month_names = [calendar.month_name[m] for m in selected_months]
-        with col3:
-            st.info(f"{len(selected_months)} months")
-    
-    elif analysis_type == "Last 6 Months":
-        selected_months = available_months_nums[-6:] if len(available_months_nums) >= 6 else available_months_nums
-        selected_month_names = [calendar.month_name[m] for m in selected_months]
-        with col3:
-            st.info(f"{len(selected_months)} months")
-    
-    else:  # All Time
-        selected_months = available_months_nums
-        selected_month_names = [calendar.month_name[m] for m in selected_months]
-        with col3:
-            st.info(f"{len(selected_months)} months")
-    
-    # Filter data
-    period_data = data[(data['Year'] == selected_year) & (data['Month'].isin(selected_months))]
-    
-    if period_data.empty:
-        st.warning("No data available for selected period")
-        return
-    
-    st.success(f"📊 Analyzing {len(period_data)} transactions across {len(selected_months)} month(s)")
-    
-    # CASH FLOW CHARTS
-    st.markdown("---")
-    render_cash_flow_charts(data, selected_year, selected_months)
-    
-    # MONTHLY ANALYSIS TABS
-    st.markdown("---")
-    st.markdown("##### 📅 Monthly Analysis")
-    
-    if len(selected_months) > 0:
-        # Create tabs for ONLY the months that have data
-        tabs = st.tabs([f"📊 {calendar.month_name[m]}" for m in sorted(selected_months)])
-        
-        for idx, month_num in enumerate(sorted(selected_months)):
-            with tabs[idx]:
-                year_month = f"{selected_year}-{month_num:02d}"
-                render_monthly_analysis(data, year_month, calendar.month_name[month_num])
-    
-    # AGGREGATE ANALYSIS
-    if len(selected_months) > 1:
-        st.markdown("---")
-        render_aggregate_analysis(data, selected_year, selected_months)
-    
-    # EXPORT OPTIONS
-    st.markdown("---")
-    st.markdown("#### 📥 Export Data")
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        export_format = st.radio(
-            "Format",
-            options=["Excel", "PDF Report"],
-            horizontal=True,
-            label_visibility="collapsed"
-        )
-    
-    with col2:
-        if export_format == "Excel":
-            excel_data = export_to_excel(period_data)
-            st.download_button(
-                label="📥 Download Excel",
-                data=excel_data,
-                file_name=f"transactions_{selected_year}_{analysis_type.replace(' ', '_')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                type="primary"
-            )
-        else:  # PDF Report
-            try:
-                from pdf_generator import create_comprehensive_pdf
-                
-                # Generate PDF with full period data
-                pdf_bytes = create_comprehensive_pdf(
-                    data=data,
-                    selected_year=selected_year,
-                    selected_months=selected_months,
-                    analysis_type=analysis_type,
-                    user_id=st.session_state.user['id']
-                )
-                
-                period_label = f"{analysis_type}_{selected_year}".replace(" ", "_")
-                
-                st.download_button(
-                    label="📥 Download PDF",
-                    data=pdf_bytes,
-                    file_name=f"Finance_Report_{period_label}.pdf",
-                    mime="application/pdf",
-                    use_container_width=True,
-                    type="primary"
-                )
-                
-            except Exception as e:
-                st.error(f"❌ Error generating PDF: {e}")
 
 def render_monthly_analysis(data, year_month, month_name):
     """Render detailed analysis for a specific month"""
