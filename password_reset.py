@@ -201,7 +201,7 @@ def send_reset_email(to_email, reset_token=None, reset_type='password'):
         if reset_type == 'password':
             msg['Subject'] = "Finance Hub - Password Reset Request"
             # TODO: Change this to your deployed URL
-            reset_url = f"https://fintrackertests.streamlit.app/?reset_token={reset_token}"
+            reset_url = f"https://updatedfintracker.streamlit.app/?reset_token={reset_token}"
             body = f"""Dear User,
 
 You requested to reset your password for Finance Hub.
