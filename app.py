@@ -42,7 +42,39 @@ def main():
     # Apply custom styles
     apply_custom_styles()
     
-
+    # CRITICAL: Hide the auto-generated sidebar navigation
+    st.markdown("""
+        <style>
+        [data-testid="stSidebarNav"] {
+            display: none !important;
+        }
+        section[data-testid="stSidebarNav"] {
+            display: none !important;
+        }
+        .css-1544g2n {
+            display: none !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    # Hide sidebar completely on login/auth pages
+    if not st.session_state.authenticated:
+        st.markdown("""
+            <style>
+            [data-testid="stSidebar"] {
+                display: none !important;
+            }
+            section[data-testid="stSidebar"] {
+                display: none !important;
+            }
+            /* Expand main content to full width when sidebar is hidden */
+            .main .block-container {
+                max-width: 100%;
+                padding-left: 5rem;
+                padding-right: 5rem;
+            }
+            </style>
+        """, unsafe_allow_html=True)
     
     # Handle query params for password reset
     try:
@@ -67,7 +99,7 @@ def main():
             login_page()
     else:
         # Render sidebar
-        render_sidebar()
+        #render_sidebar()
         
         # Render main dashboard
         dashboard_page()
