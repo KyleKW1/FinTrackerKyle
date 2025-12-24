@@ -18,26 +18,7 @@ import json
 
 
 def main():
-    """Main application function"""
-    # Initialize session state FIRST (before page config)
-    if 'authenticated' not in st.session_state:
-        st.session_state.authenticated = False
-    if 'user' not in st.session_state:
-        st.session_state.user = None
-    if 'page' not in st.session_state:
-        st.session_state.page = 'login'
-    if 'selected_feature' not in st.session_state:
-        st.session_state.selected_feature = None
-    if 'file_page' not in st.session_state:
-        st.session_state.file_page = 0
-    
-    # Page config - Hide sidebar on login, show when authenticated
-    st.set_page_config(
-        page_title=APP_TITLE,
-        page_icon=APP_ICON,
-        layout="wide",
-        initial_sidebar_state="collapsed" if not st.session_state.authenticated else "expanded"
-    )
+
     
     # Apply custom styles
     apply_custom_styles()
