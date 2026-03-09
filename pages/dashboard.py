@@ -229,7 +229,6 @@ def display_feature_selection(data):
         # Time Machine Card (Featured)
         st.markdown("""
             <div style='background: white; border-radius: 20px; padding: 2rem; 
-                 border-radius: 20px; padding: 2rem;
                  margin-bottom: 1.5rem; box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
                  transition: all 0.3s ease; cursor: pointer;'
                  onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 16px 32px rgba(102, 126, 234, 0.4)';"
@@ -240,14 +239,13 @@ def display_feature_selection(data):
                         Time Machine
                     </div>
                 </div>
-                
                 <p style='color: #6b7280; font-size: 1rem; line-height: 1.6; margin-bottom: 0;'>
                     See your financial future based on today's decisions. Compare 3 different scenarios.       
                 </p>
             </div>
         """, unsafe_allow_html=True)
         
-        if st.button("Open Time Machine", key="btn_timemachine", use_container_width=True, type="secondary"):
+        if st.button("Open Time Machine", key="btn_timemachine", use_container_width=True, type="primary"):
             st.session_state.selected_feature = 'timemachine'
             st.rerun()
     
