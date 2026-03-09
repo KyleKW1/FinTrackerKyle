@@ -218,6 +218,7 @@ def display_feature_selection(data):
                 </div>
                 <p style='color: #6b7280; font-size: 1rem; line-height: 1.6; margin-bottom: 0;'>
                     Set monthly budgets, track progress, and get alerts when approaching limits
+                    
                 </p>
             </div>
         """, unsafe_allow_html=True)
@@ -237,7 +238,7 @@ def display_feature_selection(data):
                 <div style='display: flex; align-items: center; margin-bottom: 1rem;'>
                     <div style='font-size: 2.5rem; margin-right: 1rem;'>🔮</div>
                     <div>
-                        <div style='font-size: 1.5rem; font-weight: 700; color: white;'>
+                        <div style='font-size: 1.5rem; font-weight: 700; color: #111827;'>
                             Time Machine
                         </div>
                         <div style='background: rgba(255,255,255,0.2); display: inline-block; 
@@ -248,6 +249,7 @@ def display_feature_selection(data):
                 </div>
                 <p style='color: rgba(255,255,255,0.95); font-size: 1rem; line-height: 1.6; margin-bottom: 0;'>
                     See your financial future based on today's decisions. Compare 3 different scenarios.
+                    
                 </p>
             </div>
         """, unsafe_allow_html=True)
