@@ -217,8 +217,7 @@ def display_feature_selection(data):
                     </div>
                 </div>
                 <p style='color: #6b7280; font-size: 1rem; line-height: 1.6; margin-bottom: 0;'>
-                    Set monthly budgets, track progress, and get alerts when approaching limits
-                    
+                    Set monthly budgets, track progress, and get alerts when approaching limits        
                 </p>
             </div>
         """, unsafe_allow_html=True)
@@ -248,8 +247,7 @@ def display_feature_selection(data):
                     </div>
                 </div>
                 <p style='color: rgba(255,255,255,0.95); font-size: 1rem; line-height: 1.6; margin-bottom: 0;'>
-                    See your financial future based on today's decisions. Compare 3 different scenarios.
-                    
+                    See your financial future based on today's decisions. Compare 3 different scenarios.       
                 </p>
             </div>
         """, unsafe_allow_html=True)
