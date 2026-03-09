@@ -228,7 +228,7 @@ def display_feature_selection(data):
         
         # Time Machine Card (Featured)
         st.markdown("""
-            <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            <div style='background: white; border-radius: 20px; padding: 2rem; 
                  border-radius: 20px; padding: 2rem; margin-bottom: 1.5rem; 
                  box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
                  transition: all 0.3s ease; cursor: pointer;'
@@ -243,7 +243,6 @@ def display_feature_selection(data):
                         <div style='background: rgba(255,255,255,0.2); display: inline-block; 
                              padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.75rem; 
                              font-weight: 600; color: white; margin-top: 0.25rem;'>
-                            ⭐ NEW
                         </div>
                     </div>
                 </div>
