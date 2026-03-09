@@ -240,7 +240,8 @@ def display_feature_selection(data):
                         Time Machine
                     </div>
                 </div>
-                <p style='color: rgba(255,255,255,0.95); font-size: 1rem; line-height: 1.6; margin-bottom: 0;'>
+                
+                <p style='color: #6b7280; font-size: 1rem; line-height: 1.6; margin-bottom: 0;'>
                     See your financial future based on today's decisions. Compare 3 different scenarios.       
                 </p>
             </div>
