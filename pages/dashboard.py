@@ -229,20 +229,19 @@ def display_feature_selection(data):
         # Time Machine Card (Featured)
         st.markdown("""
             <div style='background: white; border-radius: 20px; padding: 2rem; 
-                 border-radius: 20px; padding: 2rem; margin-bottom: 1.5rem; 
-                 box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
+                 border-radius: 20px; padding: 2rem;
+                 margin-bottom: 1.5rem; box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
                  transition: all 0.3s ease; cursor: pointer;'
                  onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 16px 32px rgba(102, 126, 234, 0.4)';"
                  onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 8px 16px rgba(102, 126, 234, 0.3)';">
                 <div style='display: flex; align-items: center; margin-bottom: 1rem;'>
                     <div style='font-size: 2.5rem; margin-right: 1rem;'>🔮</div>
-                    <div>
-                        <div style='font-size: 1.5rem; font-weight: 700; color: #111827;'>
-                            Time Machine
-                        </div>
-                        <div style='background: rgba(255,255,255,0.2); display: inline-block; 
-                             padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.75rem; 
-                             font-weight: 600; color: white; margin-top: 0.25rem;'>
+                    <div style='font-size: 1.5rem; font-weight: 700; color: #111827;'>
+                        Time Machine
+                    </div>
+                    <div style='background: rgba(255,255,255,0.2); display: inline-block; 
+                        padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.75rem; 
+                        font-weight: 600; color: #6b7280; margin-top: 0.25rem;'>
                         </div>
                     </div>
                 </div>
