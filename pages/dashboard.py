@@ -239,11 +239,6 @@ def display_feature_selection(data):
                     <div style='font-size: 1.5rem; font-weight: 700; color: #111827;'>
                         Time Machine
                     </div>
-                    <div style='background: rgba(255,255,255,0.2); display: inline-block; 
-                        padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.75rem; 
-                        font-weight: 600; color: #6b7280; margin-top: 0.25rem;'>
-                        </div>
-                    </div>
                 </div>
                 <p style='color: rgba(255,255,255,0.95); font-size: 1rem; line-height: 1.6; margin-bottom: 0;'>
                     See your financial future based on today's decisions. Compare 3 different scenarios.       
