@@ -80,7 +80,7 @@ hr{border:none;border-top:1px solid #1e2130;margin:16px 0}
 <button class="add-btn" onclick="addOTP()">+ Add payment</button>
 <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
   <span style="font-size:12px;color:#8b8fa8;white-space:nowrap">Apply to:</span>
-  <select id="otpTarget" onchange="recalc()" style="width:200px"></select>
+  <select id="otpTarget" onchange="onOtpTargetChange(this)" style="width:200px"></select>
 </div>
 <hr>
 <h3>Cash flow breakdown</h3>
@@ -101,6 +101,12 @@ let exps=[{id:1,name:'Food',amt:40000},{id:2,name:'Transport',amt:40000},{id:3,n
 let loans=[{id:1,name:'Property loan',bal:620000,rate:0,pmt:100000,start:0}];
 let otps=[{id:1,name:'Shoe allowance',amt:110000,st:'Pending'},{id:2,name:'Uniform allowance',amt:50000,st:'Pending'}];
 let ii=3,ei=7,li=2,oi=3,cfCh=null,ptCh=null;
+
+// FIX: source of truth for the target loan index lives in JS state,
+// not the DOM — the select is rebuilt on every renderOTPs() call which
+// caused sel.value to reset, making status toggles appear to do nothing.
+let otpTargetIdx=0;
+
 const $=id=>document.getElementById(id);
 const fmt=n=>'J$'+Math.abs(Math.round(n)).toLocaleString();
 const fmtS=n=>(Math.round(n)>=0?'+J$':'-J$')+Math.abs(Math.round(n)).toLocaleString();
@@ -140,9 +146,14 @@ function renderOTPs(){
     <button class="del" onclick="otps=otps.filter(i=>i.id!=${x.id});renderAll()">x</button>`;
     $('otpRows').appendChild(d);
   });
-  const sel=$('otpTarget');const prev=sel?sel.value:'';
-  if(sel)sel.innerHTML=loans.map((l,i)=>`<option value="${i}">${l.name}</option>`).join('');
-  if(sel&&prev!=='')try{sel.value=prev}catch(e){}
+  // FIX: rebuild otpTarget options and restore from JS state (not DOM),
+  // then clamp index in case a loan was deleted.
+  const sel=$('otpTarget');
+  if(sel){
+    sel.innerHTML=loans.map((l,i)=>`<option value="${i}">${l.name}</option>`).join('');
+    otpTargetIdx=Math.min(otpTargetIdx,Math.max(0,loans.length-1));
+    sel.value=otpTargetIdx;
+  }
 }
 function renderLoans(){
   $('loanList').innerHTML='';
@@ -166,6 +177,14 @@ function addInc(){incs.push({id:ii++,name:'New income',amt:0});renderAll()}
 function addExp(){exps.push({id:ei++,name:'New expense',amt:0});renderAll()}
 function addLoan(){loans.push({id:li++,name:'New loan',bal:0,rate:0,pmt:0,start:0});renderAll()}
 function addOTP(){otps.push({id:oi++,name:'New payment',amt:0,st:'Pending'});renderAll()}
+
+// FIX: dedicated handler that writes to JS state first, then recalcs —
+// previously onchange called recalc() directly, which read the DOM value
+// that had already been wiped by a preceding renderOTPs() call.
+function onOtpTargetChange(sel){
+  otpTargetIdx=parseInt(sel.value)||0;
+  recalc();
+}
 
 function calcSched(ln,extra){
   const rows=[];let bal=Math.max(0,ln.bal-extra);const mr=ln.rate/100/12;let m=0;
@@ -194,7 +213,9 @@ function recalc(){
 
   updateCharts(totInc,totExp,totLoan);
 
-  const tidx=parseInt($('otpTarget')?.value||'0');
+  // FIX: read from stable JS state instead of parsing the DOM select value,
+  // which was unreliable after renderOTPs() rebuilt the element.
+  const tidx=Math.min(otpTargetIdx,Math.max(0,loans.length-1));
   const otp=otps.filter(o=>o.st==='Pending').reduce((s,o)=>s+o.amt,0);
 
   $('scheds').innerHTML='';
