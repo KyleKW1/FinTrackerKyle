@@ -1,7 +1,5 @@
 # pages/spending_analysis.py
-"""
-Spending Analysis page - enhanced with editable categories and improved charts
-"""
+"""Spending Analysis — polished dark-luxury redesign"""
 
 import streamlit as st
 import pandas as pd
@@ -9,897 +7,509 @@ import plotly.express as px
 import plotly.graph_objects as go
 from data_loader import load_all_user_data, clear_data_cache
 from database import (
-    save_user_file, 
-    delete_user_file, 
-    get_user_files_paginated,
-    get_user_preferences,
-    save_user_preferences,
-    create_connection
+    save_user_file, delete_user_file,
+    get_user_files_paginated, get_user_preferences,
+    save_user_preferences, create_connection,
 )
 from utils import (
-    calculate_monthly_stats,
-    get_spending_by_category,
-    export_to_excel,
-    compare_budget_vs_actual
+    calculate_monthly_stats, get_spending_by_category,
+    export_to_excel, compare_budget_vs_actual,
 )
-
 from config import FILES_PER_PAGE, DEFAULT_CATEGORY_MAPPING, DEFAULT_BUDGETS, DEFAULT_SAVINGS_GOAL
-import json
-from datetime import datetime
-import calendar
+import json, calendar
 from io import BytesIO
 
+# ── Plotly theme ──────────────────────────────────────────────────────────
+_PLOTLY = dict(
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+    font=dict(family="Outfit, sans-serif", color="#7b7f94", size=12),
+    xaxis=dict(gridcolor="rgba(255,255,255,0.05)", linecolor="rgba(255,255,255,0.08)"),
+    yaxis=dict(gridcolor="rgba(255,255,255,0.05)", linecolor="rgba(255,255,255,0.08)"),
+    legend=dict(bgcolor="rgba(0,0,0,0)", bordercolor="rgba(255,255,255,0.08)"),
+    margin=dict(t=40, b=20, l=10, r=10),
+)
+_ACCENT   = ["#f5a623","#f04e5e","#3d9df6","#1fcf8a","#7c6bf6","#f093fb","#30cfd0","#fee140"]
+_PIE_HOLE = 0.52
 
-# HELPER FUNCTIONS
+
+def _section(title: str, subtitle: str = ""):
+    st.markdown(f"""
+        <div style="margin:1.75rem 0 1rem;">
+            <h3 style="font-family:'Playfair Display',serif;font-size:1.2rem;
+                       font-weight:600;color:#e8eaf0;margin:0 0 .2rem;
+                       letter-spacing:-.02em;">{title}</h3>
+            {"<p style='font-size:.82rem;color:#7b7f94;margin:0;'>" + subtitle + "</p>" if subtitle else ""}
+        </div>""", unsafe_allow_html=True)
+
+
+def _page_header(title: str, icon: str, back_key: str, back_feature=None):
+    col1, col2 = st.columns([5, 1])
+    with col1:
+        st.markdown(f"""
+            <div style="padding:.75rem 0 .25rem;">
+                <span style="font-size:0.7rem;font-weight:600;letter-spacing:.1em;
+                             text-transform:uppercase;color:#f5a623;">{icon}</span>
+                <h2 style="font-family:'Playfair Display',serif;font-size:1.8rem;
+                           font-weight:600;color:#e8eaf0;margin:.2rem 0 0;
+                           letter-spacing:-.02em;">{title}</h2>
+            </div>""", unsafe_allow_html=True)
+    with col2:
+        if st.button("← Back", key=back_key, use_container_width=True):
+            st.session_state.selected_feature = back_feature
+            st.rerun()
+    st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+
+
+# ── category editor ───────────────────────────────────────────────────────
 def render_category_editor():
-    """Render category keyword editor"""
-    with st.expander("🏷️ Customize Spending Categories", expanded=False):
-        st.markdown("**Edit keywords to customize how transactions are categorized**")
-        st.caption("Add keywords separated by commas. Transactions matching these keywords will be assigned to the category.")
-        
-        prefs = get_user_preferences(st.session_state.user['id'])
-        if prefs and prefs.get('category_keywords'):
-            current_keywords = json.loads(prefs['category_keywords'])
-        else:
-            current_keywords = DEFAULT_CATEGORY_MAPPING.copy()
-        
-        updated_keywords = {}
-        
-        col1, col2 = st.columns(2)
-        
-        categories = list(DEFAULT_CATEGORY_MAPPING.keys())
-        mid_point = len(categories) // 2
-        
-        with col1:
-            for category in categories[:mid_point]:
-                if category == 'Other':
-                    continue
-                keywords_str = ', '.join(current_keywords.get(category, []))
-                new_keywords = st.text_area(
-                    f"**{category}**",
-                    value=keywords_str,
-                    height=80,
-                    key=f"cat_{category}",
-                    help=f"Keywords for {category} category"
-                )
-                updated_keywords[category] = [k.strip() for k in new_keywords.split(',') if k.strip()]
-        
-        with col2:
-            for category in categories[mid_point:]:
-                if category == 'Other':
-                    continue
-                keywords_str = ', '.join(current_keywords.get(category, []))
-                new_keywords = st.text_area(
-                    f"**{category}**",
-                    value=keywords_str,
-                    height=80,
-                    key=f"cat_{category}",
-                    help=f"Keywords for {category} category"
-                )
-                updated_keywords[category] = [k.strip() for k in new_keywords.split(',') if k.strip()]
-        
-        updated_keywords['Other'] = []
-        
-        col1, col2, col3 = st.columns([1, 1, 2])
-        
-        with col1:
-            if st.button("💾 Save Categories", use_container_width=True):
-                budgets = json.loads(prefs['monthly_budgets']) if prefs and prefs.get('monthly_budgets') else DEFAULT_BUDGETS
-                savings_goal = prefs.get('savings_goal', DEFAULT_SAVINGS_GOAL) if prefs else DEFAULT_SAVINGS_GOAL
-                
-                if save_user_preferences(
-                    st.session_state.user['id'],
-                    updated_keywords,
-                    budgets,
-                    savings_goal
-                ):
-                    st.success("✅ Categories saved! Refreshing data...")
-                    clear_data_cache()
-                    st.rerun()
-                else:
-                    st.error("❌ Failed to save")
-        
-        with col2:
-            if st.button("🔄 Reset to Defaults", use_container_width=True):
-                budgets = json.loads(prefs['monthly_budgets']) if prefs and prefs.get('monthly_budgets') else DEFAULT_BUDGETS
-                savings_goal = prefs.get('savings_goal', DEFAULT_SAVINGS_GOAL) if prefs else DEFAULT_SAVINGS_GOAL
-                
-                if save_user_preferences(
-                    st.session_state.user['id'],
-                    DEFAULT_CATEGORY_MAPPING,
-                    budgets,
-                    savings_goal
-                ):
-                    st.success("✅ Reset to defaults!")
-                    clear_data_cache()
-                    st.rerun()
-                    
-def render_other_transactions_viewer(data):
-    """Render a viewer for transactions categorized as 'Other'"""
-    
-    if data.empty:
-        return
-    
-    # Filter for 'Other' transactions
-    other_transactions = data[data['Spending Category'] == 'Other'].copy()
-    
-    if other_transactions.empty:
-        return
-    
-    with st.expander(f"🔍 Review Uncategorized Transactions ({len(other_transactions)} items)", expanded=False):
-        st.caption("These transactions are currently categorized as 'Other'. Add keywords above to auto-categorize them.")
-        
-        # Show summary by description frequency
-        st.markdown("##### 📊 Most Common Merchants")
-        
-        merchant_counts = other_transactions['Description'].value_counts().head(15)
-        
-        if not merchant_counts.empty:
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                # Show as table
-                summary_df = pd.DataFrame({
-                    'Merchant/Description': merchant_counts.index,
-                    'Count': merchant_counts.values,
-                    'Total Amount': [other_transactions[other_transactions['Description'] == desc]['Amount'].sum() 
-                                    for desc in merchant_counts.index]
-                })
-                summary_df['Total Amount'] = summary_df['Total Amount'].apply(lambda x: f"J${x:,.2f}")
-                
-                st.dataframe(summary_df, use_container_width=True, hide_index=True)
-            
-            with col2:
-                st.markdown("**💡 Quick Tips:**")
-                st.caption("• Look for common merchants")
-                st.caption("• Add keywords from descriptions")
-                st.caption("• Use partial words (e.g. 'pharmacy')")
-                st.caption("• Separate with commas")
-                
-                total_other = other_transactions['Amount'].sum()
-                st.metric("Total Uncategorized", f"J${total_other:,.2f}")
-        
-        # Show detailed transactions (collapsible)
-        with st.expander("📋 View All Uncategorized Transactions", expanded=False):
-            # Sort by amount descending
-            display_df = other_transactions[['Date', 'Description', 'Amount']].copy()
-            display_df = display_df.sort_values('Amount', ascending=False)
-            display_df['Date'] = display_df['Date'].dt.strftime('%Y-%m-%d')
-            display_df['Amount'] = display_df['Amount'].apply(lambda x: f"J${x:,.2f}")
-            
-            st.dataframe(display_df, use_container_width=True, hide_index=True, height=400)
+    with st.expander("🏷️ Customise Spending Categories", expanded=False):
+        st.caption("Add comma-separated keywords. Matching transactions are auto-categorised.")
+        prefs = get_user_preferences(st.session_state.user["id"])
+        cur = json.loads(prefs["category_keywords"]) if prefs and prefs.get("category_keywords") else DEFAULT_CATEGORY_MAPPING.copy()
+        updated = {}
+        cats = [c for c in DEFAULT_CATEGORY_MAPPING if c != "Other"]
+        mid = len(cats) // 2
+        c1, c2 = st.columns(2)
+        for i, cat in enumerate(cats):
+            with (c1 if i < mid else c2):
+                kw = st.text_area(f"**{cat}**", value=", ".join(cur.get(cat, [])),
+                                  height=72, key=f"cat_{cat}")
+                updated[cat] = [k.strip() for k in kw.split(",") if k.strip()]
+        updated["Other"] = []
+        b1, b2, _ = st.columns([1, 1, 2])
+        budgets = json.loads(prefs["monthly_budgets"]) if prefs and prefs.get("monthly_budgets") else DEFAULT_BUDGETS
+        goal    = prefs.get("savings_goal", DEFAULT_SAVINGS_GOAL) if prefs else DEFAULT_SAVINGS_GOAL
+        with b1:
+            if st.button("💾 Save", use_container_width=True):
+                if save_user_preferences(st.session_state.user["id"], updated, budgets, goal):
+                    st.success("Saved!"); clear_data_cache(); st.rerun()
+        with b2:
+            if st.button("↺ Defaults", use_container_width=True):
+                if save_user_preferences(st.session_state.user["id"], DEFAULT_CATEGORY_MAPPING, budgets, goal):
+                    st.success("Reset!"); clear_data_cache(); st.rerun()
 
 
-def render_cash_flow_charts(data, selected_year, selected_months):
-    """Render cash flow visualization charts"""
-    st.markdown("##### 💰 Cash Flow Overview")
-    
-    period_data = data[(data['Year'] == selected_year) & (data['Month'].isin(selected_months))]
-    
-    if period_data.empty:
-        st.warning("No data available for selected period")
-        return
-    
-    monthly_stats = []
-    for month_num in sorted(selected_months):
-        year_month = f"{selected_year}-{month_num:02d}"
-        stats = calculate_monthly_stats(data, year_month)
-        monthly_stats.append({
-            'Month': calendar.month_name[month_num],
-            'Income': stats['income'],
-            'Spending': stats['spending'],
-            'Savings': stats['savings']
-        })
-    
-    stats_df = pd.DataFrame(monthly_stats)
-    
+# ── cash flow chart ───────────────────────────────────────────────────────
+def render_cash_flow_charts(data, year, months):
+    rows = []
+    for m in sorted(months):
+        ym = f"{year}-{m:02d}"
+        s  = calculate_monthly_stats(data, ym)
+        rows.append({"Month": calendar.month_abbr[m], "Income": s["income"],
+                     "Spending": s["spending"], "Savings": s["savings"]})
+    df = pd.DataFrame(rows)
     fig = go.Figure()
-    
-    fig.add_trace(go.Bar(
-        name='Income',
-        x=stats_df['Month'],
-        y=stats_df['Income'],
-        marker_color='#10b981',
-        text=stats_df['Income'].apply(lambda x: f'J${x:,.0f}'),
-        textposition='outside'
-    ))
-    
-    fig.add_trace(go.Bar(
-        name='Spending',
-        x=stats_df['Month'],
-        y=stats_df['Spending'],
-        marker_color='#ef4444',
-        text=stats_df['Spending'].apply(lambda x: f'J${x:,.0f}'),
-        textposition='outside'
-    ))
-    
-    fig.add_trace(go.Scatter(
-        name='Net Savings',
-        x=stats_df['Month'],
-        y=stats_df['Savings'],
-        mode='lines+markers',
-        line=dict(color='#3b82f6', width=3),
-        marker=dict(size=10),
-        text=stats_df['Savings'].apply(lambda x: f'J${x:,.0f}'),
-        textposition='top center'
-    ))
-    
-    fig.update_layout(
-        title=f'Cash Flow Analysis - {selected_year}',
-        xaxis_title='Month',
-        yaxis_title='Amount (J$)',
-        barmode='group',
-        height=500,
-        hovermode='x unified',
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
-    )
-    
+    fig.add_trace(go.Bar(name="Income",   x=df["Month"], y=df["Income"],
+                         marker_color="#1fcf8a",
+                         text=df["Income"].map(lambda v: f"J${v:,.0f}"),
+                         textposition="outside"))
+    fig.add_trace(go.Bar(name="Spending", x=df["Month"], y=df["Spending"],
+                         marker_color="#f04e5e",
+                         text=df["Spending"].map(lambda v: f"J${v:,.0f}"),
+                         textposition="outside"))
+    fig.add_trace(go.Scatter(name="Net Savings", x=df["Month"], y=df["Savings"],
+                             mode="lines+markers",
+                             line=dict(color="#f5a623", width=3),
+                             marker=dict(size=9, color="#f5a623",
+                                         line=dict(width=2, color="#07080f"))))
+    fig.update_layout(barmode="group", height=420,
+                      title=dict(text=f"Cash Flow — {year}", font=dict(color="#e8eaf0", size=14)),
+                      legend=dict(orientation="h", y=1.06, x=1, xanchor="right"),
+                      **_PLOTLY)
     st.plotly_chart(fig, use_container_width=True)
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    total_income = stats_df['Income'].sum()
-    total_spending = stats_df['Spending'].sum()
-    total_savings = stats_df['Savings'].sum()
-    avg_savings = stats_df['Savings'].mean()
-    
-    with col1:
-        st.metric("Total Income", f"J${total_income:,.0f}")
-    with col2:
-        st.metric("Total Spending", f"J${total_spending:,.0f}")
-    with col3:
-        st.metric("Total Savings", f"J${total_savings:,.0f}")
-    with col4:
-        st.metric("Avg Monthly Savings", f"J${avg_savings:,.0f}")
+
+    t_inc = df["Income"].sum(); t_spd = df["Spending"].sum()
+    t_sav = df["Savings"].sum(); avg_sav = df["Savings"].mean()
+    cs = st.columns(4)
+    for col, lbl, val in zip(cs,
+        ["Total Income","Total Spending","Net Savings","Avg Monthly Saved"],
+        [t_inc, t_spd, t_sav, avg_sav]):
+        with col:
+            st.markdown(f"""
+                <div style="background:#13151f;border:1px solid rgba(255,255,255,.07);
+                            border-radius:12px;padding:1rem 1.25rem;text-align:center;">
+                    <div style="font-size:.68rem;font-weight:600;letter-spacing:.07em;
+                                text-transform:uppercase;color:#7b7f94;margin-bottom:.4rem;">
+                        {lbl}</div>
+                    <div style="font-size:1.3rem;font-weight:700;color:#e8eaf0;">
+                        J${val:,.0f}</div>
+                </div>""", unsafe_allow_html=True)
 
 
+# ── monthly analysis ──────────────────────────────────────────────────────
 def render_monthly_analysis(data, year_month, month_name):
-    """Render detailed analysis for a specific month"""
-    month_data = data[data['YearMonth'] == year_month]
-    
-    if month_data.empty:
-        st.warning("No data for this month")
-        return
-    
-    stats = calculate_monthly_stats(data, year_month)
-    summary = get_spending_by_category(data, year_month)
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("💰 Income", f"J${stats['income']:,.0f}")
-    with col2:
-        st.metric("💸 Spending", f"J${stats['spending']:,.0f}")
-    with col3:
-        st.metric("🎯 Savings", f"J${stats['savings']:,.0f}")
-    
-    if not summary.empty:
-        st.markdown(f"##### 📈 Spending Breakdown for {month_name}")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            fig_pie = px.pie(
-                summary,
-                values='Amount',
-                names='Spending Category',
-                hole=0.4,
-                title='Distribution'
-            )
-            fig_pie.update_layout(height=350)
-            st.plotly_chart(fig_pie, use_container_width=True)
-        
-        with col2:
-            fig_bar = px.bar(
-                summary,
-                x='Spending Category',
-                y='Amount',
-                color='Amount',
-                color_continuous_scale='Blues',
-                title='Category Amounts'
-            )
-            fig_bar.update_layout(
-                height=350,
-                showlegend=False,
-                xaxis_tickangle=-45
-            )
-            st.plotly_chart(fig_bar, use_container_width=True)
-        
-        prefs = get_user_preferences(st.session_state.user['id'])
-        if prefs and prefs.get('monthly_budgets'):
-            budgets = json.loads(prefs['monthly_budgets'])
-            comparison = compare_budget_vs_actual(budgets, summary)
-            
-            if not comparison.empty:
-                st.markdown(f"##### 📏 Budget vs. Actual - {month_name}")
-                
-                fig_comparison = go.Figure()
-                
-                fig_comparison.add_trace(go.Bar(
-                    name='Budget',
-                    x=comparison['Spending Category'],
-                    y=comparison['Budget'],
-                    marker_color='#3b82f6'
-                ))
-                
-                fig_comparison.add_trace(go.Bar(
-                    name='Actual',
-                    x=comparison['Spending Category'],
-                    y=comparison['Amount'],
-                    marker_color='#ef4444'
-                ))
-                
-                fig_comparison.update_layout(
-                    barmode='group',
-                    height=400,
-                    xaxis_tickangle=-45,
-                    yaxis_title='Amount (J$)'
-                )
-                
-                st.plotly_chart(fig_comparison, use_container_width=True)
-                
-                over_budget = comparison[comparison['Amount'] > comparison['Budget']]
-                if not over_budget.empty:
-                    st.warning(f"⚠️ Over budget in {len(over_budget)} categories")
-                    for _, row in over_budget.iterrows():
-                        st.caption(
-                            f"**{row['Spending Category']}**: "
-                            f"J${row['Amount']:,.0f} / J${row['Budget']:,.0f} "
-                            f"(+J${row['Amount'] - row['Budget']:,.0f})"
-                        )
-        
-        st.markdown("##### 📋 Detailed Breakdown")
-        summary_display = summary.copy()
-        summary_display['Amount'] = summary_display['Amount'].apply(lambda x: f"J${x:,.2f}")
-        summary_display['Percentage'] = summary_display['Percentage'].apply(lambda x: f"{x:.1f}%")
-        st.dataframe(summary_display, use_container_width=True, hide_index=True)
-        
-        # ADD DROPDOWN FOR "OTHER" TRANSACTIONS
-        other_row = summary[summary['Spending Category'] == 'Other']
-        if not other_row.empty:
-            other_amount = other_row['Amount'].iloc[0]
-            other_pct = other_row['Percentage'].iloc[0]
-            
-            with st.expander(f"🔍 View 'Other' Transactions (J${other_amount:,.2f} - {other_pct:.1f}%)", expanded=False):
-                st.caption("These transactions weren't matched to any category. Review them below and add keywords in the category editor to auto-categorize.")
-                
-                # Get all "Other" transactions for this month
-                other_transactions = month_data[month_data['Spending Category'] == 'Other'].copy()
-                
-                if not other_transactions.empty:
-                    # Show summary by merchant
-                    st.markdown("**Most Common Merchants:**")
-                    merchant_summary = other_transactions.groupby('Description').agg({
-                        'Amount': ['sum', 'count']
-                    }).reset_index()
-                    merchant_summary.columns = ['Description', 'Total Amount', 'Count']
-                    merchant_summary = merchant_summary.sort_values('Total Amount', ascending=False).head(10)
-                    
-                    for _, row in merchant_summary.iterrows():
-                        st.markdown(f"""
-                            <div style='background: #fee2e2; padding: 0.5rem; border-radius: 6px; margin-bottom: 0.5rem; border-left: 3px solid #ef4444;'>
-                                <div style='font-weight: 600; color: #991b1b;'>{row['Description'][:50]}</div>
-                                <div style='color: #7f1d1d; font-size: 0.85rem;'>
-                                    {int(row['Count'])} transaction(s) • J${row['Total Amount']:,.2f}
-                                </div>
-                            </div>
-                        """, unsafe_allow_html=True)
-                    
-                    # Full transaction list
-                    with st.expander("📋 All 'Other' Transactions", expanded=False):
-                        other_display = other_transactions[['Date', 'Description', 'Amount']].copy()
-                        other_display = other_display.sort_values('Amount', ascending=False)
-                        other_display['Date'] = other_display['Date'].dt.strftime('%Y-%m-%d')
-                        other_display['Amount'] = other_display['Amount'].apply(lambda x: f"J${x:,.2f}")
-                        st.dataframe(other_display, use_container_width=True, hide_index=True, height=300)
-                else:
-                    st.info("No 'Other' transactions found")
+    md = data[data["YearMonth"] == year_month]
+    if md.empty:
+        st.warning("No data for this month."); return
+    s  = calculate_monthly_stats(data, year_month)
+    sm = get_spending_by_category(data, year_month)
+
+    cs = st.columns(3)
+    for col, lbl, val, grad in zip(cs,
+        ["Income","Spending","Net Savings"],
+        [s["income"], s["spending"], s["savings"]],
+        ["#1fcf8a","#f04e5e","#f5a623"]):
+        with col:
+            st.markdown(f"""
+                <div style="background:#13151f;border:1px solid rgba(255,255,255,.07);
+                            border-left:3px solid {grad};border-radius:12px;
+                            padding:1rem 1.25rem;">
+                    <div style="font-size:.68rem;font-weight:600;letter-spacing:.07em;
+                                text-transform:uppercase;color:#7b7f94;margin-bottom:.35rem;">
+                        {lbl}</div>
+                    <div style="font-size:1.55rem;font-weight:700;color:#e8eaf0;">
+                        J${val:,.0f}</div>
+                </div>""", unsafe_allow_html=True)
+
+    if sm.empty: return
+    st.markdown(f"<div style='height:.75rem'></div>", unsafe_allow_html=True)
+    ca, cb = st.columns(2)
+    with ca:
+        fig = px.pie(sm, values="Amount", names="Spending Category", hole=_PIE_HOLE,
+                     color_discrete_sequence=_ACCENT, title="Distribution")
+        fig.update_traces(textposition="inside", textinfo="percent+label",
+                          textfont_size=11)
+        fig.update_layout(height=340, showlegend=False, **_PLOTLY)
+        st.plotly_chart(fig, use_container_width=True)
+    with cb:
+        fig = px.bar(sm.sort_values("Amount"), x="Amount", y="Spending Category",
+                     orientation="h", color="Amount",
+                     color_continuous_scale=["#1c6fd1","#f5a623","#f04e5e"],
+                     title="Category Amounts")
+        fig.update_layout(height=340, showlegend=False, coloraxis_showscale=False,
+                          **_PLOTLY)
+        st.plotly_chart(fig, use_container_width=True)
+
+    # budget comparison
+    prefs = get_user_preferences(st.session_state.user["id"])
+    if prefs and prefs.get("monthly_budgets"):
+        budgets = json.loads(prefs["monthly_budgets"])
+        cmp = compare_budget_vs_actual(budgets, sm)
+        if not cmp.empty:
+            st.markdown(f"""<p style="font-family:'Playfair Display',serif;font-size:1rem;
+                            font-weight:600;color:#e8eaf0;margin:1rem 0 .75rem;">
+                            Budget vs Actual — {month_name}</p>""",
+                        unsafe_allow_html=True)
+            fig2 = go.Figure()
+            fig2.add_trace(go.Bar(name="Budget", x=cmp["Spending Category"],
+                                  y=cmp["Budget"], marker_color="#3d9df6"))
+            fig2.add_trace(go.Bar(name="Actual", x=cmp["Spending Category"],
+                                  y=cmp["Amount"], marker_color="#f04e5e"))
+            fig2.update_layout(barmode="group", height=340,
+                               xaxis_tickangle=-35, **_PLOTLY)
+            st.plotly_chart(fig2, use_container_width=True)
+            ob = cmp[cmp["Amount"] > cmp["Budget"]]
+            if not ob.empty:
+                st.warning(f"⚠️ Over budget in {len(ob)} categories")
+                for _, r in ob.iterrows():
+                    st.caption(f"**{r['Spending Category']}**: J${r['Amount']:,.0f} / J${r['Budget']:,.0f} (+J${r['Amount']-r['Budget']:,.0f})")
+
+    # breakdown table
+    st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
+    disp = sm.copy()
+    disp["Amount"]     = disp["Amount"].map(lambda v: f"J${v:,.2f}")
+    disp["Percentage"] = disp["Percentage"].map(lambda v: f"{v:.1f}%")
+    st.dataframe(disp, use_container_width=True, hide_index=True)
+
+    # "Other" drill-down
+    oth = sm[sm["Spending Category"] == "Other"]
+    if not oth.empty:
+        amt = oth["Amount"].iloc[0]; pct = oth["Percentage"].iloc[0]
+        with st.expander(f"🔍 Uncategorised transactions — J${amt:,.0f} ({pct:.1f}%)"):
+            st.caption("These weren't matched to any keyword. Add keywords above to auto-categorise them.")
+            sub = md[md["Spending Category"] == "Other"]
+            ms  = sub.groupby("Description")["Amount"].agg(["sum","count"]).reset_index()
+            ms.columns = ["Merchant","Total","Count"]
+            ms  = ms.sort_values("Total", ascending=False).head(12)
+            for _, r in ms.iterrows():
+                st.markdown(f"""
+                    <div style="background:rgba(240,78,94,.08);border-left:3px solid #f04e5e;
+                                border-radius:8px;padding:.6rem .9rem;margin-bottom:.4rem;">
+                        <span style="font-weight:600;color:#e8eaf0;">{r['Merchant'][:55]}</span>
+                        <span style="float:right;color:#f5a623;font-weight:600;">J${r['Total']:,.0f}</span>
+                        <div style="font-size:.75rem;color:#7b7f94;">{int(r['Count'])} transaction(s)</div>
+                    </div>""", unsafe_allow_html=True)
 
 
+# ── aggregate analysis ────────────────────────────────────────────────────
+def render_aggregate_analysis(data, year, months):
+    _section("Aggregate Analysis", "Combined view across all selected months")
+    pd_filt = data[(data["Year"] == year) & (data["Month"].isin(months))]
+    if pd_filt.empty: return
+    yms = [f"{year}-{m:02d}" for m in months]
+    t_inc = sum(calculate_monthly_stats(data, ym)["income"]   for ym in yms)
+    t_spd = sum(calculate_monthly_stats(data, ym)["spending"] for ym in yms)
+    t_sav = t_inc - t_spd
 
-def render_aggregate_analysis(data, selected_year, selected_months):
-    """Render aggregate analysis for multiple months"""
-    st.markdown("##### 📊 Aggregate Analysis")
-    
-    # Filter data for selected period
-    period_data = data[(data['Year'] == selected_year) & (data['Month'].isin(selected_months))]
-    
-    if period_data.empty:
-        st.warning("⚠️ No data available for selected months")
-        return
-    
-    # Calculate totals
-    year_months = [f"{selected_year}-{m:02d}" for m in selected_months]
-    total_income = sum([calculate_monthly_stats(data, ym)['income'] for ym in year_months])
-    total_spending = sum([calculate_monthly_stats(data, ym)['spending'] for ym in year_months])
-    total_savings = total_income - total_spending
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("💰 Total Income", f"J${total_income:,.0f}")
-    with col2:
-        st.metric("💸 Total Spending", f"J${total_spending:,.0f}")
-    with col3:
-        st.metric("🎯 Total Savings", f"J${total_savings:,.0f}")
-    
-    st.markdown("##### 🥧 Aggregate Spending by Category")
-    
-    # Get spending data for all selected months
-    all_spending = []
-    for ym in year_months:
-        month_summary = get_spending_by_category(data, ym)
-        if not month_summary.empty:
-            all_spending.append(month_summary)
-    
-    if not all_spending:
-        st.info("📊 No spending data to display")
-        return
-    
-    # Aggregate spending by category
-    aggregate_spending = pd.concat(all_spending).groupby('Spending Category')['Amount'].sum().reset_index()
-    aggregate_spending['Percentage'] = 100 * aggregate_spending['Amount'] / aggregate_spending['Amount'].sum()
-    aggregate_spending = aggregate_spending.sort_values('Amount', ascending=False)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        fig_agg_pie = px.pie(
-            aggregate_spending,
-            values='Amount',
-            names='Spending Category',
-            hole=0.4,
-            title='Total Spending Distribution'
-        )
-        st.plotly_chart(fig_agg_pie, use_container_width=True)
-    
-    with col2:
-        fig_agg_bar = px.bar(
-            aggregate_spending,
-            x='Spending Category',
-            y='Amount',
-            color='Amount',
-            color_continuous_scale='Reds',
-            title='Category Breakdown'
-        )
-        fig_agg_bar.update_layout(showlegend=False, xaxis_tickangle=-45)
-        st.plotly_chart(fig_agg_bar, use_container_width=True)
-    
-    # Show detailed breakdown table
-    st.markdown("##### 📋 Detailed Breakdown")
-    breakdown_display = aggregate_spending.copy()
-    breakdown_display['Amount'] = breakdown_display['Amount'].apply(lambda x: f"J${x:,.2f}")
-    breakdown_display['Percentage'] = breakdown_display['Percentage'].apply(lambda x: f"{x:.1f}%")
-    st.dataframe(breakdown_display, use_container_width=True, hide_index=True)
-    
-    # ADD DROPDOWN FOR "OTHER" TRANSACTIONS IN AGGREGATE VIEW
-    other_row = aggregate_spending[aggregate_spending['Spending Category'] == 'Other']
-    if not other_row.empty:
-        other_amount = other_row['Amount'].iloc[0]
-        other_pct = other_row['Percentage'].iloc[0]
-        
-        with st.expander(f"🔍 View 'Other' Transactions (J${other_amount:,.2f} - {other_pct:.1f}%)", expanded=False):
-            st.caption("These transactions weren't matched to any category. Review them below and add keywords in the category editor to auto-categorize.")
-            
-            # Get all "Other" transactions for the selected period
-            other_transactions = period_data[period_data['Spending Category'] == 'Other'].copy()
-            
-            if not other_transactions.empty:
-                # Show summary by merchant
-                st.markdown("**Most Common Merchants:**")
-                merchant_summary = other_transactions.groupby('Description').agg({
-                    'Amount': ['sum', 'count']
-                }).reset_index()
-                merchant_summary.columns = ['Description', 'Total Amount', 'Count']
-                merchant_summary = merchant_summary.sort_values('Total Amount', ascending=False).head(15)
-                
-                for _, row in merchant_summary.iterrows():
-                    st.markdown(f"""
-                        <div style='background: #fee2e2; padding: 0.5rem; border-radius: 6px; margin-bottom: 0.5rem; border-left: 3px solid #ef4444;'>
-                            <div style='font-weight: 600; color: #991b1b;'>{row['Description'][:60]}</div>
-                            <div style='color: #7f1d1d; font-size: 0.85rem;'>
-                                {int(row['Count'])} transaction(s) • J${row['Total Amount']:,.2f}
-                            </div>
-                        </div>
-                    """, unsafe_allow_html=True)
-                
-                # Full transaction list
-                with st.expander("📋 All 'Other' Transactions", expanded=False):
-                    other_display = other_transactions[['Date', 'Description', 'Amount']].copy()
-                    other_display = other_display.sort_values('Amount', ascending=False)
-                    other_display['Date'] = other_display['Date'].dt.strftime('%Y-%m-%d')
-                    other_display['Amount'] = other_display['Amount'].apply(lambda x: f"J${x:,.2f}")
-                    st.dataframe(other_display, use_container_width=True, hide_index=True, height=400)
-            else:
-                st.info("No 'Other' transactions found")
-    
+    cs = st.columns(3)
+    for col, lbl, val, clr in zip(cs,
+        ["Total Income","Total Spending","Net Savings"],
+        [t_inc, t_spd, t_sav],["#1fcf8a","#f04e5e","#f5a623"]):
+        with col:
+            st.markdown(f"""
+                <div style="background:#13151f;border:1px solid rgba(255,255,255,.07);
+                            border-left:3px solid {clr};border-radius:12px;
+                            padding:1rem 1.25rem;text-align:center;">
+                    <div style="font-size:.68rem;font-weight:600;letter-spacing:.07em;
+                                text-transform:uppercase;color:#7b7f94;margin-bottom:.4rem;">
+                        {lbl}</div>
+                    <div style="font-size:1.4rem;font-weight:700;color:#e8eaf0;">
+                        J${val:,.0f}</div>
+                </div>""", unsafe_allow_html=True)
 
+    chunks = [get_spending_by_category(data, ym) for ym in yms]
+    chunks = [c for c in chunks if not c.empty]
+    if not chunks: return
+    agg = pd.concat(chunks).groupby("Spending Category")["Amount"].sum().reset_index()
+    agg["Percentage"] = 100 * agg["Amount"] / agg["Amount"].sum()
+    agg = agg.sort_values("Amount", ascending=False)
+
+    st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
+    ca, cb = st.columns(2)
+    with ca:
+        fig = px.pie(agg, values="Amount", names="Spending Category", hole=_PIE_HOLE,
+                     color_discrete_sequence=_ACCENT, title="Spending Distribution")
+        fig.update_traces(textposition="inside", textinfo="percent+label", textfont_size=11)
+        fig.update_layout(height=340, showlegend=False, **_PLOTLY)
+        st.plotly_chart(fig, use_container_width=True)
+    with cb:
+        fig = px.bar(agg.sort_values("Amount"), x="Amount", y="Spending Category",
+                     orientation="h", color="Amount",
+                     color_continuous_scale=["#1c6fd1","#f5a623","#f04e5e"],
+                     title="Category Totals")
+        fig.update_layout(height=340, showlegend=False, coloraxis_showscale=False,
+                          **_PLOTLY)
+        st.plotly_chart(fig, use_container_width=True)
+
+    disp = agg.copy()
+    disp["Amount"]     = disp["Amount"].map(lambda v: f"J${v:,.2f}")
+    disp["Percentage"] = disp["Percentage"].map(lambda v: f"{v:.1f}%")
+    st.dataframe(disp, use_container_width=True, hide_index=True)
+
+
+# ── analysis section ──────────────────────────────────────────────────────
 def render_analysis_section(data):
-    """Render the main analysis section"""
-    
-    if data.empty:
-        st.error("❌ No data to analyze")
-        return
-    
-    st.markdown("##### 📅 Select Analysis Period")
-    
-    # CRITICAL FIX: FORCE recalculate Year from Date column
-    if 'Date' in data.columns:
-        data['Date'] = pd.to_datetime(data['Date'], errors='coerce')
-        data = data.dropna(subset=['Date'])
-        # FORCE recalculate Year from actual Date values
-        data['Year'] = data['Date'].dt.year.astype(int)
-        data['Month'] = data['Date'].dt.month.astype(int)
-    
-    available_years = sorted([int(y) for y in data['Year'].dropna().unique()])
-    
-    if len(available_years) == 0:
-        st.error("❌ No valid years found in data")
-        return
-    
-    # Show data range for clarity
-    min_date = data['Date'].min()
-    max_date = data['Date'].max()
-    st.info(f"📊 Data available from {min_date.strftime('%B %Y')} to {max_date.strftime('%B %Y')}")
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
-    with col1:
-        analysis_type = st.selectbox(
-            "Period Type",
-            ["Specific Months", "Last 3 Months", "Last 6 Months", "All Time"],
-            key="analysis_type"
-        )
-    
-    with col2:
-        # ALWAYS show dropdown - never just text
-        selected_year = st.selectbox(
-            "Year",
-            available_years,
-            index=len(available_years) - 1,
-            key="selected_year"
-        )
-    
-    # Filter data for selected year
-    year_data = data[data['Year'] == selected_year]
-    available_months_nums = sorted([int(m) for m in year_data['Month'].dropna().unique()])
-    
-    if len(available_months_nums) == 0:
-        st.error(f"❌ No data found for year {selected_year}")
-        return
-    
-    available_month_names = [calendar.month_name[m] for m in available_months_nums]
-    
-    if analysis_type == "Specific Months":
-        with col3:
-            selected_month_names = st.multiselect(
-                "Select Months",
-                available_month_names,
-                default=available_month_names,
-                key="selected_months_multi"
-            )
-        
-        if not selected_month_names:
-            st.warning("⚠️ Please select at least one month")
-            return
-        
-        month_names_full = [calendar.month_name[i] for i in range(1, 13)]
-        selected_months = [month_names_full.index(name) + 1 for name in selected_month_names]
-    
-    elif analysis_type == "Last 3 Months":
-        selected_months = available_months_nums[-3:] if len(available_months_nums) >= 3 else available_months_nums
-        with col3:
-            st.info(f"{len(selected_months)} months")
-    
-    elif analysis_type == "Last 6 Months":
-        selected_months = available_months_nums[-6:] if len(available_months_nums) >= 6 else available_months_nums
-        with col3:
-            st.info(f"{len(selected_months)} months")
-    
-    else:  # All Time
-        selected_months = available_months_nums
-        with col3:
-            st.info(f"{len(selected_months)} months")
-    
-    period_data = data[(data['Year'] == selected_year) & (data['Month'].isin(selected_months))]
-    
-    if period_data.empty:
-        st.error("❌ No transactions found for selected period")
-        return
-    
-    st.markdown("---")
-    render_cash_flow_charts(data, selected_year, selected_months)
-    
-    st.markdown("---")
-    st.markdown("##### 📅 Monthly Analysis")
-    
-    if len(selected_months) > 0:
-        tabs = st.tabs([f"📊 {calendar.month_name[m]}" for m in sorted(selected_months)])
-        
-        for idx, month_num in enumerate(sorted(selected_months)):
-            with tabs[idx]:
-                year_month = f"{selected_year}-{month_num:02d}"
-                render_monthly_analysis(data, year_month, calendar.month_name[month_num])
-    
-    if len(selected_months) > 1:
-        st.markdown("---")
-        render_aggregate_analysis(data, selected_year, selected_months)
-    
-    st.markdown("---")
-    st.markdown("#### 📥 Export Data")
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        export_format = st.radio(
-            "Format",
-            options=["Excel", "PDF Report"],
-            horizontal=True,
-            label_visibility="collapsed"
-        )
-    
-    with col2:
-        if export_format == "Excel":
-            excel_data = export_to_excel(period_data)
-            st.download_button(
-                label="📥 Download Excel",
-                data=excel_data,
-                file_name=f"transactions_{selected_year}_{analysis_type.replace(' ', '_')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                type="primary"
-            )
+    if data.empty: st.error("No data to analyse."); return
+    if "Date" in data.columns:
+        data["Date"]  = pd.to_datetime(data["Date"], errors="coerce")
+        data          = data.dropna(subset=["Date"])
+        data["Year"]  = data["Date"].dt.year.astype(int)
+        data["Month"] = data["Date"].dt.month.astype(int)
+
+    avail_years = sorted(data["Year"].dropna().unique().astype(int))
+    if not avail_years: st.error("No valid years in data."); return
+
+    mn, mx = data["Date"].min(), data["Date"].max()
+    st.markdown(f"""
+        <div style="background:rgba(245,166,35,.07);border:1px solid rgba(245,166,35,.20);
+                    border-radius:10px;padding:.7rem 1rem;margin-bottom:1rem;
+                    font-size:.82rem;color:#f5a623;">
+            📊 Data range: <strong>{mn.strftime('%B %Y')}</strong>
+            to <strong>{mx.strftime('%B %Y')}</strong>
+        </div>""", unsafe_allow_html=True)
+
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c1:
+        atype = st.selectbox("Period", ["Specific Months","Last 3 Months",
+                                         "Last 6 Months","All Time"], key="analysis_type")
+    with c2:
+        sel_year = st.selectbox("Year", avail_years,
+                                index=len(avail_years)-1, key="selected_year")
+    yr_data  = data[data["Year"] == sel_year]
+    avail_mn = sorted(yr_data["Month"].dropna().unique().astype(int))
+    if not avail_mn: st.error(f"No data for {sel_year}."); return
+    mn_names = [calendar.month_name[m] for m in avail_mn]
+
+    if atype == "Specific Months":
+        with c3:
+            sel_names = st.multiselect("Months", mn_names, default=mn_names, key="sel_months")
+        if not sel_names: st.warning("Select at least one month."); return
+        all_names  = [calendar.month_name[i] for i in range(1, 13)]
+        sel_months = [all_names.index(n)+1 for n in sel_names]
+    elif atype == "Last 3 Months":
+        sel_months = avail_mn[-3:] if len(avail_mn) >= 3 else avail_mn
+        with c3: st.info(f"{len(sel_months)} months")
+    elif atype == "Last 6 Months":
+        sel_months = avail_mn[-6:] if len(avail_mn) >= 6 else avail_mn
+        with c3: st.info(f"{len(sel_months)} months")
+    else:
+        sel_months = avail_mn
+        with c3: st.info(f"{len(sel_months)} months")
+
+    pd_filt = data[(data["Year"] == sel_year) & (data["Month"].isin(sel_months))]
+    if pd_filt.empty: st.error("No transactions found."); return
+
+    st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+    render_cash_flow_charts(data, sel_year, sel_months)
+    st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+
+    _section("Monthly Breakdown")
+    tabs = st.tabs([f"📊 {calendar.month_name[m]}" for m in sorted(sel_months)])
+    for i, m in enumerate(sorted(sel_months)):
+        with tabs[i]:
+            render_monthly_analysis(data, f"{sel_year}-{m:02d}", calendar.month_name[m])
+
+    if len(sel_months) > 1:
+        st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+        render_aggregate_analysis(data, sel_year, sel_months)
+
+    st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+    _section("Export Data")
+    ec1, ec2 = st.columns([2, 1])
+    with ec1:
+        fmt = st.radio("Format", ["Excel","PDF Report"], horizontal=True,
+                       label_visibility="collapsed")
+    with ec2:
+        if fmt == "Excel":
+            st.download_button("📥 Download Excel",
+                               data=export_to_excel(pd_filt),
+                               file_name=f"transactions_{sel_year}.xlsx",
+                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                               use_container_width=True, type="primary")
         else:
             try:
                 from pdf_generator import create_comprehensive_pdf
-                
-                pdf_bytes = create_comprehensive_pdf(
-                    data=data,
-                    selected_year=int(selected_year),
-                    selected_months=[int(m) for m in selected_months],
-                    analysis_type=analysis_type,
-                    user_id=st.session_state.user['id']
-                )
-                
-                period_label = f"{analysis_type}_{selected_year}".replace(" ", "_")
-                
-                st.download_button(
-                    label="📥 Download PDF",
-                    data=pdf_bytes,
-                    file_name=f"Finance_Report_{period_label}.pdf",
-                    mime="application/pdf",
-                    use_container_width=True,
-                    type="primary"
-                )
-                
+                pdf = create_comprehensive_pdf(data=data, selected_year=int(sel_year),
+                                               selected_months=[int(m) for m in sel_months],
+                                               analysis_type=atype,
+                                               user_id=st.session_state.user["id"])
+                st.download_button("📥 Download PDF", data=pdf,
+                                   file_name=f"Finance_Report_{sel_year}.pdf",
+                                   mime="application/pdf",
+                                   use_container_width=True, type="primary")
             except Exception as e:
-                st.error(f"❌ Error generating PDF: {e}")
+                st.error(f"PDF error: {e}")
 
+
+# ── file card ─────────────────────────────────────────────────────────────
 def display_file_card(file):
-    """Display a file card with delete button"""
-    file_icon = "📄" if file['file_type'] == 'pdf' else "📊"
-    
+    icon = "📄" if file["file_type"] == "pdf" else "📊"
     st.markdown(f"""
         <div class="file-card">
-            <div style="font-size: 2rem; margin-bottom: 0.5rem;">{file_icon}</div>
-            <div style="font-weight: 600; margin-bottom: 0.25rem;">{file['filename']}</div>
-            <div style="font-size: 0.75rem; color: #6b7280;">
-                {file['upload_date'].strftime('%Y-%m-%d')}
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
-    
+            <div style="font-size:2rem;margin-bottom:.5rem;">{icon}</div>
+            <div style="font-weight:600;font-size:.85rem;color:#e8eaf0;
+                        margin-bottom:.25rem;word-break:break-all;">{file['filename']}</div>
+            <div style="font-size:.72rem;color:#7b7f94;">
+                {file['upload_date'].strftime('%d %b %Y')}</div>
+        </div>""", unsafe_allow_html=True)
     if st.button("🗑️ Delete", key=f"del_{file['id']}", use_container_width=True):
-        if delete_user_file(file['id'], st.session_state.user['id']):
-            st.success("✅ File deleted")
-            clear_data_cache()
-            st.rerun()
-        else:
-            st.error("❌ Failed to delete file")
+        if delete_user_file(file["id"], st.session_state.user["id"]):
+            st.success("Deleted"); clear_data_cache(); st.rerun()
 
 
-def display_pagination_controls(total_files, page_size):
-    """Display pagination controls"""
-    total_pages = (total_files + page_size - 1) // page_size
-    current_page = st.session_state.file_page
-    
-    col1, col2, col3, col4, col5 = st.columns([1, 1, 2, 1, 1])
-    
-    with col1:
-        if st.button("⏮️ First", disabled=(current_page == 0)):
-            st.session_state.file_page = 0
-            st.rerun()
-    
-    with col2:
-        if st.button("◀️ Prev", disabled=(current_page == 0)):
-            st.session_state.file_page = current_page - 1
-            st.rerun()
-    
-    with col3:
-        st.markdown(f"<div style='text-align: center; padding: 0.5rem;'>Page {current_page + 1} of {total_pages}</div>", unsafe_allow_html=True)
-    
-    with col4:
-        if st.button("Next ▶️", disabled=(current_page >= total_pages - 1)):
-            st.session_state.file_page = current_page + 1
-            st.rerun()
-    
-    with col5:
-        if st.button("Last ⏭️", disabled=(current_page >= total_pages - 1)):
-            st.session_state.file_page = total_pages - 1
-            st.rerun()
+def display_pagination_controls(total, page_size):
+    total_pages = (total + page_size - 1) // page_size
+    cur = st.session_state.file_page
+    c1, c2, c3, c4, c5 = st.columns([1,1,2,1,1])
+    with c1:
+        if st.button("⏮", disabled=cur==0): st.session_state.file_page=0; st.rerun()
+    with c2:
+        if st.button("◀", disabled=cur==0): st.session_state.file_page=cur-1; st.rerun()
+    with c3:
+        st.markdown(f"<div style='text-align:center;padding:.4rem;color:#7b7f94;font-size:.85rem;'>"
+                    f"Page {cur+1} / {total_pages}</div>", unsafe_allow_html=True)
+    with c4:
+        if st.button("▶", disabled=cur>=total_pages-1): st.session_state.file_page=cur+1; st.rerun()
+    with c5:
+        if st.button("⏭", disabled=cur>=total_pages-1): st.session_state.file_page=total_pages-1; st.rerun()
 
 
+# ── main page ─────────────────────────────────────────────────────────────
 def spending_analysis_page():
-    """Main spending analysis page with flowing layout"""
+    _page_header("Spending Analysis", "ANALYTICS", "sa_back", back_feature=None)
 
-    st.markdown("<div class='content-container'>", unsafe_allow_html=True)
-    
-    # Header with back button
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        st.markdown("### 📊 Spending Analysis")
-    with col2:
-        if st.button("← Back to Dashboard", use_container_width=True):
-            st.session_state.selected_feature = None
-            st.rerun()
-    
-    st.markdown("---")
-    
-    # FILE UPLOAD SECTION
-    st.markdown("#### 📁 Upload Bank Statements")
-    st.info("💡 Upload JMMB CSV or NCB PDF bank statements to analyze your spending")
-    
-    # Initialize upload state if not exists
-    if 'files_uploaded' not in st.session_state:
+    # ── upload ──────────────────────────────────
+    _section("Upload Bank Statements",
+             "JMMB CSV or NCB PDF bank statements are supported.")
+
+    if "files_uploaded" not in st.session_state:
         st.session_state.files_uploaded = False
-    
-    # File uploader with unique key that changes after upload
     uploader_key = f"file_uploader_{st.session_state.get('upload_counter', 0)}"
-    
-    uploaded_files = st.file_uploader(
-        "Choose files",
-        type=['csv', 'pdf'],
-        accept_multiple_files=True,
-        key=uploader_key,
-        help="Select one or more CSV or PDF files from your bank"
-    )
-    
-    if uploaded_files:
-        # Show file list
-        st.write(f"**Selected files:** {len(uploaded_files)}")
-        for file in uploaded_files:
-            file_icon = "📄" if file.name.endswith('.pdf') else "📊"
-            st.caption(f"{file_icon} {file.name}")
-        
-        col1, col2, col3 = st.columns([1, 1, 2])
-        
-        with col1:
-            if st.button("📤 Upload All Files", type="primary", use_container_width=True):
-                success_count = 0
-                error_count = 0
-                
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                
-                for idx, file in enumerate(uploaded_files):
-                    status_text.text(f"Uploading {file.name}...")
-                    
+    uploaded = st.file_uploader("Choose files", type=["csv","pdf"],
+                                 accept_multiple_files=True, key=uploader_key,
+                                 help="One or more CSV / PDF files from your bank")
+    if uploaded:
+        st.write(f"**{len(uploaded)} file(s) selected**")
+        for f in uploaded:
+            st.caption(f"{'📄' if f.name.endswith('.pdf') else '📊'} {f.name}")
+        b1, b2, _ = st.columns([1,1,2])
+        with b1:
+            if st.button("📤 Upload All", type="primary", use_container_width=True):
+                ok = err = 0
+                bar = st.progress(0); txt = st.empty()
+                for i, f in enumerate(uploaded):
+                    txt.text(f"Uploading {f.name}…")
                     try:
-                        file_bytes = file.read()
-                        file_type = file.name.split('.')[-1].lower()
-                        
-                        if save_user_file(
-                            st.session_state.user['id'],
-                            file.name,
-                            file_bytes,
-                            file_type
-                        ):
-                            success_count += 1
-                        else:
-                            error_count += 1
+                        if save_user_file(st.session_state.user["id"], f.name,
+                                          f.read(), f.name.split(".")[-1].lower()):
+                            ok += 1
+                        else: err += 1
                     except Exception as e:
-                        st.error(f"Error processing {file.name}: {e}")
-                        error_count += 1
-                    
-                    progress_bar.progress((idx + 1) / len(uploaded_files))
-                
-                progress_bar.empty()
-                status_text.empty()
-                
-                if success_count > 0:
-                    st.success(f"✅ Successfully uploaded {success_count} file(s)")
+                        st.error(str(e)); err += 1
+                    bar.progress((i+1)/len(uploaded))
+                bar.empty(); txt.empty()
+                if ok:
+                    st.success(f"✅ {ok} file(s) uploaded")
                     clear_data_cache()
-                    
-                    # Clear the uploader by incrementing counter
-                    if 'upload_counter' not in st.session_state:
-                        st.session_state.upload_counter = 0
-                    st.session_state.upload_counter += 1
+                    st.session_state.upload_counter = st.session_state.get("upload_counter",0)+1
                     st.session_state.files_uploaded = True
-                    
                     st.rerun()
-                
-                if error_count > 0:
-                    st.error(f"❌ Failed to upload {error_count} file(s)")
-        
-        with col2:
-            if st.button("🗑️ Clear Selection", use_container_width=True):
-                # Clear by incrementing counter
-                if 'upload_counter' not in st.session_state:
-                    st.session_state.upload_counter = 0
-                st.session_state.upload_counter += 1
+                if err: st.error(f"{err} file(s) failed")
+        with b2:
+            if st.button("✕ Clear selection", use_container_width=True):
+                st.session_state.upload_counter = st.session_state.get("upload_counter",0)+1
                 st.rerun()
-    
-    # YOUR FILES SECTION
-    st.markdown("---")
-    st.markdown("#### 📂 Your Uploaded Files")
-    
-    if 'file_page' not in st.session_state:
-        st.session_state.file_page = 0
-    
-    files, total_files = get_user_files_paginated(
-        st.session_state.user['id'],
-        st.session_state.file_page,
-        FILES_PER_PAGE
-    )
-    
-    if total_files == 0:
-        st.info("📂 No files uploaded yet. Upload your first bank statement above!")
+
+    # ── your files ──────────────────────────────
+    st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+    _section("Uploaded Files")
+    if "file_page" not in st.session_state: st.session_state.file_page = 0
+    files, total = get_user_files_paginated(st.session_state.user["id"],
+                                             st.session_state.file_page, FILES_PER_PAGE)
+    if total == 0:
+        st.markdown("""
+            <div style="background:#13151f;border:1px dashed rgba(255,255,255,.10);
+                        border-radius:14px;padding:2rem;text-align:center;">
+                <div style="font-size:2rem;margin-bottom:.5rem;">📂</div>
+                <div style="color:#7b7f94;font-size:.9rem;">No files uploaded yet.</div>
+            </div>""", unsafe_allow_html=True)
     else:
-        st.write(f"**Total files:** {total_files}")
-        
-        # Display files in a grid
+        st.caption(f"{total} file(s) stored")
         cols = st.columns(3)
-        for idx, file in enumerate(files):
-            col = cols[idx % 3]
-            with col:
-                display_file_card(file)
-        
-        # Pagination controls
-        if total_files > FILES_PER_PAGE:
-            display_pagination_controls(total_files, FILES_PER_PAGE)
-    
-    # CATEGORY CUSTOMIZATION SECTION
-    st.markdown("---")
+        for i, f in enumerate(files):
+            with cols[i % 3]: display_file_card(f)
+        if total > FILES_PER_PAGE: display_pagination_controls(total, FILES_PER_PAGE)
+
+    # ── category editor ──────────────────────────
+    st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
     render_category_editor()
-    
-    # DATA VISUALIZATION SECTION
-    st.markdown("---")
-    st.markdown("#### 📈 Spending Visualizations")
-    
-    # Load data
-    with st.spinner("Loading your data..."):
-        data = load_all_user_data(st.session_state.user['id'])
-        
-        if data.empty:
-            st.warning("📊 No data available yet. Upload files above to see your spending analysis.")
-        else:
-            # Ensure Date is datetime and create required columns
-            if 'Date' in data.columns:
-                data['Date'] = pd.to_datetime(data['Date'], errors='coerce')
-                data = data.dropna(subset=['Date'])
-                
-                # Create required columns if missing
-                if 'Year' not in data.columns:
-                    data['Year'] = data['Date'].dt.year
-                if 'Month' not in data.columns:
-                    data['Month'] = data['Date'].dt.month
-                if 'YearMonth' not in data.columns:
-                    data['YearMonth'] = data['Date'].dt.strftime('%Y-%m')
-                
-                # Ensure Spending Category exists
-                if 'Spending Category' not in data.columns:
-                    from data_processing import categorize_transactions
-                    data = categorize_transactions(data)
-                
-                # NOW render the analysis
-                render_analysis_section(data)
-            else:
-                st.error("❌ No Date column found in data")
-    
-    st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── visualisations ───────────────────────────
+    st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+    _section("Spending Visualisations")
+    with st.spinner("Loading data…"):
+        data = load_all_user_data(st.session_state.user["id"])
+    if data.empty:
+        st.markdown("""
+            <div style="background:#13151f;border:1px dashed rgba(255,255,255,.10);
+                        border-radius:14px;padding:2.5rem;text-align:center;">
+                <div style="font-size:2rem;margin-bottom:.5rem;">📊</div>
+                <div style="color:#7b7f94;font-size:.9rem;">
+                    Upload files above to see your spending analysis.</div>
+            </div>""", unsafe_allow_html=True)
+        return
+    if "Date" in data.columns:
+        data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
+        data = data.dropna(subset=["Date"])
+        for col_name, fn in [("Year", lambda d: d.dt.year),
+                              ("Month", lambda d: d.dt.month),
+                              ("YearMonth", lambda d: d.dt.strftime("%Y-%m"))]:
+            if col_name not in data.columns:
+                data[col_name] = fn(data["Date"])
+        if "Spending Category" not in data.columns:
+            from data_processing import categorize_transactions
+            data = categorize_transactions(data)
+        render_analysis_section(data)
+    else:
+        st.error("No Date column found in data.")
