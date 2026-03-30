@@ -1,6 +1,5 @@
-"""
-Create pages/network_analysis.py
-"""
+# pages/network_analysis.py
+"""Network Analysis — polished dark-luxury redesign"""
 
 import streamlit as st
 import pandas as pd
@@ -9,323 +8,244 @@ import plotly.express as px
 from data_loader import load_all_user_data
 from utils import calculate_monthly_stats, get_spending_by_category
 import calendar
-from collections import Counter
+
+_PLOTLY = dict(
+    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+    font=dict(family="Outfit, sans-serif", color="#7b7f94", size=12),
+    xaxis=dict(gridcolor="rgba(255,255,255,0.05)", linecolor="rgba(255,255,255,0.08)"),
+    yaxis=dict(gridcolor="rgba(255,255,255,0.05)", linecolor="rgba(255,255,255,0.08)"),
+    legend=dict(bgcolor="rgba(0,0,0,0)"),
+    margin=dict(t=44, b=24, l=10, r=10),
+)
+_ACCENT = ["#f5a623","#f04e5e","#3d9df6","#1fcf8a","#7c6bf6","#f093fb","#30cfd0","#fee140"]
+
+
+def _page_header():
+    c1, c2 = st.columns([5, 1])
+    with c1:
+        st.markdown("""
+            <div style="padding:.75rem 0 .25rem;">
+                <span style="font-size:.7rem;font-weight:600;letter-spacing:.1em;
+                             text-transform:uppercase;color:#f5a623;">PATTERNS</span>
+                <h2 style="font-family:'Playfair Display',serif;font-size:1.8rem;
+                           font-weight:600;color:#e8eaf0;margin:.2rem 0 0;
+                           letter-spacing:-.02em;">Network Analysis</h2>
+                <p style="font-size:.82rem;color:#7b7f94;margin:.35rem 0 0;">
+                    Merchant relationships, category flows, and spending heatmaps.</p>
+            </div>""", unsafe_allow_html=True)
+    with c2:
+        if st.button("← Back", key="na_back", use_container_width=True):
+            st.session_state.selected_feature = None; st.rerun()
+    st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+
+
+def _section(title, sub=""):
+    st.markdown(f"""
+        <p style="font-family:'Playfair Display',serif;font-size:1.1rem;
+                  font-weight:600;color:#e8eaf0;margin:1.5rem 0 .5rem;">{title}</p>
+        {"<p style='font-size:.78rem;color:#7b7f94;margin:-.3rem 0 .6rem;'>" + sub + "</p>" if sub else ""}
+    """, unsafe_allow_html=True)
+
+
+def _merchant_row(name, left_val, left_lbl, right_val, right_lbl, accent):
+    st.markdown(f"""
+        <div style="background:#13151f;border:1px solid rgba(255,255,255,.07);
+                    border-left:3px solid {accent};border-radius:10px;
+                    padding:.7rem 1rem;margin-bottom:.4rem;
+                    display:flex;justify-content:space-between;align-items:center;">
+            <div>
+                <div style="font-weight:600;color:#e8eaf0;font-size:.85rem;">{name[:44]}</div>
+                <div style="font-size:.72rem;color:#7b7f94;margin-top:.15rem;">{left_lbl}</div>
+            </div>
+            <div style="text-align:right;">
+                <div style="font-weight:700;color:{accent};font-size:.95rem;">{left_val}</div>
+                <div style="font-size:.72rem;color:#7b7f94;">{right_lbl}: {right_val}</div>
+            </div>
+        </div>""", unsafe_allow_html=True)
 
 
 def network_analysis_page():
-    """Network Analysis - Visualize transaction patterns and relationships"""
-    st.markdown("<div class='content-container'>", unsafe_allow_html=True)
-    
-    # Header with back button
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        st.markdown("### 🌐 Network Analysis")
-    with col2:
-        if st.button("← Back to Dashboard", use_container_width=True):
-            st.session_state.selected_feature = None
-            st.rerun()
-    
-    st.markdown("---")
-    
-    # Load user data
-    data = load_all_user_data(st.session_state.user['id'])
-    
+    _page_header()
+
+    data = load_all_user_data(st.session_state.user["id"])
     if data.empty:
-        st.warning("📊 No transaction data available")
-        st.info("Please upload files in Spending Analysis first to see network visualizations")
-        if st.button("Go to Spending Analysis", use_container_width=False):
-            st.session_state.selected_feature = 'analysis'
-            st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("""
+            <div style="background:#13151f;border:1px dashed rgba(255,255,255,.10);
+                        border-radius:14px;padding:2.5rem;text-align:center;">
+                <div style="font-size:2.5rem;margin-bottom:.6rem;">🌐</div>
+                <div style="color:#7b7f94;font-size:.9rem;">
+                    Upload transaction data in Spending Analysis first.</div>
+            </div>""", unsafe_allow_html=True)
+        if st.button("Go to Spending Analysis"):
+            st.session_state.selected_feature = "analysis"; st.rerun()
         return
-    
-    # Period selector
-    st.markdown("#### 📅 Select Analysis Period")
-    
-    if 'Year' not in data.columns:
-        data['Year'] = pd.to_datetime(data['Date']).dt.year
-    if 'Month' not in data.columns:
-        data['Month'] = pd.to_datetime(data['Date']).dt.month
-    
-    available_years = sorted(data['Year'].unique())
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        selected_year = st.selectbox(
-            "Year",
-            available_years,
-            index=len(available_years) - 1 if available_years else 0,
-            key="network_year"
-        )
-    
-    with col2:
-        period_type = st.selectbox(
-            "Period",
-            ["Last Month", "Last 3 Months", "Last 6 Months", "All Year"],
-            key="network_period"
-        )
-    
-    # Filter data based on selection
-    year_data = data[data['Year'] == selected_year]
-    available_months = sorted(year_data['Month'].unique())
-    
-    if period_type == "Last Month":
-        selected_months = available_months[-1:] if available_months else []
-    elif period_type == "Last 3 Months":
-        selected_months = available_months[-3:] if len(available_months) >= 3 else available_months
-    elif period_type == "Last 6 Months":
-        selected_months = available_months[-6:] if len(available_months) >= 6 else available_months
-    else:  # All Year
-        selected_months = available_months
-    
-    period_data = year_data[year_data['Month'].isin(selected_months)]
-    
-    if period_data.empty:
-        st.warning("No data available for selected period")
-        st.markdown("</div>", unsafe_allow_html=True)
-        return
-    
-    st.success(f"✅ Analyzing {len(period_data)} transactions across {len(selected_months)} month(s)")
-    
-    # ==========================================
-    # MERCHANT FREQUENCY ANALYSIS
-    # ==========================================
-    st.markdown("---")
-    st.markdown("#### 🏪 Top Merchants")
-    st.caption("Your most frequented merchants and total spending")
-    
-    # Get top merchants
-    merchant_stats = period_data.groupby('Description').agg({
-        'Amount': ['sum', 'count', 'mean']
-    }).reset_index()
-    merchant_stats.columns = ['Merchant', 'Total_Spent', 'Transactions', 'Avg_Transaction']
-    merchant_stats = merchant_stats.sort_values('Total_Spent', ascending=False).head(15)
-    
-    # Create bubble chart
-    fig = px.scatter(
-        merchant_stats,
-        x='Transactions',
-        y='Total_Spent',
-        size='Avg_Transaction',
-        hover_data=['Merchant', 'Total_Spent', 'Transactions', 'Avg_Transaction'],
-        color='Total_Spent',
-        color_continuous_scale='Viridis',
-        size_max=60,
-        title='Merchant Spending Patterns'
-    )
-    
-    fig.update_layout(
-        xaxis_title="Number of Transactions",
-        yaxis_title="Total Amount Spent (J$)",
-        height=500,
-        showlegend=False
-    )
-    
+
+    for col, fn in [("Year", lambda d: d.dt.year), ("Month", lambda d: d.dt.month)]:
+        if col not in data.columns:
+            data[col] = fn(pd.to_datetime(data["Date"]))
+
+    # ── period selector ──────────────────────────
+    _section("Select Period")
+    c1, c2 = st.columns(2)
+    avail_years = sorted(data["Year"].unique())
+    with c1:
+        sel_year = st.selectbox("Year", avail_years,
+                                index=len(avail_years)-1, key="na_year")
+    with c2:
+        period = st.selectbox("Range", ["Last Month","Last 3 Months",
+                                         "Last 6 Months","All Year"], key="na_period")
+
+    yr_data = data[data["Year"] == sel_year]
+    avail_mn = sorted(yr_data["Month"].unique())
+    sel_months = {"Last Month": avail_mn[-1:],
+                  "Last 3 Months": avail_mn[-3:] if len(avail_mn)>=3 else avail_mn,
+                  "Last 6 Months": avail_mn[-6:] if len(avail_mn)>=6 else avail_mn,
+                  "All Year": avail_mn}.get(period, avail_mn)
+
+    pd_filt = yr_data[yr_data["Month"].isin(sel_months)]
+    if pd_filt.empty:
+        st.warning("No data for selected period."); return
+
+    st.markdown(f"""
+        <div style="background:rgba(245,166,35,.07);border:1px solid rgba(245,166,35,.2);
+                    border-radius:10px;padding:.65rem 1rem;margin:.75rem 0;
+                    font-size:.82rem;color:#f5a623;">
+            Analysing <strong>{len(pd_filt):,}</strong> transactions
+            across <strong>{len(sel_months)}</strong> month(s)
+        </div>""", unsafe_allow_html=True)
+
+    # ── top merchants ────────────────────────────
+    _section("Top Merchants", "Most frequented merchants by spend and frequency")
+    ms = pd_filt.groupby("Description")["Amount"].agg(["sum","count","mean"]).reset_index()
+    ms.columns = ["Merchant","Total","Txns","Avg"]
+    ms = ms.sort_values("Total", ascending=False).head(15)
+
+    fig = px.scatter(ms, x="Txns", y="Total", size="Avg",
+                     color="Total", color_continuous_scale=["#3d9df6","#f5a623","#f04e5e"],
+                     size_max=55, custom_data=["Merchant","Total","Txns","Avg"],
+                     title="Merchant Spending Bubble Chart")
     fig.update_traces(
-        textposition='top center',
-        hovertemplate='<b>%{customdata[0]}</b><br>' +
-                      'Total: J$%{y:,.0f}<br>' +
-                      'Transactions: %{x}<br>' +
-                      'Avg: J$%{customdata[3]:,.0f}<br>' +
-                      '<extra></extra>'
-    )
-    
+        hovertemplate="<b>%{customdata[0]}</b><br>Total: J$%{customdata[1]:,.0f}<br>"
+                      "Visits: %{customdata[2]}<br>Avg: J$%{customdata[3]:,.0f}<extra></extra>")
+    fig.update_layout(height=440, coloraxis_showscale=False,
+                      xaxis_title="Number of Transactions",
+                      yaxis_title="Total Spent (J$)", **_PLOTLY)
     st.plotly_chart(fig, use_container_width=True)
-    
-    # Top merchants table
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("##### 💰 Highest Spending")
-        top_spending = merchant_stats.head(10)
-        for idx, row in top_spending.iterrows():
-            st.markdown(f"""
-                <div style='background: white; padding: 0.75rem; border-radius: 6px; margin-bottom: 0.5rem; border-left: 3px solid #667eea;'>
-                    <div style='font-weight: 600; color: #111827;'>{row['Merchant'][:40]}</div>
-                    <div style='display: flex; justify-content: space-between; margin-top: 0.25rem;'>
-                        <span style='color: #6b7280; font-size: 0.85rem;'>{int(row['Transactions'])} transactions</span>
-                        <span style='color: #667eea; font-weight: 600;'>J${row['Total_Spent']:,.0f}</span>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown("##### 🔁 Most Frequent")
-        top_frequent = merchant_stats.sort_values('Transactions', ascending=False).head(10)
-        for idx, row in top_frequent.iterrows():
-            st.markdown(f"""
-                <div style='background: white; padding: 0.75rem; border-radius: 6px; margin-bottom: 0.5rem; border-left: 3px solid #10b981;'>
-                    <div style='font-weight: 600; color: #111827;'>{row['Merchant'][:40]}</div>
-                    <div style='display: flex; justify-content: space-between; margin-top: 0.25rem;'>
-                        <span style='color: #10b981; font-weight: 600;'>{int(row['Transactions'])} visits</span>
-                        <span style='color: #6b7280; font-size: 0.85rem;'>J${row['Total_Spent']:,.0f}</span>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-    
-    # ==========================================
-    # CATEGORY FLOW DIAGRAM
-    # ==========================================
-    st.markdown("---")
-    st.markdown("#### 💸 Spending Flow by Category")
-    st.caption("How your money flows through different spending categories")
-    
-    # Calculate category totals
-    category_totals = period_data.groupby('Spending Category')['Amount'].sum().reset_index()
-    category_totals = category_totals.sort_values('Amount', ascending=False)
-    
-    # Create Sankey diagram
-    fig = go.Figure(data=[go.Sankey(
-        node=dict(
-            pad=15,
-            thickness=20,
-            line=dict(color="black", width=0.5),
-            label=category_totals['Spending Category'].tolist() + ["Total Spending"],
-            color=['#667eea', '#764ba2', '#f093fb', '#4facfe', '#43e97b', '#fa709a', '#fee140', '#30cfd0']
-        ),
-        link=dict(
-            source=list(range(len(category_totals))),
-            target=[len(category_totals)] * len(category_totals),
-            value=category_totals['Amount'].tolist(),
-            color='rgba(102, 126, 234, 0.3)'
-        )
-    )])
-    
-    fig.update_layout(
-        title="Money Flow from Categories to Total Spending",
-        height=400,
-        font=dict(size=12)
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # ==========================================
-    # SPENDING HEATMAP
-    # ==========================================
-    st.markdown("---")
-    st.markdown("#### 📊 Spending Heatmap")
-    st.caption("Visual representation of spending intensity by category and month")
-    
-    # Create heatmap data
-    heatmap_data = []
-    for month in selected_months:
-        month_data = period_data[period_data['Month'] == month]
-        category_summary = month_data.groupby('Spending Category')['Amount'].sum().reset_index()
-        
-        for _, row in category_summary.iterrows():
-            heatmap_data.append({
-                'Month': calendar.month_abbr[month],
-                'Category': row['Spending Category'],
-                'Amount': row['Amount']
-            })
-    
-    if heatmap_data:
-        heatmap_df = pd.DataFrame(heatmap_data)
-        
-        # Pivot for heatmap
-        pivot_data = heatmap_df.pivot(index='Category', columns='Month', values='Amount').fillna(0)
-        
-        fig = go.Figure(data=go.Heatmap(
-            z=pivot_data.values,
-            x=pivot_data.columns,
-            y=pivot_data.index,
-            colorscale='Blues',
-            text=[[f'J${val:,.0f}' for val in row] for row in pivot_data.values],
-            texttemplate='%{text}',
-            textfont={"size": 10},
-            colorbar=dict(title="Amount (J$)")
+
+    ca, cb = st.columns(2)
+    with ca:
+        st.markdown("<p style='font-size:.82rem;font-weight:600;color:#7b7f94;margin-bottom:.6rem;'>💰 Highest Spending</p>", unsafe_allow_html=True)
+        for _, r in ms.head(8).iterrows():
+            _merchant_row(r["Merchant"], f"J${r['Total']:,.0f}", "total",
+                          f"{int(r['Txns'])} txns", "visits", "#f5a623")
+    with cb:
+        st.markdown("<p style='font-size:.82rem;font-weight:600;color:#7b7f94;margin-bottom:.6rem;'>🔁 Most Frequent</p>", unsafe_allow_html=True)
+        for _, r in ms.sort_values("Txns", ascending=False).head(8).iterrows():
+            _merchant_row(r["Merchant"], f"{int(r['Txns'])} visits", "frequency",
+                          f"J${r['Total']:,.0f}", "total", "#3d9df6")
+
+    # ── category flow ────────────────────────────
+    st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+    _section("Spending Flow by Category")
+    if "Spending Category" in pd_filt.columns:
+        cat_tot = pd_filt.groupby("Spending Category")["Amount"].sum().reset_index()
+        cat_tot = cat_tot.sort_values("Amount", ascending=False)
+        n = len(cat_tot)
+        colors = _ACCENT[:n] + ["#aab0c2"] * max(0, n-len(_ACCENT))
+        fig2 = go.Figure(data=[go.Sankey(
+            node=dict(pad=18, thickness=18,
+                      line=dict(color="rgba(0,0,0,0)", width=0),
+                      label=cat_tot["Spending Category"].tolist() + ["Total"],
+                      color=colors + ["#f5a623"]),
+            link=dict(source=list(range(n)), target=[n]*n,
+                      value=cat_tot["Amount"].tolist(),
+                      color=[c.replace("#","rgba(").replace(c,"") + "0.25)"
+                             for c in colors]),
+        )])
+        # simplify sankey link colors
+        fig2 = go.Figure(data=[go.Sankey(
+            node=dict(pad=18, thickness=18,
+                      line=dict(color="rgba(0,0,0,0)", width=0),
+                      label=cat_tot["Spending Category"].tolist() + ["Total"],
+                      color=colors + ["#f5a623"]),
+            link=dict(source=list(range(n)), target=[n]*n,
+                      value=cat_tot["Amount"].tolist(),
+                      color=["rgba(245,166,35,0.20)"]*n),
+        )])
+        fig2.update_layout(height=380, **{k:v for k,v in _PLOTLY.items()
+                                          if k not in ("xaxis","yaxis")})
+        st.plotly_chart(fig2, use_container_width=True)
+
+    # ── heatmap ──────────────────────────────────
+    st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+    _section("Spending Heatmap", "Intensity by category × month")
+    hm_rows = []
+    for m in sel_months:
+        md = pd_filt[pd_filt["Month"] == m]
+        if "Spending Category" in md.columns:
+            for _, r in md.groupby("Spending Category")["Amount"].sum().reset_index().iterrows():
+                hm_rows.append({"Month": calendar.month_abbr[m],
+                                 "Category": r["Spending Category"], "Amount": r["Amount"]})
+    if hm_rows:
+        hm_df   = pd.DataFrame(hm_rows)
+        pivot   = hm_df.pivot(index="Category", columns="Month", values="Amount").fillna(0)
+        fig_hm  = go.Figure(go.Heatmap(
+            z=pivot.values, x=pivot.columns.tolist(), y=pivot.index.tolist(),
+            colorscale=[[0,"#0e1018"],[0.5,"#1c4480"],[1,"#f5a623"]],
+            text=[[f"J${v:,.0f}" for v in row] for row in pivot.values],
+            texttemplate="%{text}", textfont=dict(size=10, color="#e8eaf0"),
+            colorbar=dict(title="J$", tickfont=dict(color="#7b7f94")),
         ))
-        
-        fig.update_layout(
-            title='Spending Intensity by Category and Month',
-            xaxis_title='Month',
-            yaxis_title='Category',
-            height=400
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    
-    # ==========================================
-    # TRANSACTION TIMELINE
-    # ==========================================
-    st.markdown("---")
-    st.markdown("#### 📈 Transaction Timeline")
-    st.caption("Daily spending patterns over the selected period")
-    
-    # Group by date
-    daily_spending = period_data.groupby(period_data['Date'].dt.date)['Amount'].sum().reset_index()
-    daily_spending.columns = ['Date', 'Amount']
-    
-    fig = go.Figure()
-    
-    fig.add_trace(go.Scatter(
-        x=daily_spending['Date'],
-        y=daily_spending['Amount'],
-        mode='lines+markers',
-        name='Daily Spending',
-        line=dict(color='#667eea', width=2),
-        marker=dict(size=6, color='#667eea'),
-        fill='tozeroy',
-        fillcolor='rgba(102, 126, 234, 0.2)'
+        fig_hm.update_layout(height=400, xaxis_title="Month",
+                              yaxis_title="Category", **_PLOTLY)
+        st.plotly_chart(fig_hm, use_container_width=True)
+
+    # ── daily timeline ───────────────────────────
+    st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+    _section("Daily Spending Timeline")
+    daily = pd_filt.groupby(pd_filt["Date"].dt.date)["Amount"].sum().reset_index()
+    daily.columns = ["Date","Amount"]
+    avg_d = daily["Amount"].mean()
+    fig_d = go.Figure()
+    fig_d.add_trace(go.Scatter(
+        x=daily["Date"], y=daily["Amount"], mode="lines+markers",
+        line=dict(color="#f5a623", width=2),
+        marker=dict(size=5, color="#f5a623", line=dict(width=1.5,color="#07080f")),
+        fill="tozeroy", fillcolor="rgba(245,166,35,0.08)",
     ))
-    
-    # Add average line
-    avg_spending = daily_spending['Amount'].mean()
-    fig.add_hline(
-        y=avg_spending,
-        line_dash="dash",
-        line_color="red",
-        annotation_text=f"Average: J${avg_spending:,.0f}",
-        annotation_position="right"
-    )
-    
-    fig.update_layout(
-        title='Daily Spending Over Time',
-        xaxis_title='Date',
-        yaxis_title='Amount (J$)',
-        height=400,
-        hovermode='x unified'
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # ==========================================
-    # INSIGHTS & PATTERNS
-    # ==========================================
-    st.markdown("---")
-    st.markdown("#### 🔍 Key Insights")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        most_expensive = period_data.nlargest(1, 'Amount').iloc[0]
-        st.markdown(f"""
-            <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1.5rem; border-radius: 12px; color: white;'>
-                <div style='font-size: 0.85rem; opacity: 0.9; margin-bottom: 0.5rem;'>Largest Transaction</div>
-                <div style='font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem;'>J${most_expensive['Amount']:,.0f}</div>
-                <div style='font-size: 0.8rem; opacity: 0.8;'>{most_expensive['Description'][:30]}...</div>
-            </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        unique_merchants = period_data['Description'].nunique()
-        st.markdown(f"""
-            <div style='background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); padding: 1.5rem; border-radius: 12px; color: white;'>
-                <div style='font-size: 0.85rem; opacity: 0.9; margin-bottom: 0.5rem;'>Unique Merchants</div>
-                <div style='font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem;'>{unique_merchants}</div>
-                <div style='font-size: 0.8rem; opacity: 0.8;'>Different places visited</div>
-            </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        avg_transaction = period_data['Amount'].mean()
-        st.markdown(f"""
-            <div style='background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); padding: 1.5rem; border-radius: 12px; color: white;'>
-                <div style='font-size: 0.85rem; opacity: 0.9; margin-bottom: 0.5rem;'>Avg Transaction</div>
-                <div style='font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem;'>J${avg_transaction:,.0f}</div>
-                <div style='font-size: 0.8rem; opacity: 0.8;'>Per transaction</div>
-            </div>
-        """, unsafe_allow_html=True)
-    
-    st.markdown("</div>", unsafe_allow_html=True)
+    fig_d.add_hline(y=avg_d, line_dash="dot", line_color="#7c6bf6",
+                    annotation_text=f"Avg: J${avg_d:,.0f}",
+                    annotation_font_color="#7c6bf6")
+    fig_d.update_layout(height=380, xaxis_title="Date",
+                        yaxis_title="Daily Spend (J$)", **_PLOTLY)
+    st.plotly_chart(fig_d, use_container_width=True)
+
+    # ── key insights ─────────────────────────────
+    st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+    _section("Key Insights")
+    biggest = pd_filt.nlargest(1, "Amount").iloc[0]
+    uniq    = pd_filt["Description"].nunique()
+    avg_tx  = pd_filt["Amount"].mean()
+    c1, c2, c3 = st.columns(3)
+    for col, title, val, sub, grad in [
+        (c1, "Largest Transaction",
+         f"J${biggest['Amount']:,.0f}", biggest["Description"][:32],
+         "linear-gradient(135deg,#7c6bf6,#764ba2)"),
+        (c2, "Unique Merchants",
+         str(uniq), "distinct places visited",
+         "linear-gradient(135deg,#1fcf8a,#0fa86e)"),
+        (c3, "Avg Transaction",
+         f"J${avg_tx:,.0f}", "per transaction",
+         "linear-gradient(135deg,#f5a623,#f07a23)"),
+    ]:
+        with col:
+            st.markdown(f"""
+                <div style="background:{grad};border-radius:14px;
+                            padding:1.35rem 1.4rem;color:white;">
+                    <div style="font-size:.68rem;font-weight:600;letter-spacing:.07em;
+                                text-transform:uppercase;opacity:.85;margin-bottom:.45rem;">
+                        {title}</div>
+                    <div style="font-size:1.6rem;font-weight:700;margin-bottom:.2rem;">
+                        {val}</div>
+                    <div style="font-size:.75rem;opacity:.75;">{sub}</div>
+                </div>""", unsafe_allow_html=True)
