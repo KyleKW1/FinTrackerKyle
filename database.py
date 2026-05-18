@@ -368,3 +368,170 @@ def save_monthly_summary(user_id, year_month, total_income, total_spending, net_
         if connection:
             connection.close()
         return False
+
+
+# ============================================================
+# EMAIL SYNC SETTINGS
+# ============================================================
+
+def save_email_sync_settings(user_id: int, gmail_address: str,
+                              app_password: str, sync_days: int = 90) -> bool:
+    """Save (or update) the user's Gmail sync config."""
+    connection = create_connection()
+    if not connection:
+        return False
+    try:
+        cursor = connection.cursor()
+        cursor.execute("""
+            INSERT INTO email_sync_settings
+                (user_id, gmail_address, app_password, sync_days)
+            VALUES (%s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                gmail_address = VALUES(gmail_address),
+                app_password  = VALUES(app_password),
+                sync_days     = VALUES(sync_days)
+        """, (user_id, gmail_address, app_password, sync_days))
+        connection.commit()
+        cursor.close()
+        connection.close()
+        return True
+    except Error:
+        if connection:
+            connection.close()
+        return False
+
+
+def get_email_sync_settings(user_id: int) -> dict | None:
+    """Return the user's Gmail sync config, or None."""
+    connection = create_connection()
+    if not connection:
+        return None
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT * FROM email_sync_settings WHERE user_id = %s", (user_id,)
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        connection.close()
+        return row
+    except Error:
+        if connection:
+            connection.close()
+        return None
+
+
+def update_email_last_sync(user_id: int) -> None:
+    """Stamp last_sync = NOW() for this user."""
+    connection = create_connection()
+    if not connection:
+        return
+    try:
+        cursor = connection.cursor()
+        cursor.execute("""
+            UPDATE email_sync_settings
+               SET last_sync = CURRENT_TIMESTAMP
+             WHERE user_id = %s
+        """, (user_id,))
+        connection.commit()
+        cursor.close()
+        connection.close()
+    except Error:
+        if connection:
+            connection.close()
+
+
+# ============================================================
+# EMAIL TRANSACTIONS
+# ============================================================
+
+def save_email_transactions(user_id: int, transactions: list) -> int:
+    """
+    Insert new email-parsed transactions into email_transactions table.
+    Silently ignores duplicates (same user/date/description/amount).
+    Returns the number of rows actually inserted.
+    """
+    connection = create_connection()
+    if not connection:
+        return 0
+    added = 0
+    try:
+        cursor = connection.cursor()
+        for tx in transactions:
+            try:
+                cursor.execute("""
+                    INSERT IGNORE INTO email_transactions
+                        (user_id, tx_date, description, amount,
+                         category, email_subject, sender)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    user_id,
+                    tx["date"],
+                    tx.get("description", "Bank Transaction")[:500],
+                    tx["amount"],
+                    tx.get("category", "Debit"),
+                    tx.get("subject", "")[:500],
+                    tx.get("sender", "")[:200],
+                ))
+                if cursor.rowcount:
+                    added += 1
+            except Error:
+                continue
+        connection.commit()
+        cursor.close()
+        connection.close()
+    except Error:
+        if connection:
+            connection.close()
+    return added
+
+
+def get_email_transactions(user_id: int):
+    """
+    Return all email-parsed transactions for this user as a list of dicts.
+    Returns [] on error.
+    """
+    connection = create_connection()
+    if not connection:
+        return []
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT tx_date  AS Date,
+                   description AS Description,
+                   amount    AS Amount,
+                   category  AS Category,
+                   'email'   AS source
+              FROM email_transactions
+             WHERE user_id = %s
+             ORDER BY tx_date DESC
+        """, (user_id,))
+        rows = cursor.fetchall()
+        cursor.close()
+        connection.close()
+        return rows
+    except Error:
+        if connection:
+            connection.close()
+        return []
+
+
+def delete_all_email_transactions(user_id: int) -> bool:
+    """Remove all email-synced transactions (lets user re-sync cleanly)."""
+    connection = create_connection()
+    if not connection:
+        return False
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            "DELETE FROM email_transactions WHERE user_id = %s", (user_id,)
+        )
+        connection.commit()
+        cursor.close()
+        connection.close()
+        return True
+    except Error:
+        if connection:
+            connection.close()
+        return False
+
