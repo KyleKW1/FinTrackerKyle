@@ -147,6 +147,10 @@ def _feature_grid(data):
              title="Time Machine",
              desc="See your financial future across three scenarios. Compare paths and find out when you can retire.",
              featured=True),
+        dict(key="btn_subs", feature="subscriptions", icon="🔄",
+             title="Subscription Tracker",
+             desc="Auto-detect recurring charges from your bank data. See what you're forgetting to cancel.",
+             featured=False),
     ]
 
     col1, col2 = st.columns(2)
