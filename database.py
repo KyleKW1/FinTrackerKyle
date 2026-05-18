@@ -583,4 +583,146 @@ def get_email_transactions_v2(user_id: int) -> list:
  
 # Same monkey-patch pattern — no other file needs changing.
 get_email_transactions = get_email_transactions_v2
- 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LEGACY SINGLE-ACCOUNT EMAIL SYNC FUNCTIONS
+# Paste these at the bottom of database.py
+# Required by: subscription_tracker.py, gmail_sync_section.py (legacy path)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def save_email_sync_settings(user_id: int, gmail_address: str,
+                             app_password: str, sync_days: int = 90) -> bool:
+    """
+    Save (or update) a single Gmail account in the legacy email_sync_settings table.
+    Falls back to writing into the new email_accounts table if the legacy table
+    doesn't exist — so this works whether the DB has been migrated or not.
+    """
+    # Try the new multi-account table first (preferred path)
+    try:
+        return add_email_account(user_id, gmail_address, app_password,
+                                 sync_days, provider="auto")
+    except Exception:
+        pass
+
+    # Fallback: legacy email_sync_settings table
+    connection = create_connection()
+    if not connection:
+        return False
+    try:
+        cursor = connection.cursor()
+        cursor.execute("""
+            INSERT INTO email_sync_settings
+                (user_id, gmail_address, app_password, sync_days)
+            VALUES (%s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                gmail_address = VALUES(gmail_address),
+                app_password  = VALUES(app_password),
+                sync_days     = VALUES(sync_days)
+        """, (user_id, gmail_address.strip(), app_password.strip(), sync_days))
+        connection.commit()
+        cursor.close()
+        connection.close()
+        return True
+    except Error:
+        if connection:
+            connection.close()
+        return False
+
+
+def get_email_sync_settings(user_id: int) -> dict | None:
+    """
+    Return the stored email-sync config for this user.
+    Tries the new email_accounts table first; falls back to
+    the legacy email_sync_settings table.
+    """
+    # Try new multi-account table
+    try:
+        accounts = get_all_email_accounts(user_id)
+        if accounts:
+            first = accounts[0]
+            return {
+                "gmail_address": first.get("email_address", ""),
+                "app_password":  first.get("app_password", ""),
+                "sync_days":     first.get("sync_days", 90),
+                "last_sync":     first.get("last_sync"),
+            }
+    except Exception:
+        pass
+
+    # Fallback: legacy table
+    connection = create_connection()
+    if not connection:
+        return None
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT gmail_address, app_password, sync_days, last_sync
+              FROM email_sync_settings
+             WHERE user_id = %s
+        """, (user_id,))
+        row = cursor.fetchone()
+        cursor.close()
+        connection.close()
+        return row  # None if not configured yet
+    except Error:
+        if connection:
+            connection.close()
+        return None
+
+
+def update_email_last_sync(user_id: int) -> None:
+    """
+    Stamp last_sync = NOW() for this user.
+    Tries both the new email_accounts table and the legacy table.
+    """
+    # New table — stamp all active accounts for this user
+    connection = create_connection()
+    if not connection:
+        return
+    try:
+        cursor = connection.cursor()
+        # Try new table
+        try:
+            cursor.execute("""
+                UPDATE email_accounts
+                   SET last_sync = CURRENT_TIMESTAMP
+                 WHERE user_id = %s AND is_active = 1
+            """, (user_id,))
+        except Error:
+            pass
+        # Try legacy table
+        try:
+            cursor.execute("""
+                UPDATE email_sync_settings
+                   SET last_sync = CURRENT_TIMESTAMP
+                 WHERE user_id = %s
+            """, (user_id,))
+        except Error:
+            pass
+        connection.commit()
+        cursor.close()
+        connection.close()
+    except Error:
+        if connection:
+            connection.close()
+
+
+def delete_all_email_transactions(user_id: int) -> bool:
+    """Delete every email-synced transaction for this user."""
+    connection = create_connection()
+    if not connection:
+        return False
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            "DELETE FROM email_transactions WHERE user_id = %s",
+            (user_id,)
+        )
+        connection.commit()
+        cursor.close()
+        connection.close()
+        return True
+    except Error:
+        if connection:
+            connection.close()
+        return False
