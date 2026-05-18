@@ -115,6 +115,9 @@ def dashboard_page():
     elif sel == "timemachine":
         from .financial_time_machine import financial_time_machine_page
         financial_time_machine_page()
+    elif sel == "subscriptions":
+        from .subscription_tracker import subscription_tracker_page
+        subscription_tracker_page()
 
 
 # ── feature grid ──────────────────────────────────────────────────────────
