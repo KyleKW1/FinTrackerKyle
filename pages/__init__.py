@@ -7,6 +7,8 @@ from .budget_planner import budget_planner_page
 from .financial_time_machine import financial_time_machine_page
 from .network_analysis import network_analysis_page
 from .possible_savings import possible_savings_page
+from .subscription_tracker import subscription_tracker_page
+
 
 # Export all functions
 __all__ = [
@@ -18,4 +20,5 @@ __all__ = [
     'financial_time_machine_page',
     'network_analysis_page',
     'possible_savings_page'
+    'subscription_tracker_page',
 ]
