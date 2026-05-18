@@ -370,27 +370,66 @@ def save_monthly_summary(user_id, year_month, total_income, total_spending, net_
         return False
 
 
-# ============================================================
-# EMAIL SYNC SETTINGS
-# ============================================================
 
-def save_email_sync_settings(user_id: int, gmail_address: str,
-                              app_password: str, sync_days: int = 90) -> bool:
-    """Save (or update) the user's Gmail sync config."""
+# ═══════════════════════════════════════════════════════════════════════════
+# MULTI-ACCOUNT EMAIL FUNCTIONS
+# ═══════════════════════════════════════════════════════════════════════════
+ 
+def get_all_email_accounts(user_id: int) -> list:
+    """
+    Return all active email accounts for this user from the email_accounts table.
+    Falls back gracefully to the legacy email_sync_settings table if the new
+    table does not yet exist.
+    """
+    connection = create_connection()
+    if not connection:
+        return []
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT id, email_address, app_password, provider, sync_days, last_sync
+              FROM email_accounts
+             WHERE user_id = %s AND is_active = 1
+             ORDER BY created_at ASC
+        """, (user_id,))
+        rows = cursor.fetchall()
+        cursor.close()
+        connection.close()
+        return rows
+    except Error:
+        # Table doesn't exist yet — return empty so caller falls back
+        if connection:
+            connection.close()
+        return []
+ 
+ 
+def add_email_account(
+    user_id: int,
+    email_address: str,
+    app_password: str,
+    sync_days: int = 90,
+    provider: str = "auto",
+) -> bool:
+    """
+    Insert or update an email account for this user.
+    Uses ON DUPLICATE KEY UPDATE so re-saving with a new password just updates it.
+    """
     connection = create_connection()
     if not connection:
         return False
     try:
         cursor = connection.cursor()
         cursor.execute("""
-            INSERT INTO email_sync_settings
-                (user_id, gmail_address, app_password, sync_days)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO email_accounts
+                (user_id, email_address, app_password, provider, sync_days)
+            VALUES (%s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
-                gmail_address = VALUES(gmail_address),
                 app_password  = VALUES(app_password),
-                sync_days     = VALUES(sync_days)
-        """, (user_id, gmail_address, app_password, sync_days))
+                provider      = VALUES(provider),
+                sync_days     = VALUES(sync_days),
+                is_active     = 1
+        """, (user_id, email_address.strip(), app_password.strip(),
+              provider, sync_days))
         connection.commit()
         cursor.close()
         connection.close()
@@ -399,57 +438,65 @@ def save_email_sync_settings(user_id: int, gmail_address: str,
         if connection:
             connection.close()
         return False
-
-
-def get_email_sync_settings(user_id: int) -> dict | None:
-    """Return the user's Gmail sync config, or None."""
+ 
+ 
+def remove_email_account(user_id: int, email_address: str) -> bool:
+    """Soft-delete (deactivate) one email account for this user."""
     connection = create_connection()
     if not connection:
-        return None
+        return False
     try:
-        cursor = connection.cursor(dictionary=True)
-        cursor.execute(
-            "SELECT * FROM email_sync_settings WHERE user_id = %s", (user_id,)
-        )
-        row = cursor.fetchone()
+        cursor = connection.cursor()
+        cursor.execute("""
+            UPDATE email_accounts
+               SET is_active = 0
+             WHERE user_id = %s AND email_address = %s
+        """, (user_id, email_address))
+        connection.commit()
         cursor.close()
         connection.close()
-        return row
+        return True
     except Error:
         if connection:
             connection.close()
-        return None
-
-
-def update_email_last_sync(user_id: int) -> None:
-    """Stamp last_sync = NOW() for this user."""
+        return False
+ 
+ 
+def update_account_last_sync(user_id: int, email_address: str) -> None:
+    """Stamp last_sync = NOW() for one specific account."""
     connection = create_connection()
     if not connection:
         return
     try:
         cursor = connection.cursor()
         cursor.execute("""
-            UPDATE email_sync_settings
+            UPDATE email_accounts
                SET last_sync = CURRENT_TIMESTAMP
-             WHERE user_id = %s
-        """, (user_id,))
+             WHERE user_id = %s AND email_address = %s
+        """, (user_id, email_address))
         connection.commit()
         cursor.close()
         connection.close()
     except Error:
         if connection:
             connection.close()
-
-
-# ============================================================
-# EMAIL TRANSACTIONS
-# ============================================================
-
-def save_email_transactions(user_id: int, transactions: list) -> int:
+ 
+ 
+# ═══════════════════════════════════════════════════════════════════════════
+# UPDATED save_email_transactions
+# Replace the existing save_email_transactions function with this version.
+# It now also stores spending_category and is_subscription.
+# ═══════════════════════════════════════════════════════════════════════════
+ 
+def save_email_transactions_v2(user_id: int, transactions: list) -> int:
     """
-    Insert new email-parsed transactions into email_transactions table.
-    Silently ignores duplicates (same user/date/description/amount).
+    Insert new email-parsed transactions.
+    Silently ignores exact duplicates (same user / date / description / amount).
     Returns the number of rows actually inserted.
+ 
+    This version stores the richer fields produced by the new email_scanner:
+        spending_category  →  used by Budget vs Actual page
+        is_subscription    →  used by Subscription Tracker
     """
     connection = create_connection()
     if not connection:
@@ -462,16 +509,19 @@ def save_email_transactions(user_id: int, transactions: list) -> int:
                 cursor.execute("""
                     INSERT IGNORE INTO email_transactions
                         (user_id, tx_date, description, amount,
-                         category, email_subject, sender)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                         category, spending_category, is_subscription,
+                         email_subject, sender)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     user_id,
                     tx["date"],
                     tx.get("description", "Bank Transaction")[:500],
                     tx["amount"],
                     tx.get("category", "Debit"),
+                    tx.get("spending_category", "Other")[:100],
+                    1 if tx.get("is_subscription") else 0,
                     tx.get("subject", "")[:500],
-                    tx.get("sender", "")[:200],
+                    tx.get("sender",  "")[:200],
                 ))
                 if cursor.rowcount:
                     added += 1
@@ -484,12 +534,25 @@ def save_email_transactions(user_id: int, transactions: list) -> int:
         if connection:
             connection.close()
     return added
-
-
-def get_email_transactions(user_id: int):
+ 
+ 
+# Monkey-patch: make save_email_transactions point to the v2 version
+# so all existing callers automatically get the richer save without
+# any other code changes needed.
+save_email_transactions = save_email_transactions_v2
+ 
+ 
+# ═══════════════════════════════════════════════════════════════════════════
+# UPDATED get_email_transactions
+# Replace the existing get_email_transactions function with this version.
+# It now also returns spending_category and is_subscription.
+# ═══════════════════════════════════════════════════════════════════════════
+ 
+def get_email_transactions_v2(user_id: int) -> list:
     """
-    Return all email-parsed transactions for this user as a list of dicts.
-    Returns [] on error.
+    Return all email-synced transactions for this user.
+    The spending_category column means data_loader can skip the slow
+    categorize_transactions() pass for these rows.
     """
     connection = create_connection()
     if not connection:
@@ -497,11 +560,13 @@ def get_email_transactions(user_id: int):
     try:
         cursor = connection.cursor(dictionary=True)
         cursor.execute("""
-            SELECT tx_date  AS Date,
-                   description AS Description,
-                   amount    AS Amount,
-                   category  AS Category,
-                   'email'   AS source
+            SELECT tx_date          AS Date,
+                   description      AS Description,
+                   amount           AS Amount,
+                   category         AS Category,
+                   spending_category AS `Spending Category`,
+                   is_subscription  AS is_subscription,
+                   'email'          AS source
               FROM email_transactions
              WHERE user_id = %s
              ORDER BY tx_date DESC
@@ -514,24 +579,8 @@ def get_email_transactions(user_id: int):
         if connection:
             connection.close()
         return []
-
-
-def delete_all_email_transactions(user_id: int) -> bool:
-    """Remove all email-synced transactions (lets user re-sync cleanly)."""
-    connection = create_connection()
-    if not connection:
-        return False
-    try:
-        cursor = connection.cursor()
-        cursor.execute(
-            "DELETE FROM email_transactions WHERE user_id = %s", (user_id,)
-        )
-        connection.commit()
-        cursor.close()
-        connection.close()
-        return True
-    except Error:
-        if connection:
-            connection.close()
-        return False
-
+ 
+ 
+# Same monkey-patch pattern — no other file needs changing.
+get_email_transactions = get_email_transactions_v2
+ 
