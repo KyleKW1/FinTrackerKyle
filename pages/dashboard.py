@@ -20,9 +20,11 @@ def _stat_card(label, icon, value, delta_html, accent_grad):
     </div>"""
 
 
-def _nav_button(label, key, feature):
+def _nav_button(label, key, feature, sub_feature=None):
     if st.button(label, key=key, use_container_width=True):
         st.session_state.selected_feature = feature
+        if sub_feature:
+            st.session_state.selected_sub_feature = sub_feature
         st.rerun()
 
 
@@ -104,9 +106,6 @@ def dashboard_page():
     elif sel == "timemachine":
         from .financial_time_machine import financial_time_machine_page
         financial_time_machine_page()
-    elif sel == "subscriptions":
-        from .subscription_tracker import subscription_tracker_page
-        subscription_tracker_page()
 
 
 def _feature_grid(data):
@@ -122,33 +121,32 @@ def _feature_grid(data):
     """, unsafe_allow_html=True)
 
     features = [
-        dict(key="btn_analysis",    feature="analysis",       icon="📊",
+        dict(key="btn_analysis",    feature="analysis",    sub=None,            icon="📊",
              title="Spending Analysis",
              desc="Upload bank statements and visualise spending patterns with detailed charts and category breakdowns.",
              featured=False),
-        dict(key="btn_planner",     feature="planner",        icon="📅",
+        dict(key="btn_planner",     feature="planner",     sub=None,            icon="📅",
              title="Budget Planner",
-             desc="Set monthly budgets, track progress against actuals, and get alerts when limits are approached.",
+             desc="Set monthly budgets, track actuals, manage subscriptions and get alerts when limits are approached.",
              featured=False),
-        dict(key="btn_network",     feature="network",        icon="🌐",
+        dict(key="btn_subs",        feature="planner",     sub="subscriptions", icon="🔄",
+             title="Subscription Tracker",
+             desc="Auto-detect recurring charges from your email and bank data. Instantly see what you're paying monthly.",
+             featured=False),
+        dict(key="btn_network",     feature="network",     sub=None,            icon="🌐",
              title="Network Analysis",
              desc="Discover merchant relationships, heatmaps and daily spending timelines in one interactive view.",
              featured=False),
-        dict(key="btn_timemachine", feature="timemachine",    icon="🔮",
+        dict(key="btn_timemachine", feature="timemachine", sub=None,            icon="🔮",
              title="Time Machine",
              desc="See your financial future across three scenarios. Compare paths and find out when you can retire.",
              featured=True),
-        dict(key="btn_subs",        feature="subscriptions",  icon="🔄",
-             title="Subscription Tracker",
-             desc="Auto-detect recurring charges from your bank data. See what you're forgetting to cancel.",
-             featured=False),
     ]
 
     col1, col2 = st.columns(2)
-
     for i, f in enumerate(features):
         feat_cls = "feat-card featured" if f["featured"] else "feat-card"
-        col = col1 if i % 2 == 0 else col2          # ← works for any number of cards
+        col = col1 if i % 2 == 0 else col2
         with col:
             st.markdown(f"""
                 <div class="{feat_cls}">
@@ -158,7 +156,7 @@ def _feature_grid(data):
                 </div>
             """, unsafe_allow_html=True)
             btn_lbl = ("✦ Open " if f["featured"] else "Open ") + f["title"]
-            _nav_button(btn_lbl, f["key"], f["feature"])
+            _nav_button(btn_lbl, f["key"], f["feature"], sub_feature=f["sub"])
             st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
 
     if data is not None and not data.empty:
